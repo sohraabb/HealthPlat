@@ -1,6 +1,8 @@
 package com.bonyad.healthplat.di
 
 import android.content.Context
+import com.bonyad.healthplat.blesdk.manager.HealthDeviceManager
+import com.bonyad.healthplat.blesdk.manager.RingDeviceManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -14,7 +16,7 @@ import javax.inject.Singleton
 object BleModule {
     @Provides
     @Singleton
-    fun provideHealthDeviceManager(@ApplicationContext context: Context): HealthDeviceManagaer {
+    fun provideHealthDeviceManager(@ApplicationContext context: Context): HealthDeviceManager {
         return RingDeviceManager(context)
 
     }

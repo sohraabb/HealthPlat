@@ -22,6 +22,13 @@ interface HealthDeviceManager {
     fun setUserId(userId: Long)
     fun syncDeviceTime()
 
+    fun readBatteryLevel()
+    val batteryLevel: StateFlow<Int?>
+
+    fun startMeasureSpo2()
+
+    fun cleanup()
+
     suspend fun readCharacteristic(uuid: UUID): Result<ByteArray>
     suspend fun writeCharacteristic(uuid: UUID, data: ByteArray): Result<Unit>
 }

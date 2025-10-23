@@ -2,9 +2,11 @@ package com.bonyad.healthplat
 
 import android.app.Application
 import com.bonlala.bonlalable.BonlalaOperateManager
+import dagger.hilt.android.HiltAndroidApp
 import no.nordicsemi.android.dfu.BuildConfig
 import timber.log.Timber
 
+@HiltAndroidApp
 class HealthPlatApp: Application() {
 
     override fun onCreate() {

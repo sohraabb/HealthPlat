@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import okhttp3.Dispatcher
 import timber.log.Timber
@@ -46,7 +47,7 @@ class RingDeviceManager(private val context: Context): HealthDeviceManager {
     private val _batteryLevel = MutableStateFlow<Int?>(null)
     override val batteryLevel: StateFlow<Int?> = _batteryLevel.asStateFlow()
 
-    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     init {
         // Ensure SDK is initialized (Application already called init, this is defensive)
         try {
@@ -77,6 +78,7 @@ class RingDeviceManager(private val context: Context): HealthDeviceManager {
         }
     }
 
+    @SuppressLint("MissingPermission")
     override fun startScan() {
         _connectionState.value = ConnectionState.SCANNING
         _scannedDevices.value = emptyList()
@@ -87,7 +89,6 @@ class RingDeviceManager(private val context: Context): HealthDeviceManager {
                     Timber.i("Scan started")
                 }
 
-                @SuppressLint("MissingPermission")
                 override fun onDeviceFounded(device: ScanDeviceInfo) {
                     _scannedDevices.update { currentList ->
                         val existingDevice = currentList.find {
@@ -278,6 +279,7 @@ class RingDeviceManager(private val context: Context): HealthDeviceManager {
     }
 
     override fun cleanup() {
+        if (!scope.isActive) return
         try {
             closeRealTimeHeartRate()
             manager.clearRealTimeDataListener()

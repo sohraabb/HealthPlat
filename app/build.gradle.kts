@@ -2,7 +2,9 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-}
+    alias(libs.plugins.hilt)
+    id("kotlin-kapt")
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.2.21"}
 
 android {
     namespace = "com.bonyad.healthplat"
@@ -37,6 +39,9 @@ android {
     buildFeatures {
         compose = true
     }
+    kapt {
+        correctErrorTypes = true
+    }
 }
 
 dependencies {
@@ -44,6 +49,31 @@ dependencies {
     // BLE SDK implementations (Keep these as they are local files)
     implementation(files("libs/Bonlala_ble_v1.3.aar"))
     implementation(files("libs/NordicDfuLibrary.aar"))
+
+    // Dependency Injection
+    implementation(libs.hilt.android)
+    kapt(libs.hilt.compiler)
+
+    // Navigation
+    implementation(libs.androidx.navigation.compose)
+
+    // Lifecycle + ViewModel
+    implementation(libs.androidx.lifecycle.viewmodel.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+
+    // Coroutines
+    implementation(libs.coroutines.core)
+    implementation(libs.coroutines.android)
+
+    // Network
+    implementation(libs.retrofit)
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.logging)
+    implementation(libs.serialization.json)
+    implementation(libs.retrofit.serialization)
+
+    // Logging
+    implementation(libs.timber)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

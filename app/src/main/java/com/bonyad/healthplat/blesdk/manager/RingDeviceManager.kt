@@ -5,10 +5,7 @@ import android.content.Context
 import com.bonlala.bonlalable.BonlalaOperateManager
 import com.bonlala.bonlalable.bean.ScanDeviceInfo
 import com.bonlala.bonlalable.listener.ConnStatusListener
-import com.bonlala.bonlalable.listener.OnBatteryListener
-import com.bonlala.bonlalable.listener.OnRealTimeDataListener
 import com.bonlala.bonlalable.listener.OnScanListener
-import com.bonlala.bonlalable.listener.OnWriteDataStatusListener
 import com.bonlala.bonlalable.listener.WriteCommBackListener
 import com.bonyad.healthplat.blesdk.model.ConnectionState
 import com.bonyad.healthplat.blesdk.model.RealTimeData
@@ -26,9 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import okhttp3.Dispatcher
 import timber.log.Timber
-import java.sql.Connection
 import java.util.UUID
 
 class RingDeviceManager(private val context: Context): HealthDeviceManager {
@@ -61,7 +56,9 @@ class RingDeviceManager(private val context: Context): HealthDeviceManager {
 
     private fun setupRealTimeDataListener() {
         try {
-            manager.setRealTimeDataListener { heartRate, steps ->
+
+            // setRealTimeData or setRealTimeDataListener
+            manager.setRealTimeData { heartRate, steps ->
                 scope.launch {
                     _realTimeData.emit(
                         RealTimeData(

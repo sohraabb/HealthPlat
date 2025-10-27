@@ -20,3 +20,5 @@ intermediates/
 # SDK and secrets
 app/libs/
 *.keystore
+
+.kotlin

@@ -4,14 +4,17 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -28,6 +31,7 @@ fun PhoneAuthScreen(
 ) {
     val authState by viewModel.authState.collectAsState()
     val phoneNumber by viewModel.phoneNumber.collectAsState()
+    val focusManager = LocalFocusManager.current
 
     // Navigate when OTP is sent
     LaunchedEffect(authState) {
@@ -64,7 +68,7 @@ fun PhoneAuthScreen(
 
                 // Logo/Icon
                 Image(
-                    painter = painterResource(id = R.drawable.ic_launcher_background), // Add your logo
+                    painter = painterResource(id = R.drawable.ic_launcher_background),
                     contentDescription = "Logo",
                     modifier = Modifier.size(100.dp)
                 )
@@ -83,20 +87,22 @@ fun PhoneAuthScreen(
 
                 Spacer(modifier = Modifier.height(48.dp))
 
-                // Section title
+                // Section title - CENTERED
                 Text(
                     text = "ثبت‌نام یا ورود",
                     style = MaterialTheme.typography.titleLarge.copy(
                         fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp
+                        fontSize = 20.sp,
+                        textAlign = TextAlign.Center
                     ),
                     color = Color(0xFF2C2C2C),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Phone number input
+                // Phone number input - FIXED
                 OutlinedTextField(
                     value = phoneNumber,
                     onValueChange = { viewModel.updatePhoneNumber(it) },
@@ -116,7 +122,18 @@ fun PhoneAuthScreen(
                             modifier = Modifier.fillMaxWidth()
                         )
                     },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Phone,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            focusManager.clearFocus()
+                            if (phoneNumber.length == 11) {
+                                viewModel.sendOtp()
+                            }
+                        }
+                    ),
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -132,7 +149,10 @@ fun PhoneAuthScreen(
 
                 // Submit button
                 Button(
-                    onClick = { viewModel.sendOtp() },
+                    onClick = {
+                        focusManager.clearFocus()
+                        viewModel.sendOtp()
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
@@ -141,7 +161,8 @@ fun PhoneAuthScreen(
                         containerColor = if (phoneNumber.length == 11)
                             Color(0xFF5BA3A3)
                         else
-                            Color(0xFFE0E0E0)
+                            Color(0xFFE0E0E0),
+                        disabledContainerColor = Color(0xFFE0E0E0)
                     ),
                     enabled = phoneNumber.length == 11 && authState !is AuthState.Loading
                 ) {

@@ -20,36 +20,19 @@ fun HealthPlatNavGraph(
         navController = navController,
         startDestination = startDestination
     ) {
+        // 1. Onboarding
         composable(NavRoutes.Onboarding.route) {
             OnboardingScreen(
                 onComplete = {
-                    navController.navigate(NavRoutes.TermsAndPrivacy.route) {
+                    navController.navigate(NavRoutes.PhoneAuth.route) {
                         popUpTo(NavRoutes.Onboarding.route) { inclusive = true }
                     }
                 }
             )
         }
 
-        composable(NavRoutes.TermsAndPrivacy.route) {
-            // TODO: Create this screen next
-//            TermsAndPrivacyScreen(
-//                onAccept = {
-//                    navController.navigate(NavRoutes.DeviceConnection.route)
-//                }
-//            )
-        }
-
-        composable(NavRoutes.DeviceConnection.route) {
-            // TODO: Create this screen
-//            DeviceConnectionScreen(
-//                onDeviceConnected = {
-//                    navController.navigate(Screen.PhoneAuth.route)
-//                }
-//            )
-        }
-
+        // 2. Phone Authentication
         composable(NavRoutes.PhoneAuth.route) {
-            // TODO: Create this screen
             PhoneAuthScreen(
                 onPhoneSubmitted = { phoneNumber ->
                     navController.navigate(NavRoutes.OtpVerification.route + "/$phoneNumber")
@@ -57,33 +40,57 @@ fun HealthPlatNavGraph(
             )
         }
 
+        // 3. OTP Verification
         composable(
             route = NavRoutes.OtpVerification.route + "/{phoneNumber}",
             arguments = listOf(navArgument("phoneNumber") { type = NavType.StringType })
         ) { backStackEntry ->
             val phoneNumber = backStackEntry.arguments?.getString("phoneNumber") ?: ""
-            // TODO: Create this screen
             OtpVerificationScreen(
                 phoneNumber = phoneNumber,
                 onVerified = {
-                    navController.navigate(NavRoutes.PersonalInfo.route)
+                    navController.navigate(NavRoutes.DeviceConnection.route) {
+                        popUpTo(NavRoutes.PhoneAuth.route) { inclusive = true }
+                    }
                 }
             )
         }
 
+        // 4. Device Connection (Bluetooth)
+        composable(NavRoutes.DeviceConnection.route) {
+            // TODO: Create DeviceConnectionScreen next
+//            DeviceConnectionScreen(
+//                onDeviceConnected = {
+//                    navController.navigate(NavRoutes.TermsAndPrivacy.route)
+//                }
+//            )
+        }
+
+        // 5. Terms and Privacy (Access screens from GitHub)
+        composable(NavRoutes.TermsAndPrivacy.route) {
+            // TODO: Create TermsAndPrivacyScreen
+//            TermsAndPrivacyScreen(
+//                onAccept = {
+//                    navController.navigate(NavRoutes.PersonalInfo.route)
+//                }
+//            )
+        }
+
+        // 6. Personal Information
         composable(NavRoutes.PersonalInfo.route) {
-            // TODO: Create this screen
+            // TODO: Create PersonalInfoScreen
 //            PersonalInfoScreen(
 //                onComplete = {
-//                    navController.navigate(Screen.Dashboard.route) {
+//                    navController.navigate(NavRoutes.Dashboard.route) {
 //                        popUpTo(0) { inclusive = true }
 //                    }
 //                }
 //            )
         }
 
+        // 7. Dashboard (Main App)
         composable(NavRoutes.Dashboard.route) {
-            // TODO: Create this screen
+            // TODO: Create DashboardScreen
 //            DashboardScreen()
         }
     }

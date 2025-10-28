@@ -31,7 +31,7 @@ object NetworkModule {
     fun provideUserPreferences(
         @ApplicationContext context: Context
     ): UserPreferencesDataStore {
-        return UserPreferencesDataStore()
+        return UserPreferencesDataStore(context)
     }
 
     @Provides

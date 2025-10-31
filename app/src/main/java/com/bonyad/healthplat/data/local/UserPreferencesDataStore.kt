@@ -193,6 +193,41 @@ class UserPreferencesDataStore @Inject constructor(
             }
     }
 
+    // ============ Personal Info ============
+
+    suspend fun savePersonalInfo(name: String, birthDate: String, height: Int, weight: Int) {
+        dataStore.edit { preferences ->
+            preferences[stringPreferencesKey("user_name")] = name
+            preferences[stringPreferencesKey("user_birth_date")] = birthDate
+            preferences[intPreferencesKey("user_height")] = height
+            preferences[intPreferencesKey("user_weight")] = weight
+        }
+    }
+
+    fun getUserName(): Flow<String?> {
+        return dataStore.data.map { preferences ->
+            preferences[stringPreferencesKey("user_name")]
+        }
+    }
+
+    fun getUserBirthDate(): Flow<String?> {
+        return dataStore.data.map { preferences ->
+            preferences[stringPreferencesKey("user_birth_date")]
+        }
+    }
+
+    fun getUserHeight(): Flow<Int?> {
+        return dataStore.data.map { preferences ->
+            preferences[intPreferencesKey("user_height")]
+        }
+    }
+
+    fun getUserWeight(): Flow<Int?> {
+        return dataStore.data.map { preferences ->
+            preferences[intPreferencesKey("user_weight")]
+        }
+    }
+
     // ============ Device Info ============
 
     suspend fun saveDeviceInfo(mac: String, name: String?) {

@@ -82,6 +82,9 @@ dependencies {
     // DataStore
     implementation(libs.androidx.datastore.preferences)
 
+    //Persian DatePicker
+    implementation(libs.compose.persian.date.picker)
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

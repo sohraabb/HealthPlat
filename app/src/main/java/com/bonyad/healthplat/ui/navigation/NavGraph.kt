@@ -11,6 +11,7 @@ import com.bonyad.healthplat.ui.access.TermsAndPrivacyScreen
 import com.bonyad.healthplat.ui.login.OtpVerificationScreen
 import com.bonyad.healthplat.ui.login.PhoneAuthScreen
 import com.bonyad.healthplat.ui.onboarding.OnboardingScreen
+import com.bonyad.healthplat.ui.profile.PersonalInfoScreen
 
 @Composable
 fun HealthPlatNavGraph(
@@ -71,7 +72,7 @@ fun HealthPlatNavGraph(
         composable(NavRoutes.TermsAndPrivacy.route) {
             TermsAndPrivacyScreen(
                 onAccept = {
-                    navController.navigate(NavRoutes.DeviceConnection.route)
+                    navController.navigate(NavRoutes.PersonalInfo.route)
                 }
             )
         }
@@ -80,13 +81,13 @@ fun HealthPlatNavGraph(
         // 6. Personal Information
         composable(NavRoutes.PersonalInfo.route) {
             // TODO: Create PersonalInfoScreen
-//            PersonalInfoScreen(
-//                onComplete = {
-//                    navController.navigate(NavRoutes.Dashboard.route) {
-//                        popUpTo(0) { inclusive = true }
-//                    }
-//                }
-//            )
+            PersonalInfoScreen(
+                onComplete = {
+                    navController.navigate(NavRoutes.Dashboard.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            )
         }
 
         // 7. Dashboard (Main App)

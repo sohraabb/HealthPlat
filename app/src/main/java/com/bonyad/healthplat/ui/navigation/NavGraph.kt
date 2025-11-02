@@ -8,6 +8,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.bonyad.healthplat.ui.access.TermsAndPrivacyScreen
+import com.bonyad.healthplat.ui.device.DeviceConnectionScreen
 import com.bonyad.healthplat.ui.login.OtpVerificationScreen
 import com.bonyad.healthplat.ui.login.PhoneAuthScreen
 import com.bonyad.healthplat.ui.onboarding.OnboardingScreen
@@ -51,7 +52,7 @@ fun HealthPlatNavGraph(
             OtpVerificationScreen(
                 phoneNumber = phoneNumber,
                 onVerified = {
-                    navController.navigate(NavRoutes.TermsAndPrivacy.route) {
+                    navController.navigate(NavRoutes.DeviceConnection.route) {
                         popUpTo(NavRoutes.PhoneAuth.route) { inclusive = true }
                     }
                 }
@@ -60,12 +61,11 @@ fun HealthPlatNavGraph(
 
         // 4. Device Connection (Bluetooth)
         composable(NavRoutes.DeviceConnection.route) {
-            // TODO: Create DeviceConnectionScreen next
-//            DeviceConnectionScreen(
-//                onDeviceConnected = {
-//                    navController.navigate(NavRoutes.TermsAndPrivacy.route)
-//                }
-//            )
+            DeviceConnectionScreen(
+                onDeviceConnected = {
+                    navController.navigate(NavRoutes.TermsAndPrivacy.route)
+                }
+            )
         }
 
         // 5. Terms and Privacy (Access screens from GitHub)

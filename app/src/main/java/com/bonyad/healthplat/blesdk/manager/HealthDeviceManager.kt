@@ -1,5 +1,6 @@
 package com.bonyad.healthplat.blesdk.manager
 
+import com.bonlala.bonlalable.bean.ScanDeviceInfo
 import com.bonyad.healthplat.blesdk.model.ConnectionState
 import com.bonyad.healthplat.blesdk.model.RealTimeData
 import kotlinx.coroutines.flow.Flow
@@ -9,6 +10,7 @@ import java.util.UUID
 interface HealthDeviceManager {
     val connectionState: StateFlow<ConnectionState>
     val realTimeData: Flow<RealTimeData>
+    val scannedDevices: StateFlow<List<ScanDeviceInfo>>
 
     fun startScan()
     fun stopScan()

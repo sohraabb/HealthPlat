@@ -2,6 +2,7 @@ package com.bonyad.healthplat.blesdk.manager
 
 import android.annotation.SuppressLint
 import android.content.Context
+import androidx.lifecycle.viewModelScope
 import com.bonlala.bonlalable.BonlalaOperateManager
 import com.bonlala.bonlalable.bean.ScanDeviceInfo
 import com.bonlala.bonlalable.listener.ConnStatusListener
@@ -37,7 +38,7 @@ class RingDeviceManager(private val context: Context): HealthDeviceManager {
     override val realTimeData: Flow<RealTimeData> = _realTimeData.asSharedFlow()
 
     private val _scannedDevices = MutableStateFlow<List<ScanDeviceInfo>>(emptyList())
-    val scannedDevices: StateFlow<List<ScanDeviceInfo>> = _scannedDevices.asStateFlow()
+    override val scannedDevices: StateFlow<List<ScanDeviceInfo>> = _scannedDevices.asStateFlow()
 
     private val _batteryLevel = MutableStateFlow<Int?>(null)
     override val batteryLevel: StateFlow<Int?> = _batteryLevel.asStateFlow()
@@ -50,6 +51,7 @@ class RingDeviceManager(private val context: Context): HealthDeviceManager {
         } catch (t: Throwable) {
             Timber.w(t, "Ring initContext from BonlalaDeviceManager")
         }
+
         setupRealTimeDataListener()
     }
 
@@ -87,17 +89,29 @@ class RingDeviceManager(private val context: Context): HealthDeviceManager {
                 }
 
                 override fun onDeviceFounded(device: ScanDeviceInfo) {
-                    _scannedDevices.update { currentList ->
-                        val existingDevice = currentList.find {
-                            it.bluetoothDevice?.address == device.bluetoothDevice?.address
+                    val deviceName = device.bluetoothDevice?.name
+                    val deviceAddress = device.bluetoothDevice?.address
+
+                    Timber.i("Scan found: [$deviceAddress] Name: [$deviceName]")
+
+                    val isValidRing = !deviceName.isNullOrBlank() && (
+                            deviceName.contains("ring", ignoreCase = true) ||
+                                    deviceName.contains("bonlala", ignoreCase = true) ||
+                                    deviceName.startsWith("W", ignoreCase = true)
+                            )
+
+                    if (deviceAddress != null && isValidRing) {
+                        _scannedDevices.update { currentList ->
+                            if (currentList.none { it.bluetoothDevice?.address == deviceAddress }) {
+                                currentList + device
+                            } else {
+                                currentList
+                            }
                         }
-                        if (existingDevice == null) {
-                            currentList + device
-                        } else {
-                            currentList
-                        }
+                        Timber.i("Added ring device: $deviceName")
+                    } else {
+                        Timber.d("Skipped device: $deviceName (doesn't match pattern)")
                     }
-                    Timber.i("Found device: ${device.bluetoothDevice?.address} - ${device.bluetoothDevice?.name}")
                 }
 
                 override fun onSearchStopped() {

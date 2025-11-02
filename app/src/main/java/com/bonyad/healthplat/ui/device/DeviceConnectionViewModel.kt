@@ -65,11 +65,11 @@ class DeviceConnectionViewModel @Inject constructor(
                     }
                 }
             }
-            // Collect scanned devices
-            viewModelScope.launch {
-                deviceManager.scannedDevices.collect { devices ->
-                    _scannedDevices.value = devices
-                }
+        }
+        viewModelScope.launch {
+            deviceManager.scannedDevices.collect { devices ->
+                _scannedDevices.value = devices
+                Timber.d("ViewModel: Received ${devices.size} devices")
             }
         }
     }

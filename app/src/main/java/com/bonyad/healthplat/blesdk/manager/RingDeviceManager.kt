@@ -125,7 +125,7 @@ class RingDeviceManager(private val context: Context): HealthDeviceManager {
                     Timber.i("Search canceled")
                     _connectionState.value = ConnectionState.DISCONNECTED
                 }
-            }, 1500,1)
+            }, 6000,1)
         } catch (t: Throwable) {
             Timber.e(t, "Error starting scan")
             _connectionState.value = ConnectionState.DISCONNECTED

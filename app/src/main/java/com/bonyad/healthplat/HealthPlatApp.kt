@@ -6,14 +6,14 @@ import dagger.hilt.android.HiltAndroidApp
 import no.nordicsemi.android.dfu.BuildConfig
 import timber.log.Timber
 
+
 @HiltAndroidApp
 class HealthPlatApp: Application() {
 
     override fun onCreate() {
         super.onCreate()
 
-        if (BuildConfig.DEBUG)
-            Timber.plant(Timber.DebugTree())
+        Timber.plant(Timber.DebugTree())
 
         // Initialize Ring SDK
         try {

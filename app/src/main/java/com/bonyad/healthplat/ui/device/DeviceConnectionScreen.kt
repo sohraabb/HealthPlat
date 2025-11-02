@@ -1,7 +1,7 @@
 package com.bonyad.healthplat.ui.device
 
 import androidx.compose.runtime.*
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 
 enum class ConnectionStep {
     START,

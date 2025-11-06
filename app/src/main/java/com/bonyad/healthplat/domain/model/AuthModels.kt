@@ -22,7 +22,8 @@ data class VerifyOtpResponse(
     val message: String,
     val userId: Long? = null,
     val token: String? = null,
-    val refreshToken: String? = null
+    val refreshToken: String? = null,
+    val isNewUser: Boolean = true
 )
 
 data class RefreshTokenRequest(val refreshToken: String)

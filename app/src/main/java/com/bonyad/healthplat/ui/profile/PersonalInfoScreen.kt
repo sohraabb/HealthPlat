@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -51,7 +52,7 @@ fun PersonalInfoScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     // Handle back press
-    BackHandler {
+    BackHandler(enabled = onBack != null) {
         onBack?.invoke()
     }
 
@@ -84,7 +85,7 @@ fun PersonalInfoScreen(
                     modifier = Modifier.fillMaxSize(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Image with gradient
+                    // Image with gradient and back button
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -112,13 +113,14 @@ fun PersonalInfoScreen(
                                 )
                         )
 
-                        // Back button overlay - White background for visibility
+                        // Back button
                         if (onBack != null) {
                             IconButton(
                                 onClick = { onBack() },
                                 modifier = Modifier
-                                    .padding(8.dp)
-                                    .background(Color.White.copy(alpha = 0.9f), RoundedCornerShape(12.dp))
+                                    .padding(16.dp)
+                                    .background(Color.White.copy(alpha = 0.9f), CircleShape)
+                                    .size(48.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -150,59 +152,35 @@ fun PersonalInfoScreen(
                             modifier = Modifier.padding(bottom = 32.dp)
                         )
 
-                        // Name and Birth Date Row
-                        Row(
+                        // Name field (full width)
+                        OutlinedTextField(
+                            value = name,
+                            onValueChange = { viewModel.updateName(it) },
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            // Birth Date
+                            label = { Text("نام") },
+                            placeholder = { Text("علی کمالی", color = Color(0xFFCCCCCC)) },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color(0xFF5BA3A3),
+                                unfocusedBorderColor = Color(0xFFE0E0E0),
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color.White
+                            ),
+                            textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End)
+                        )
 
+                        Spacer(modifier = Modifier.height(16.dp))
 
-                            // Name
-                            OutlinedTextField(
-                                value = name,
-                                onValueChange = { viewModel.updateName(it) },
-                                modifier = Modifier.weight(1f),
-                                label = {
-                                    Text(
-                                        text = "نام",
-                                    )
-                                },
-                                placeholder = {
-                                    Text(
-                                        text = "علی کمالی",
-                                        color = Color(0xFFCCCCCC),
-                                    )
-                                },
-                                singleLine = true,
-                                shape = RoundedCornerShape(12.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = Color(0xFF5BA3A3),
-                                    unfocusedBorderColor = Color(0xFFE0E0E0),
-                                    focusedContainerColor = Color.White,
-                                    unfocusedContainerColor = Color.White
-                                ),
-                                textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End)
-                            )
-                        }
-
+                        // Birth Date (full width)
                         OutlinedTextField(
                             value = birthDate,
                             onValueChange = { },
                             modifier = Modifier
-                                .weight(1f)
+                                .fillMaxWidth()
                                 .clickable { viewModel.onDatePickerClick() },
-                            label = {
-                                Text(
-                                    text = "تاریخ تولد",
-                                )
-                            },
-                            placeholder = {
-                                Text(
-                                    text = "۱۳۷۹/۰۹/۰۵",
-                                    color = Color(0xFFCCCCCC),
-                                )
-                            },
+                            label = { Text("تاریخ تولد") },
+                            placeholder = { Text("۱۳۷۹/۰۹/۰۵", color = Color(0xFFCCCCCC)) },
                             trailingIcon = {
                                 Icon(
                                     imageVector = Icons.Default.DateRange,
@@ -225,27 +203,18 @@ fun PersonalInfoScreen(
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        // Weight and Height Row
+                        // Height and Weight Row
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            // Height
+                            // Weight (left in RTL)
                             OutlinedTextField(
-                                value = height,
-                                onValueChange = { viewModel.updateHeight(it) },
+                                value = weight,
+                                onValueChange = { viewModel.updateWeight(it) },
                                 modifier = Modifier.weight(1f),
-                                label = {
-                                    Text(
-                                        text = "قد",
-                                    )
-                                },
-                                placeholder = {
-                                    Text(
-                                        text = "سانتی متر",
-                                        color = Color(0xFFCCCCCC),
-                                    )
-                                },
+                                label = { Text("وزن") },
+                                placeholder = { Text("کیلو گرم", color = Color(0xFFCCCCCC)) },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
@@ -258,22 +227,13 @@ fun PersonalInfoScreen(
                                 textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End)
                             )
 
-                            // Weight
+                            // Height (right in RTL)
                             OutlinedTextField(
-                                value = weight,
-                                onValueChange = { viewModel.updateWeight(it) },
+                                value = height,
+                                onValueChange = { viewModel.updateHeight(it) },
                                 modifier = Modifier.weight(1f),
-                                label = {
-                                    Text(
-                                        text = "وزن",
-                                    )
-                                },
-                                placeholder = {
-                                    Text(
-                                        text = "کیلو گرم",
-                                        color = Color(0xFFCCCCCC),
-                                    )
-                                },
+                                label = { Text("قد") },
+                                placeholder = { Text("سانتی متر", color = Color(0xFFCCCCCC)) },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
@@ -289,6 +249,7 @@ fun PersonalInfoScreen(
 
                         Spacer(modifier = Modifier.height(32.dp))
 
+                        // Submit Button
                         Button(
                             onClick = { viewModel.savePersonalInfo() },
                             modifier = Modifier
@@ -296,10 +257,7 @@ fun PersonalInfoScreen(
                                 .height(56.dp),
                             shape = RoundedCornerShape(16.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isFormValid)
-                                    Color(0xFF5BA3A3)
-                                else
-                                    Color(0xFFE0E0E0),
+                                containerColor = if (isFormValid) Color(0xFF5BA3A3) else Color(0xFFE0E0E0),
                                 disabledContainerColor = Color(0xFFE0E0E0)
                             ),
                             enabled = isFormValid && uiState !is PersonalInfoUiState.Loading
@@ -328,7 +286,6 @@ fun PersonalInfoScreen(
             }
         }
 
-        // Persian Date Picker Bottom Sheet
         if (showDatePicker) {
             PersianDatePickerBottomSheet(
                 onDismiss = { viewModel.onDatePickerDismiss() },
@@ -348,9 +305,11 @@ fun PersianDatePickerBottomSheet(
     onDateSelected: (Int, Int, Int) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState()
+
+    // Set default to a reasonable birth year (e.g., 1379 = ~2000)
     var selectedYear by remember { mutableStateOf(1379) }
-    var selectedMonth by remember { mutableStateOf(9) }
-    var selectedDay by remember { mutableStateOf(5) }
+    var selectedMonth by remember { mutableStateOf(1) }
+    var selectedDay by remember { mutableStateOf(1) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -377,10 +336,10 @@ fun PersianDatePickerBottomSheet(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Year Picker
+                // Year Picker (1320-1404)
                 PersianDateColumn(
                     label = "سال",
-                    range = 1340..1404,
+                    range = 1320..1404,  // Current Persian year
                     selectedValue = selectedYear,
                     onValueChange = { selectedYear = it },
                     modifier = Modifier.weight(1f)

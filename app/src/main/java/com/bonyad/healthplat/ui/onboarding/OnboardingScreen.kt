@@ -8,11 +8,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
@@ -21,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -58,117 +62,124 @@ fun OnboardingScreen(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFF5F5F5))
-    ) {
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize()
-        ) { page ->
-            Image(
-                painter = painterResource(id = viewModel.pages[page].imageRes),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
-        }
-
+    Scaffold(
+        containerColor = Color(0xFFF5F5F5)
+    ) { paddingValues ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Black.copy(alpha = 0.3f),
-                            Color.Black.copy(alpha = 0.6f)
-                        ),
-                        startY = 0f,
-                        endY = Float.POSITIVE_INFINITY
-                    )
-                )
-        )
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 24.dp, vertical = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
+                .padding(paddingValues)
+                .background(Color(0xFFF5F5F5))
         ) {
-            Spacer(modifier = Modifier.weight(1f))
-
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            ) {
-                Text(
-                    text = viewModel.pages[pagerState.currentPage].title,
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 28.sp,
-                        textAlign = TextAlign.Center
-                    ),
-                    color = Color.White,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-
-                Text(
-                    text = viewModel.pages[pagerState.currentPage].description,
-                    style = MaterialTheme.typography.bodyLarge.copy(
-                        fontSize = 16.sp,
-                        textAlign = TextAlign.Center,
-                        lineHeight = 24.sp
-                    ),
-                    color = Color.White.copy(alpha = 0.9f),
-                    modifier = Modifier.padding(bottom = 32.dp)
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                Image(
+                    painter = painterResource(id = viewModel.pages[page].imageRes),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
                 )
             }
 
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                HorizontalPagerIndicator(
-                    pagerState = pagerState,
-                    pageCount = viewModel.pages.size,
-                    activeColor = Color.White,
-                    inactiveColor = Color.White.copy(alpha = 0.3f),
-                    indicatorWidth = 8.dp,
-                    indicatorHeight = 8.dp,
-                    spacing = 8.dp,
-                    modifier = Modifier.padding(bottom = 24.dp)
-                )
-
-                val isLastPage = pagerState.currentPage == viewModel.pages.size - 1
-                val buttonText = if (isLastPage) "شروع" else "ادامه"
-
-                Button(
-                    onClick = {
-                        scope.launch {
-                            if (isLastPage) {
-                                viewModel.completeOnboarding()
-                            } else {
-                                pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                            }
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF5BA3A3)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Black.copy(alpha = 0.3f),
+                                Color.Black.copy(alpha = 0.6f)
+                            ),
+                            startY = 0f,
+                            endY = Float.POSITIVE_INFINITY
+                        )
                     )
+            )
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 24.dp, vertical = 32.dp)
+                    .windowInsetsPadding(WindowInsets.navigationBars),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Spacer(modifier = Modifier.weight(1f))
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(horizontal = 16.dp)
                 ) {
                     Text(
-                        text = buttonText,
-                        style = MaterialTheme.typography.bodyLarge.copy(
+                        text = viewModel.pages[pagerState.currentPage].title,
+                        style = MaterialTheme.typography.headlineMedium.copy(
                             fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
+                            fontSize = 28.sp,
+                            textAlign = TextAlign.Center
                         ),
-                        color = Color.White
+                        color = Color.White,
+                        modifier = Modifier.padding(bottom = 16.dp)
                     )
+
+                    Text(
+                        text = viewModel.pages[pagerState.currentPage].description,
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 16.sp,
+                            textAlign = TextAlign.Center,
+                            lineHeight = 24.sp
+                        ),
+                        color = Color.White.copy(alpha = 0.9f),
+                        modifier = Modifier.padding(bottom = 32.dp)
+                    )
+                }
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    HorizontalPagerIndicator(
+                        pagerState = pagerState,
+                        pageCount = viewModel.pages.size,
+                        activeColor = Color.White,
+                        inactiveColor = Color.White.copy(alpha = 0.3f),
+                        indicatorWidth = 8.dp,
+                        indicatorHeight = 8.dp,
+                        spacing = 8.dp,
+                        modifier = Modifier.padding(bottom = 24.dp)
+                    )
+
+                    val isLastPage = pagerState.currentPage == viewModel.pages.size - 1
+                    val buttonText = if (isLastPage) "شروع" else "ادامه"
+
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                if (isLastPage) {
+                                    viewModel.completeOnboarding()
+                                } else {
+                                    pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF5BA3A3)
+                        )
+                    ) {
+                        Text(
+                            text = buttonText,
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            ),
+                            color = Color.White
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
             }
         }

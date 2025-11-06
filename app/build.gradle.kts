@@ -85,6 +85,9 @@ dependencies {
     //Persian DatePicker
     implementation(libs.compose.persian.date.picker)
 
+    //Splash Screen Api
+    implementation("androidx.core:core-splashscreen:1.0.1")
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

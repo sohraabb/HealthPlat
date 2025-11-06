@@ -1,18 +1,39 @@
 package com.bonyad.healthplat.ui.login
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -29,11 +50,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.navigation.NavController
-import com.bonyad.healthplat.domain.model.AuthState
 import com.bonyad.healthplat.R
+import com.bonyad.healthplat.domain.model.AuthState
+import com.bonyad.healthplat.ui.utils.toFarsiDigits
 import com.yourpackage.healthplat.ui.auth.AuthViewModel
 import kotlinx.coroutines.delay
+import timber.log.Timber
 
 @Composable
 fun OtpVerificationScreen(
@@ -47,6 +69,9 @@ fun OtpVerificationScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
+
+    val phoneNumber = phoneNumber
+    Timber.d("Phone number : $phoneNumber")
 
     // Auto-submit when 5 digits entered
     LaunchedEffect(otp) {
@@ -147,7 +172,7 @@ fun OtpVerificationScreen(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = "کد به شماره ${viewModel.getFormattedPhoneNumber()} ارسال شد.",
+                    text = " کد به شماره ${phoneNumber.toFarsiDigits()} ارسال شد. ",
                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                     color = Color(0xFF999999),
                     textAlign = TextAlign.Center

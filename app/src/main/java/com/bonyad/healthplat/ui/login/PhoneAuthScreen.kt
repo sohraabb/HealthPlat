@@ -2,6 +2,7 @@ package com.bonyad.healthplat.ui.login
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -11,8 +12,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -25,6 +28,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.bonyad.healthplat.domain.model.AuthState
 import com.yourpackage.healthplat.ui.auth.AuthViewModel
 import com.bonyad.healthplat.R
+import kotlinx.coroutines.delay
 
 @Composable
 fun PhoneAuthScreen(
@@ -34,10 +38,14 @@ fun PhoneAuthScreen(
     val authState by viewModel.authState.collectAsState()
     val phoneNumber by viewModel.phoneNumber.collectAsState()
     val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+
 
     // Navigate when OTP is sent
     LaunchedEffect(authState) {
         if (authState is AuthState.PhoneSubmitted) {
+            keyboardController?.hide()
+            delay(100)
             onPhoneSubmitted(phoneNumber)
         }
     }
@@ -59,7 +67,14 @@ fun PhoneAuthScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color(0xFFF5F5F5))
+                    .pointerInput(Unit) {
+                        detectTapGestures(onTap = {
+                            focusManager.clearFocus()
+                            keyboardController?.hide()
+                        })
+                    }
                     .padding(padding)
+
             ) {
                 Column(
                     modifier = Modifier
@@ -128,9 +143,6 @@ fun PhoneAuthScreen(
                         keyboardActions = KeyboardActions(
                             onDone = {
                                 focusManager.clearFocus()
-                                if (phoneNumber.length == 11) {
-                                    viewModel.sendOtp()
-                                }
                             }
                         ),
                         singleLine = true,

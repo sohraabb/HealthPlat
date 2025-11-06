@@ -1,7 +1,10 @@
 package com.bonyad.healthplat.ui.device
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.*
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.navigation.NavController
+import androidx.navigation.compose.rememberNavController
 
 enum class ConnectionStep {
     START,
@@ -13,16 +16,29 @@ enum class ConnectionStep {
 fun DeviceConnectionScreen(
     viewModel: DeviceConnectionViewModel = hiltViewModel(),
     onDeviceConnected: () -> Unit,
-    onSkip: (() -> Unit)? = null
+    navController: NavController,
+    onSkip: (() -> Unit)? = null,
+    onBack: (() -> Unit)? = null
 ) {
+
+    val navController = rememberNavController()
     var currentStep by remember { mutableStateOf(ConnectionStep.START) }
+
+    BackHandler {
+        when (currentStep) {
+            ConnectionStep.START -> onBack?.invoke()           // go back to previous nav screen
+            ConnectionStep.SCANNING -> currentStep = ConnectionStep.START
+            ConnectionStep.TROUBLESHOOT -> currentStep = ConnectionStep.SCANNING
+        }
+    }
 
     when (currentStep) {
         ConnectionStep.START -> {
             DeviceConnectionStartScreen(
                 viewModel = viewModel,
                 onStartScan = { currentStep = ConnectionStep.SCANNING },
-                onSkip = onSkip
+                onSkip = onSkip,
+                onBack = { navController.popBackStack() } // also handle toolbar back
             )
         }
 
@@ -30,13 +46,14 @@ fun DeviceConnectionScreen(
             DeviceScanningScreen(
                 viewModel = viewModel,
                 onDeviceConnected = onDeviceConnected,
-                onTroubleshoot = { currentStep = ConnectionStep.TROUBLESHOOT }
+                onTroubleshoot = { currentStep = ConnectionStep.TROUBLESHOOT },
+                onBack = { currentStep = ConnectionStep.START }
             )
         }
 
         ConnectionStep.TROUBLESHOOT -> {
             TroubleshootScreen(
-                onBack = { currentStep = ConnectionStep.START },
+                onBack = { currentStep = ConnectionStep.SCANNING },
                 onRetry = { currentStep = ConnectionStep.SCANNING }
             )
         }

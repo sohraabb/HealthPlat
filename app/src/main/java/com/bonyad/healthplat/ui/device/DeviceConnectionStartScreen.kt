@@ -2,12 +2,17 @@ package com.bonyad.healthplat.ui.device
 
 import android.Manifest
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.bonyad.healthplat.R
 
@@ -29,12 +35,12 @@ import com.bonyad.healthplat.R
 fun DeviceConnectionStartScreen(
     viewModel: DeviceConnectionViewModel = hiltViewModel(),
     onStartScan: () -> Unit,
-    onSkip: (() -> Unit)? = null
+    onSkip: (() -> Unit)? = null,
+    onBack: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var permissionsGranted by remember { mutableStateOf(false) }
 
-    // Permission launcher
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -42,6 +48,10 @@ fun DeviceConnectionStartScreen(
         if (permissionsGranted) {
             onStartScan()
         }
+    }
+
+    BackHandler(enabled = onBack != null) {
+        onBack?.invoke()
     }
 
     Box(
@@ -80,6 +90,24 @@ fun DeviceConnectionStartScreen(
                             )
                         )
                 )
+                if (onBack != null) {
+                    IconButton(
+                        onClick = { onBack() },
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .background(Color.White.copy(alpha = 0.9f), CircleShape)
+                            .size(48.dp)
+                            .align(Alignment.TopStart) // Ensures correct position
+                            .zIndex(1f) // Keeps it visible above overlays
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack, // <— use ArrowBack
+                            contentDescription = "بازگشت",
+                            tint = Color(0xFF2C2C2C)
+                        )
+                    }
+                }
+
             }
 
             // Content

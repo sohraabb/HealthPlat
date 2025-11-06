@@ -1,6 +1,7 @@
 package com.bonyad.healthplat.ui.device
 
 import android.annotation.SuppressLint
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -11,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -31,7 +33,8 @@ import timber.log.Timber
 fun DeviceScanningScreen(
     viewModel: DeviceConnectionViewModel = hiltViewModel(),
     onDeviceConnected: () -> Unit,
-    onTroubleshoot: () -> Unit
+    onTroubleshoot: () -> Unit,
+    onBack: (() -> Unit)? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val scannedDevices by viewModel.scannedDevices.collectAsState()
@@ -39,6 +42,10 @@ fun DeviceScanningScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
 
+    BackHandler(enabled = onBack != null) {
+        viewModel.stopScan()
+        onBack?.invoke()
+    }
 
     LaunchedEffect(scannedDevices.size) {
         Timber.d("UI: Scanned devices count changed: ${scannedDevices.size}")
@@ -82,6 +89,30 @@ fun DeviceScanningScreen(
                     .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                // Add back button at top
+                if (onBack != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        IconButton(
+                            onClick = {
+                                viewModel.stopScan()
+                                onBack()
+                            },
+                            modifier = Modifier
+                                .background(Color.White, CircleShape)
+                                .size(48.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = "بازگشت",
+                                tint = Color(0xFF2C2C2C)
+                            )
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(40.dp))
 
                 // Animated scanning indicator

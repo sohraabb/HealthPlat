@@ -138,13 +138,19 @@ class AuthViewModel @Inject constructor(
         // In production, you might want to accept specific test codes like "12345"
         Timber.d("Mock: Verifying OTP $otp for $phoneNumber")
 
+
+        val userExists = false
+
+
         // Simulate successful verification
         // In production: authRepository.verifyOtp(phoneNumber, otp)
+
         return VerifyOtpResponse(
             success = true,
-            userId = System.currentTimeMillis(), // Generate mock user ID
+            userId = System.currentTimeMillis(),
             token = "mock_token_${System.currentTimeMillis()}",
-            message = "کد با موفقیت تایید شد"
+            message = "کد با موفقیت تایید شد",
+            isNewUser = !userExists  // Add this field
         )
 
         // To simulate error for testing:
@@ -166,7 +172,7 @@ class AuthViewModel @Inject constructor(
     }
 
     fun getFormattedPhoneNumber(): String {
-        val phone = convertPersianToEnglish(_phoneNumber.value)
+        val phone = _phoneNumber.value
         return if (phone.length == 11) {
             // Format as: 0912 345 6789
             "${phone.substring(0, 4)} ${phone.substring(4, 7)} ${phone.substring(7)}"

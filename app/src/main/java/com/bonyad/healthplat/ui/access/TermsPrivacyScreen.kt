@@ -5,9 +5,11 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,12 +34,13 @@ import com.bonyad.healthplat.R
 fun TermsAndPrivacyScreen(
     viewModel: TermsPrivacyViewModel = hiltViewModel(),
     onAccept: () -> Unit,
-    onBack: (() -> Unit)? = null
+    onBack: (() -> Unit)? = null,
+
 ) {
     val termsAccepted by viewModel.termsAccepted.collectAsState()
     val marketingAccepted by viewModel.marketingAccepted.collectAsState()
 
-    BackHandler {
+    BackHandler(enabled = onBack != null) {
         onBack?.invoke()
     }
 
@@ -48,25 +51,6 @@ fun TermsAndPrivacyScreen(
     }
 
     Scaffold(
-        topBar = {
-            if (onBack != null) {
-                TopAppBar(
-                    title = { },
-                    navigationIcon = {
-                        IconButton(onClick = { onBack() }) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "بازگشت",
-                                tint = Color(0xFF2C2C2C)
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent
-                    )
-                )
-            }
-        },
         containerColor = Color(0xFFF5F5F5)
     ) { paddingValues ->
         Box(
@@ -78,21 +62,19 @@ fun TermsAndPrivacyScreen(
                 modifier = Modifier.fillMaxSize(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Image with gradient overlay - Full width
+                // Image with gradient overlay
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(280.dp)
                 ) {
-                    // Background image
                     Image(
-                        painter = painterResource(id = R.drawable.onboarding_1), // Use your watch/shoe image
+                        painter = painterResource(id = R.drawable.onboarding_1),
                         contentDescription = "Product Image",
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )
 
-                    // Gradient overlay (darker at bottom)
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -103,12 +85,27 @@ fun TermsAndPrivacyScreen(
                                         Color(0xFFF5F5F5).copy(alpha = 0.3f),
                                         Color(0xFFF5F5F5).copy(alpha = 0.9f),
                                         Color(0xFFF5F5F5)
-                                    ),
-                                    startY = 0f,
-                                    endY = Float.POSITIVE_INFINITY
+                                    )
                                 )
                             )
                     )
+
+                    // Back button overlay
+                    if (onBack != null) {
+                        IconButton(
+                            onClick = { onBack() },
+                            modifier = Modifier
+                                .padding(16.dp)
+                                .background(Color.White.copy(alpha = 0.9f), CircleShape)
+                                .size(48.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "بازگشت",
+                                tint = Color(0xFF2C2C2C)
+                            )
+                        }
+                    }
                 }
 
                 // Content section

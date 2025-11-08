@@ -3,6 +3,7 @@ package com.yourpackage.healthplat.ui.auth
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bonyad.healthplat.data.repository.AuthRepository
+import com.bonyad.healthplat.data.repository.AuthResult
 import com.bonyad.healthplat.domain.model.AuthState
 import com.bonyad.healthplat.domain.model.SendOtpResponse
 import com.bonyad.healthplat.domain.model.VerifyOtpResponse
@@ -29,23 +30,17 @@ class AuthViewModel @Inject constructor(
     private val _otp = MutableStateFlow("")
     val otp: StateFlow<String> = _otp.asStateFlow()
 
-    private val _userId = MutableStateFlow<Long?>(null)
-    val userId: StateFlow<Long?> = _userId.asStateFlow()
+    private val _userId = MutableStateFlow<String?>(null)
+    val userId: StateFlow<String?> = _userId.asStateFlow()
 
     fun updatePhoneNumber(phone: String) {
-        // Only allow Persian/English digits
         val cleaned = phone.filter { it.isDigit() || isPersianDigit(it) }
-        if (cleaned.length <= 11) {
-            _phoneNumber.value = cleaned
-        }
+        if (cleaned.length <= 11) _phoneNumber.value = cleaned
     }
 
     fun updateOtp(code: String) {
-        // Only allow digits, max 5 characters
         val cleaned = code.filter { it.isDigit() || isPersianDigit(it) }
-        if (cleaned.length <= 5) {
-            _otp.value = cleaned
-        }
+        if (cleaned.length <= 5) _otp.value = cleaned
     }
 
     fun sendOtp() {
@@ -60,29 +55,48 @@ class AuthViewModel @Inject constructor(
             return
         }
 
+        // Check with real api
         viewModelScope.launch {
             _authState.value = AuthState.Loading
 
-            try {
-                // Mock API call - replace with real API later
-                delay(1500)
-                val response = mockSendOtp(phone)
+//            when (val result = authRepository.requestPhoneVerification(phone)) {
+//                is AuthResult.Success -> {
+//                    _authState.value = AuthState.PhoneSubmitted
+//                    Timber.i("OTP sent successfully to $phone")
+//                }
+//
+//                is AuthResult.Error -> {
+//                    _authState.value = AuthState.Error(result.message)
+//                    Timber.w("Failed to send OTP: ${result.message}")
+//                }
+//            }
+//        }
 
-                if (response.success) {
-                    _authState.value = AuthState.PhoneSubmitted
-                    Timber.i("OTP sent successfully to $phone")
-                } else {
-                    _authState.value = AuthState.Error(response.message)
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to send OTP")
-                _authState.value = AuthState.Error("خطا در ارسال کد. لطفا دوباره تلاش کنید")
+
+        try {
+            // Mock API call - replace with real API later
+            delay(1500)
+            val response = mockSendOtp(phone)
+
+            if (response.success) {
+                _authState.value = AuthState.PhoneSubmitted
+                Timber.i("OTP sent successfully to $phone")
+            } else {
+                _authState.value = AuthState.Error(response.message)
             }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to send OTP")
+            _authState.value = AuthState.Error("خطا در ارسال کد. لطفا دوباره تلاش کنید")
         }
     }
 
+
+    }
+
+
     fun verifyOtp() {
         val code = convertPersianToEnglish(_otp.value)
+
         if (code.length != 5) {
             _authState.value = AuthState.Error("کد باید ۵ رقم باشد")
             return
@@ -91,24 +105,43 @@ class AuthViewModel @Inject constructor(
         viewModelScope.launch {
             _authState.value = AuthState.Loading
 
-            try {
-                // Mock API call - replace with real API later
-                delay(1500)
-                val phone = convertPersianToEnglish(_phoneNumber.value)
-                val response = mockVerifyOtp(phone, code)
+//            val phone = convertPersianToEnglish(_phoneNumber.value)
+//
+//            when (val result = authRepository.loginByPhone(phone, code)) {
+//                is AuthResult.Success -> {
+//                    val loginData = result.data
+//                    _userId.value = loginData.userId
+//                    _authState.value = AuthState.OtpVerified
+//                    Timber.i("OTP verified successfully, userId: ${loginData.userId}")
+//                }
+//
+//                is AuthResult.Error -> {
+//                    _authState.value = AuthState.Error(result.message)
+//                    Timber.w("Failed to verify OTP: ${result.message}")
+//                }
+//            }
+//        }
 
-                if (response.success) {
-                    _userId.value = response.userId
-                    _authState.value = AuthState.OtpVerified
-                    Timber.i("OTP verified successfully, userId: ${response.userId}")
-                } else {
-                    _authState.value = AuthState.Error(response.message)
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to verify OTP")
-                _authState.value = AuthState.Error("خطا در تایید کد. لطفا دوباره تلاش کنید")
+        try {
+            // Mock API call - replace with real API later
+            delay(1500)
+            val phone = convertPersianToEnglish(_phoneNumber.value)
+            val response = mockVerifyOtp(phone, code)
+
+            if (response.success) {
+                _userId.value = response.userId.toString()
+                _authState.value = AuthState.OtpVerified
+                Timber.i("OTP verified successfully, userId: ${response.userId}")
+            } else {
+                _authState.value = AuthState.Error(response.message)
             }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to verify OTP")
+            _authState.value = AuthState.Error("خطا در تایید کد. لطفا دوباره تلاش کنید")
         }
+    }
+
+
     }
 
     fun resendOtp() {
@@ -173,11 +206,8 @@ class AuthViewModel @Inject constructor(
 
     fun getFormattedPhoneNumber(): String {
         val phone = _phoneNumber.value
-        return if (phone.length == 11) {
-            // Format as: 0912 345 6789
+        return if (phone.length == 11)
             "${phone.substring(0, 4)} ${phone.substring(4, 7)} ${phone.substring(7)}"
-        } else {
-            phone
-        }
+        else phone
     }
 }

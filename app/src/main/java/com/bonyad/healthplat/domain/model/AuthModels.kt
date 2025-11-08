@@ -1,6 +1,11 @@
 package com.bonyad.healthplat.domain.model
 
-sealed class AuthState  {
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
+// ============ Auth State ============
+
+sealed class AuthState {
     object Idle : AuthState()
     object Loading : AuthState()
     data class Error(val message: String) : AuthState()
@@ -8,7 +13,24 @@ sealed class AuthState  {
     object OtpVerified : AuthState()
 }
 
-// Mock API responses (replace with real API later)
+// ============ API Request Models ============
+
+@Serializable
+data class RequestPhoneVerificationRequest(
+    @SerialName("PhoneNumber")
+    val phoneNumber: String
+)
+
+@Serializable
+data class LoginByPhoneRequest(
+    @SerialName("PhoneNumber")
+    val phoneNumber: String,
+    @SerialName("VerificationCode")
+    val verificationCode: String
+)
+
+// ============ Legacy Models (Keep for compatibility) ============
+
 data class SendOtpRequest(val phoneNumber: String)
 data class SendOtpResponse(
     val success: Boolean,

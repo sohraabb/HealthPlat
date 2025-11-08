@@ -11,6 +11,8 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import jakarta.inject.Singleton
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
@@ -23,15 +25,30 @@ import java.util.concurrent.TimeUnit
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-    // TODO: Replace with your actual API URL
-    private const val BASE_URL = "https://your-api-url.com/api/v1/"
+    // IMPORTANT: Update this with the actual API URL http://192.168.18.165:7005/api/
+    // For emulator: use http://10.0.2.2:7005/api/
+    // For real device on same network: use your computer's IP
+    private const val BASE_URL = "http://192.168.18.165:7005/api/"
 
+
+
+    // Keep your existing provider!
     @Provides
     @Singleton
     fun provideUserPreferences(
         @ApplicationContext context: Context
     ): UserPreferencesDataStore {
         return UserPreferencesDataStore(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideJson(): Json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+        encodeDefaults = true
+        prettyPrint = false
+        coerceInputValues = true
     }
 
     @Provides
@@ -46,7 +63,6 @@ object NetworkModule {
         }
     }
 
-    /*
     @Provides
     @Singleton
     fun provideAuthInterceptor(
@@ -64,16 +80,17 @@ object NetworkModule {
             val newRequest = if (!token.isNullOrEmpty()) {
                 originalRequest.newBuilder()
                     .header("Authorization", "Bearer $token")
+                    .header("accept", "*/*")
                     .build()
             } else {
-                originalRequest
+                originalRequest.newBuilder()
+                    .header("accept", "*/*")
+                    .build()
             }
 
             chain.proceed(newRequest)
         }
     }
-
-     */
 
     @Provides
     @Singleton
@@ -92,11 +109,14 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideRetrofit(okHttpClient: OkHttpClient): Retrofit {
+    fun provideRetrofit(
+        okHttpClient: OkHttpClient,
+        json: Json
+    ): Retrofit {
         return Retrofit.Builder()
             .baseUrl(BASE_URL)
             .client(okHttpClient)
-            .addConverterFactory(Json.asConverterFactory("application/json".toMediaType()))
+            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
     }
 

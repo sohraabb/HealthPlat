@@ -3,11 +3,15 @@ package com.bonyad.healthplat.data.network
 import com.bonyad.healthplat.domain.model.ApiResponse
 import com.bonyad.healthplat.domain.model.LoginByPhoneRequest
 import com.bonyad.healthplat.domain.model.LoginResponse
+import com.bonyad.healthplat.domain.model.RegisterDeviceRequest
 import com.bonyad.healthplat.domain.model.RequestPhoneVerificationRequest
+import com.bonyad.healthplat.domain.model.UpdateDeviceRequest
 import com.bonyad.healthplat.domain.model.UpdateUserProfileRequest
+import com.bonyad.healthplat.domain.model.UserDevice
 import com.bonyad.healthplat.domain.model.UserProfile
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Headers
 import retrofit2.http.POST
@@ -64,4 +68,36 @@ interface HealthPlatApiService {
         @Path("id") userId: String,
         @Body request: UpdateUserProfileRequest
     ): Response<ApiResponse<UserProfile>>
+
+
+    // ============ Device Management APIs ============
+
+    @POST("UserDevice/Add")
+    @Headers("Content-Type: application/json; ver=1.0")
+    suspend fun registerDevice(
+        @Body request: RegisterDeviceRequest
+    ): Response<ApiResponse<UserDevice>>
+
+    @GET("UserDevice/GetByUserId/{userId}")
+    suspend fun getUserDevices(
+        @Path("userId") userId: String
+    ): Response<ApiResponse<List<UserDevice>>>
+
+    @PUT("UserDevice/Update/{id}")
+    @Headers("Content-Type: application/json; ver=1.0")
+    suspend fun updateDevice(
+        @Path("id") deviceId: Int,
+        @Body request: UpdateDeviceRequest
+    ): Response<ApiResponse<UserDevice>>
+
+    @PUT("UserDevice/Deactivate/{id}")
+    suspend fun deactivateDevice(
+        @Path("id") deviceId: Int
+    ): Response<ApiResponse<Unit>>
+
+    @DELETE("UserDevice/Delete/{id}")
+    suspend fun deleteDevice(
+        @Path("id") deviceId: Int
+    ): Response<ApiResponse<Unit>>
+
 }

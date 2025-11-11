@@ -11,6 +11,7 @@ interface HealthDeviceManager {
     val connectionState: StateFlow<ConnectionState>
     val realTimeData: Flow<RealTimeData>
     val scannedDevices: StateFlow<List<ScanDeviceInfo>>
+    val batteryLevel: StateFlow<Int?>
 
     fun startScan()
     fun stopScan()
@@ -25,7 +26,6 @@ interface HealthDeviceManager {
     fun syncDeviceTime()
 
     fun readBatteryLevel()
-    val batteryLevel: StateFlow<Int?>
 
     fun startMeasureSpo2()
 

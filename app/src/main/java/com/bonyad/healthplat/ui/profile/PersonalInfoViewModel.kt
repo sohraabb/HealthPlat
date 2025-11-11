@@ -40,23 +40,31 @@ class PersonalInfoViewModel @Inject constructor(
     private val _weight = MutableStateFlow("")
     val weight: StateFlow<String> = _weight.asStateFlow()
 
+    private val _gender = MutableStateFlow("")
+    val gender: StateFlow<String> = _gender.asStateFlow()
+
     private val _uiState = MutableStateFlow<PersonalInfoUiState>(PersonalInfoUiState.Idle)
     val uiState: StateFlow<PersonalInfoUiState> = _uiState.asStateFlow()
 
     private val _showDatePicker = MutableStateFlow(false)
     val showDatePicker: StateFlow<Boolean> = _showDatePicker.asStateFlow()
 
+    private val _showGenderPicker = MutableStateFlow(false)
+    val showGenderPicker: StateFlow<Boolean> = _showGenderPicker.asStateFlow()
+
     // Form validation
     val isFormValid: StateFlow<Boolean> = combine(
         _name,
         _birthDate,
         _height,
-        _weight
-    ) { name, birthDate, height, weight ->
+        _weight,
+        _gender
+    ) { name, birthDate, height, weight, gender ->
         name.isNotBlank() &&
                 birthDate.isNotBlank() &&
                 height.isNotBlank() && height.toIntOrNull() != null &&
-                weight.isNotBlank() && weight.toIntOrNull() != null
+                weight.isNotBlank() && weight.toIntOrNull() != null &&
+                gender.isNotBlank()
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -102,6 +110,18 @@ class PersonalInfoViewModel @Inject constructor(
         _birthDate.value = "${convertToPersianNumber(year)}/${convertToPersianNumber(month).padStart(2, '۰')}/${convertToPersianNumber(day).padStart(2, '۰')}"
     }
 
+    fun onGenderPickerClick() {
+        _showGenderPicker.value = true
+    }
+
+    fun onGenderPickerDismiss() {
+        _showGenderPicker.value = false
+    }
+
+    fun onGenderSelected(selectedGender: String) {
+        _gender.value = selectedGender
+    }
+
     fun savePersonalInfo() {
         if (!isFormValid.value) return
 
@@ -121,7 +141,8 @@ class PersonalInfoViewModel @Inject constructor(
                     name = _name.value,
                     birthDate = _birthDate.value,
                     height = heightInt,
-                    weight = weightInt
+                    weight = weightInt,
+                    gender = _gender.value
                 )
 
                 Timber.i("Personal info saved: ${_name.value}, $heightInt cm, $weightInt kg")

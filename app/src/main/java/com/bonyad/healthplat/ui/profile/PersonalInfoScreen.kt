@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -44,26 +45,24 @@ fun PersonalInfoScreen(
     val birthDate by viewModel.birthDate.collectAsState()
     val height by viewModel.height.collectAsState()
     val weight by viewModel.weight.collectAsState()
+    val gender by viewModel.gender.collectAsState()
     val isFormValid by viewModel.isFormValid.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val showDatePicker by viewModel.showDatePicker.collectAsState()
-
+    val showGenderPicker by viewModel.showGenderPicker.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Handle back press
     BackHandler(enabled = onBack != null) {
         onBack?.invoke()
     }
 
-    // Navigate on success
     LaunchedEffect(uiState) {
         if (uiState is PersonalInfoUiState.Success) {
             onComplete()
         }
     }
 
-    // Show error snackbar
     LaunchedEffect(uiState) {
         if (uiState is PersonalInfoUiState.Error) {
             snackbarHostState.showSnackbar((uiState as PersonalInfoUiState.Error).message)
@@ -113,7 +112,7 @@ fun PersonalInfoScreen(
                                 )
                         )
 
-                        // Back button
+                        // Back button - TOP LEFT
                         if (onBack != null) {
                             IconButton(
                                 onClick = { onBack() },
@@ -121,6 +120,7 @@ fun PersonalInfoScreen(
                                     .padding(16.dp)
                                     .background(Color.White.copy(alpha = 0.9f), CircleShape)
                                     .size(48.dp)
+                                    .align(Alignment.TopStart)
                             ) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -137,150 +137,188 @@ fun PersonalInfoScreen(
                             .fillMaxSize()
                             .verticalScroll(rememberScrollState())
                             .padding(horizontal = 24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Column {
+                            Spacer(modifier = Modifier.height(8.dp))
 
-                        Text(
-                            text = "اطلاعات پایه",
-                            style = MaterialTheme.typography.headlineSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 20.sp,
-                                textAlign = TextAlign.Center
-                            ),
-                            color = Color(0xFF2C2C2C),
-                            modifier = Modifier.padding(bottom = 32.dp)
-                        )
-
-                        // Name field (full width)
-                        OutlinedTextField(
-                            value = name,
-                            onValueChange = { viewModel.updateName(it) },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("نام") },
-                            placeholder = { Text("علی کمالی", color = Color(0xFFCCCCCC)) },
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color(0xFF5BA3A3),
-                                unfocusedBorderColor = Color(0xFFE0E0E0),
-                                focusedContainerColor = Color.White,
-                                unfocusedContainerColor = Color.White
-                            ),
-                            textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End)
-                        )
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        // Birth Date (full width)
-                        OutlinedTextField(
-                            value = birthDate,
-                            onValueChange = { },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { viewModel.onDatePickerClick() },
-                            label = { Text("تاریخ تولد") },
-                            placeholder = { Text("۱۳۷۹/۰۹/۰۵", color = Color(0xFFCCCCCC)) },
-                            trailingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.DateRange,
-                                    contentDescription = null,
-                                    tint = Color(0xFF5BA3A3)
-                                )
-                            },
-                            readOnly = true,
-                            enabled = false,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                disabledBorderColor = Color(0xFFE0E0E0),
-                                disabledContainerColor = Color.White,
-                                disabledLabelColor = Color(0xFF666666),
-                                disabledTextColor = Color(0xFF2C2C2C),
-                                disabledTrailingIconColor = Color(0xFF5BA3A3)
-                            ),
-                            shape = RoundedCornerShape(12.dp),
-                            textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End)
-                        )
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        // Height and Weight Row
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            // Weight (left in RTL)
-                            OutlinedTextField(
-                                value = weight,
-                                onValueChange = { viewModel.updateWeight(it) },
-                                modifier = Modifier.weight(1f),
-                                label = { Text("وزن") },
-                                placeholder = { Text("کیلو گرم", color = Color(0xFFCCCCCC)) },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                singleLine = true,
-                                shape = RoundedCornerShape(12.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = Color(0xFF5BA3A3),
-                                    unfocusedBorderColor = Color(0xFFE0E0E0),
-                                    focusedContainerColor = Color.White,
-                                    unfocusedContainerColor = Color.White
+                            Text(
+                                text = "اطلاعات پایه",
+                                style = MaterialTheme.typography.headlineSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 20.sp,
+                                    textAlign = TextAlign.Center
                                 ),
-                                textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End)
+                                color = Color(0xFF2C2C2C),
+                                modifier = Modifier.padding(bottom = 32.dp)
                             )
 
-                            // Height (right in RTL)
-                            OutlinedTextField(
-                                value = height,
-                                onValueChange = { viewModel.updateHeight(it) },
-                                modifier = Modifier.weight(1f),
-                                label = { Text("قد") },
-                                placeholder = { Text("سانتی متر", color = Color(0xFFCCCCCC)) },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                singleLine = true,
-                                shape = RoundedCornerShape(12.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = Color(0xFF5BA3A3),
-                                    unfocusedBorderColor = Color(0xFFE0E0E0),
-                                    focusedContainerColor = Color.White,
-                                    unfocusedContainerColor = Color.White
-                                ),
-                                textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(32.dp))
-
-                        // Submit Button
-                        Button(
-                            onClick = { viewModel.savePersonalInfo() },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isFormValid) Color(0xFF5BA3A3) else Color(0xFFE0E0E0),
-                                disabledContainerColor = Color(0xFFE0E0E0)
-                            ),
-                            enabled = isFormValid && uiState !is PersonalInfoUiState.Loading
-                        ) {
-                            if (uiState is PersonalInfoUiState.Loading) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(24.dp),
-                                    color = Color.White,
-                                    strokeWidth = 2.dp
-                                )
-                            } else {
-                                Text(
-                                    text = "ذخیره و ادامه",
-                                    style = MaterialTheme.typography.bodyLarge.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 16.sp
+                            // Name and Birth Date Row
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                // Birth Date (right)
+                                OutlinedTextField(
+                                    value = birthDate,
+                                    onValueChange = { },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { viewModel.onDatePickerClick() },
+                                    label = { Text("تاریخ تولد") },
+                                    placeholder = { Text("۱۳۷۹/۰۹/۰۵", color = Color(0xFFCCCCCC)) },
+                                    trailingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.DateRange,
+                                            contentDescription = null,
+                                            tint = Color(0xFF5BA3A3)
+                                        )
+                                    },
+                                    readOnly = true,
+                                    enabled = false,
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        disabledBorderColor = Color(0xFFE0E0E0),
+                                        disabledContainerColor = Color.White,
+                                        disabledLabelColor = Color(0xFF666666),
+                                        disabledTextColor = Color(0xFF2C2C2C),
+                                        disabledTrailingIconColor = Color(0xFF5BA3A3)
                                     ),
-                                    color = Color.White
+                                    shape = RoundedCornerShape(12.dp),
+                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End)
+                                )
+
+                                // Name (left)
+                                OutlinedTextField(
+                                    value = name,
+                                    onValueChange = { viewModel.updateName(it) },
+                                    modifier = Modifier.weight(1f),
+                                    label = { Text("نام") },
+                                    placeholder = { Text("علی کمالی", color = Color(0xFFCCCCCC)) },
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = Color(0xFF5BA3A3),
+                                        unfocusedBorderColor = Color(0xFFE0E0E0),
+                                        focusedContainerColor = Color.White,
+                                        unfocusedContainerColor = Color.White
+                                    ),
+                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End)
                                 )
                             }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // Height and Weight Row
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                // Weight (left in RTL)
+                                OutlinedTextField(
+                                    value = weight,
+                                    onValueChange = { viewModel.updateWeight(it) },
+                                    modifier = Modifier.weight(1f),
+                                    label = { Text("وزن") },
+                                    placeholder = { Text("کیلوگرم", color = Color(0xFFCCCCCC)) },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = Color(0xFF5BA3A3),
+                                        unfocusedBorderColor = Color(0xFFE0E0E0),
+                                        focusedContainerColor = Color.White,
+                                        unfocusedContainerColor = Color.White
+                                    ),
+                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End)
+                                )
+
+                                // Height (right in RTL)
+                                OutlinedTextField(
+                                    value = height,
+                                    onValueChange = { viewModel.updateHeight(it) },
+                                    modifier = Modifier.weight(1f),
+                                    label = { Text("قد") },
+                                    placeholder = { Text("سانتی‌متر", color = Color(0xFFCCCCCC)) },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = Color(0xFF5BA3A3),
+                                        unfocusedBorderColor = Color(0xFFE0E0E0),
+                                        focusedContainerColor = Color.White,
+                                        unfocusedContainerColor = Color.White
+                                    ),
+                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // Gender selector
+                            OutlinedTextField(
+                                value = gender,
+                                onValueChange = { },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.onGenderPickerClick() },
+                                label = { Text("جنسیت") },
+                                placeholder = { Text("انتخاب کنید", color = Color(0xFFCCCCCC)) },
+                                trailingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.KeyboardArrowDown,
+                                        contentDescription = null,
+                                        tint = Color(0xFF5BA3A3)
+                                    )
+                                },
+                                readOnly = true,
+                                enabled = false,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    disabledBorderColor = Color(0xFFE0E0E0),
+                                    disabledContainerColor = Color.White,
+                                    disabledLabelColor = Color(0xFF666666),
+                                    disabledTextColor = Color(0xFF2C2C2C),
+                                    disabledTrailingIconColor = Color(0xFF5BA3A3)
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End)
+                            )
                         }
 
-                        Spacer(modifier = Modifier.height(32.dp))
+                        // Submit Button - At bottom
+                        Column {
+                            Button(
+                                onClick = { viewModel.savePersonalInfo() },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(56.dp),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isFormValid) Color(0xFF5BA3A3) else Color(0xFFE0E0E0),
+                                    disabledContainerColor = Color(0xFFE0E0E0)
+                                ),
+                                enabled = isFormValid && uiState !is PersonalInfoUiState.Loading
+                            ) {
+                                if (uiState is PersonalInfoUiState.Loading) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(24.dp),
+                                        color = Color.White,
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Text(
+                                        text = "ذخیره و ادامه",
+                                        style = MaterialTheme.typography.bodyLarge.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 16.sp
+                                        ),
+                                        color = Color.White
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(32.dp))
+                        }
                     }
                 }
             }
@@ -294,9 +332,109 @@ fun PersonalInfoScreen(
                 }
             )
         }
+
+        if (showGenderPicker) {
+            GenderPickerBottomSheet(
+                onDismiss = { viewModel.onGenderPickerDismiss() },
+                onGenderSelected = { selectedGender ->
+                    viewModel.onGenderSelected(selectedGender)
+                }
+            )
+        }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GenderPickerBottomSheet(
+    onDismiss: () -> Unit,
+    onGenderSelected: (String) -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState()
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Color.White
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "انتخاب جنسیت",
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp
+                ),
+                color = Color(0xFF2C2C2C),
+                modifier = Modifier.padding(bottom = 24.dp)
+            )
+
+            // Male option
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        onGenderSelected("مرد")
+                        onDismiss()
+                    },
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color.White
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Text(
+                    text = "مرد",
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    color = Color(0xFF2C2C2C),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    textAlign = TextAlign.Center
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Female option
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        onGenderSelected("زن")
+                        onDismiss()
+                    },
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color.White
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Text(
+                    text = "زن",
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    color = Color(0xFF2C2C2C),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    textAlign = TextAlign.Center
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -306,8 +444,8 @@ fun PersianDatePickerBottomSheet(
 ) {
     val sheetState = rememberModalBottomSheetState()
 
-    // Set default to a reasonable birth year (e.g., 1379 = ~2000)
-    var selectedYear by remember { mutableStateOf(1379) }
+    // Start from 1370 instead of 1320
+    var selectedYear by remember { mutableStateOf(1370) }
     var selectedMonth by remember { mutableStateOf(1) }
     var selectedDay by remember { mutableStateOf(1) }
 
@@ -339,7 +477,7 @@ fun PersianDatePickerBottomSheet(
                 // Year Picker (1320-1404)
                 PersianDateColumn(
                     label = "سال",
-                    range = 1320..1404,  // Current Persian year
+                    range = 1320..1404,
                     selectedValue = selectedYear,
                     onValueChange = { selectedYear = it },
                     modifier = Modifier.weight(1f)

@@ -8,6 +8,7 @@ import com.bonyad.healthplat.domain.model.AuthState
 import com.bonyad.healthplat.domain.model.SendOtpResponse
 import com.bonyad.healthplat.domain.model.VerifyOtpResponse
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,6 +33,15 @@ class AuthViewModel @Inject constructor(
 
     private val _userId = MutableStateFlow<String?>(null)
     val userId: StateFlow<String?> = _userId.asStateFlow()
+
+    private val _resendTimer = MutableStateFlow(0)
+    val resendTimer: StateFlow<Int> = _resendTimer.asStateFlow()
+
+    private var timerJob: Job? = null
+
+    fun setPhoneNumber(phone: String) {
+        _phoneNumber.value = phone
+    }
 
     fun updatePhoneNumber(phone: String) {
         val cleaned = phone.filter { it.isDigit() || isPersianDigit(it) }
@@ -63,6 +73,7 @@ class AuthViewModel @Inject constructor(
 //                is AuthResult.Success -> {
 //                    _authState.value = AuthState.PhoneSubmitted
 //                    Timber.i("OTP sent successfully to $phone")
+//                    startResendTimer()
 //                }
 //
 //                is AuthResult.Error -> {
@@ -73,24 +84,23 @@ class AuthViewModel @Inject constructor(
 //        }
 
 
-        try {
-            // Mock API call - replace with real API later
-            delay(1500)
-            val response = mockSendOtp(phone)
+            try {
+                // Mock API call - replace with real API later
+                delay(1500)
+                val response = mockSendOtp(phone)
 
-            if (response.success) {
-                _authState.value = AuthState.PhoneSubmitted
-                Timber.i("OTP sent successfully to $phone")
-            } else {
-                _authState.value = AuthState.Error(response.message)
+                if (response.success) {
+                    _authState.value = AuthState.PhoneSubmitted
+                    Timber.i("OTP sent successfully to $phone")
+                    startResendTimer()
+                } else {
+                    _authState.value = AuthState.Error(response.message)
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to send OTP")
+                _authState.value = AuthState.Error("خطا در ارسال کد. لطفا دوباره تلاش کنید")
             }
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to send OTP")
-            _authState.value = AuthState.Error("خطا در ارسال کد. لطفا دوباره تلاش کنید")
         }
-    }
-
-
     }
 
 
@@ -122,29 +132,31 @@ class AuthViewModel @Inject constructor(
 //            }
 //        }
 
-        try {
-            // Mock API call - replace with real API later
-            delay(1500)
-            val phone = convertPersianToEnglish(_phoneNumber.value)
-            val response = mockVerifyOtp(phone, code)
+            try {
+                // Mock API call - replace with real API later
+                delay(1500)
+                val phone = convertPersianToEnglish(_phoneNumber.value)
+                val response = mockVerifyOtp(phone, code)
 
-            if (response.success) {
-                _userId.value = response.userId.toString()
-                _authState.value = AuthState.OtpVerified
-                Timber.i("OTP verified successfully, userId: ${response.userId}")
-            } else {
-                _authState.value = AuthState.Error(response.message)
+                if (response.success) {
+                    _userId.value = response.userId.toString()
+                    _authState.value = AuthState.OtpVerified
+                    Timber.i("OTP verified successfully, userId: ${response.userId}")
+                } else {
+                    _authState.value = AuthState.Error(response.message)
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to verify OTP")
+                _authState.value = AuthState.Error("خطا در تایید کد. لطفا دوباره تلاش کنید")
             }
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to verify OTP")
-            _authState.value = AuthState.Error("خطا در تایید کد. لطفا دوباره تلاش کنید")
         }
-    }
 
 
     }
 
     fun resendOtp() {
+        if (_resendTimer.value > 0) return
+
         viewModelScope.launch {
             _otp.value = ""
             _authState.value = AuthState.Idle
@@ -152,10 +164,27 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    private fun startResendTimer() {
+        timerJob?.cancel()
+        _resendTimer.value = 60
+
+        timerJob = viewModelScope.launch {
+            while (_resendTimer.value > 0) {
+                delay(1000)
+                _resendTimer.value -= 1
+            }
+        }
+    }
+
     fun resetError() {
         if (_authState.value is AuthState.Error) {
             _authState.value = AuthState.Idle
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        timerJob?.cancel()
     }
 
     // Mock API functions - replace with real API calls later

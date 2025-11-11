@@ -7,6 +7,8 @@ import com.bonlala.bonlalable.bean.ScanDeviceInfo
 import com.bonyad.healthplat.blesdk.manager.HealthDeviceManager
 import com.bonyad.healthplat.blesdk.model.ConnectionState
 import com.bonyad.healthplat.data.local.UserPreferencesDataStore
+import com.bonyad.healthplat.data.repository.AuthResult
+import com.bonyad.healthplat.data.repository.DeviceRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import jakarta.inject.Inject
 import kotlinx.coroutines.Job
@@ -29,6 +31,7 @@ sealed class DeviceConnectionUiState {
 @HiltViewModel
 class DeviceConnectionViewModel @Inject constructor(
     private val deviceManager: HealthDeviceManager,
+    private val deviceRepository: DeviceRepository,
     private val userPreferences: UserPreferencesDataStore
 ) : ViewModel() {
 
@@ -112,6 +115,57 @@ class DeviceConnectionViewModel @Inject constructor(
     @SuppressLint("MissingPermission")
     fun connectToDevice(device: ScanDeviceInfo) {
         val mac = device.bluetoothDevice?.address
+        val name = device.bluetoothDevice?.name
+
+        if (mac == null) {
+            _uiState.value = DeviceConnectionUiState.Error("آدرس دستگاه نامعتبر است")
+            return
+        }
+
+        stopScan()
+        _uiState.value = DeviceConnectionUiState.Connecting
+
+        try {
+            // Connect to device via Bluetooth
+            deviceManager.connect(mac)
+
+            // After successful BLE connection, register to backend
+            viewModelScope.launch {
+                delay(2000) // Wait for stable connection
+
+                // Get firmware version and battery from device
+                val firmwareVersion = "1.0.0" // Get from device if available
+                val batteryLevel = deviceManager.batteryLevel.value
+
+                // Register device to backend
+                when (val result = deviceRepository.registerDevice(
+                    deviceMac = mac,
+                    deviceName = name,
+                    firmwareVersion = firmwareVersion,
+                    batteryLevel = batteryLevel
+                )) {
+                    is AuthResult.Success -> {
+                        Timber.i("Device registered to backend: ${result.data.id}")
+                        _uiState.value = DeviceConnectionUiState.Connected
+                    }
+                    is AuthResult.Error -> {
+                        Timber.w("Failed to register device to backend: ${result.message}")
+                        // Still connected to BLE, just backend registration failed
+                        // You might want to retry or show a warning
+                        _uiState.value = DeviceConnectionUiState.Connected
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to connect")
+            _uiState.value = DeviceConnectionUiState.Error("خطا در اتصال به دستگاه")
+        }
+    }
+
+    /*
+    @SuppressLint("MissingPermission")
+    fun connectToDevice(device: ScanDeviceInfo) {
+        val mac = device.bluetoothDevice?.address
         if (mac == null) {
             _uiState.value = DeviceConnectionUiState.Error("آدرس دستگاه نامعتبر است")
             return
@@ -145,6 +199,8 @@ class DeviceConnectionViewModel @Inject constructor(
             _uiState.value = DeviceConnectionUiState.Error("خطا در اتصال به دستگاه")
         }
     }
+
+     */
 
     fun retryConnection() {
         _uiState.value = DeviceConnectionUiState.Idle

@@ -65,13 +65,19 @@ fun OtpVerificationScreen(
 ) {
     val authState by viewModel.authState.collectAsState()
     val otp by viewModel.otp.collectAsState()
+    val resendTimer by viewModel.resendTimer.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    val phoneNumber = phoneNumber
-    Timber.d("Phone number : $phoneNumber")
+
+    // Set the phone number in ViewModel when screen opens
+    LaunchedEffect(phoneNumber) {
+        viewModel.setPhoneNumber(phoneNumber)
+        Timber.d("Phone number set: $phoneNumber")
+    }
+
 
     // Auto-submit when 5 digits entered
     LaunchedEffect(otp) {

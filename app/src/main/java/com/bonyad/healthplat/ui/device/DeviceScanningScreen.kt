@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Search
@@ -93,7 +94,7 @@ fun DeviceScanningScreen(
                 if (onBack != null) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
+                        horizontalArrangement = Arrangement.Start
                     ) {
                         IconButton(
                             onClick = {
@@ -105,7 +106,7 @@ fun DeviceScanningScreen(
                                 .size(48.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "بازگشت",
                                 tint = Color(0xFF2C2C2C)
                             )

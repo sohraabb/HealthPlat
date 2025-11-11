@@ -195,12 +195,13 @@ class UserPreferencesDataStore @Inject constructor(
 
     // ============ Personal Info ============
 
-    suspend fun savePersonalInfo(name: String, birthDate: String, height: Int, weight: Int) {
+    suspend fun savePersonalInfo(name: String, birthDate: String, height: Int, weight: Int, gender: String) {
         dataStore.edit { preferences ->
             preferences[stringPreferencesKey("user_name")] = name
             preferences[stringPreferencesKey("user_birth_date")] = birthDate
             preferences[intPreferencesKey("user_height")] = height
             preferences[intPreferencesKey("user_weight")] = weight
+            preferences[stringPreferencesKey("user_gender")] = gender
         }
     }
 

@@ -21,12 +21,11 @@ fun DeviceConnectionScreen(
     onBack: (() -> Unit)? = null
 ) {
 
-    val navController = rememberNavController()
     var currentStep by remember { mutableStateOf(ConnectionStep.START) }
 
     BackHandler {
         when (currentStep) {
-            ConnectionStep.START -> onBack?.invoke()           // go back to previous nav screen
+            ConnectionStep.START -> onBack?.invoke()
             ConnectionStep.SCANNING -> currentStep = ConnectionStep.START
             ConnectionStep.TROUBLESHOOT -> currentStep = ConnectionStep.SCANNING
         }
@@ -38,7 +37,7 @@ fun DeviceConnectionScreen(
                 viewModel = viewModel,
                 onStartScan = { currentStep = ConnectionStep.SCANNING },
                 onSkip = onSkip,
-                onBack = { navController.popBackStack() } // also handle toolbar back
+                onBack = onBack
             )
         }
 

@@ -185,7 +185,7 @@ fun PersonalInfoScreen(
                                         disabledTrailingIconColor = Color(0xFF5BA3A3)
                                     ),
                                     shape = RoundedCornerShape(12.dp),
-                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End)
+                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End, color = Color.Black)
                                 )
 
                                 // Name (left)
@@ -203,7 +203,7 @@ fun PersonalInfoScreen(
                                         focusedContainerColor = Color.White,
                                         unfocusedContainerColor = Color.White
                                     ),
-                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End)
+                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End, color = Color.Black)
                                 )
                             }
 
@@ -230,7 +230,7 @@ fun PersonalInfoScreen(
                                         focusedContainerColor = Color.White,
                                         unfocusedContainerColor = Color.White
                                     ),
-                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End)
+                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End, color = Color.Black)
                                 )
 
                                 // Height (right in RTL)
@@ -249,7 +249,7 @@ fun PersonalInfoScreen(
                                         focusedContainerColor = Color.White,
                                         unfocusedContainerColor = Color.White
                                     ),
-                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End)
+                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End, color = Color.Black)
                                 )
                             }
 
@@ -281,7 +281,7 @@ fun PersonalInfoScreen(
                                     disabledTrailingIconColor = Color(0xFF5BA3A3)
                                 ),
                                 shape = RoundedCornerShape(12.dp),
-                                textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End)
+                                textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Start, color = Color.Black)
                             )
                         }
 

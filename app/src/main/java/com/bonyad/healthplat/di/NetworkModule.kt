@@ -19,6 +19,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
+import timber.log.Timber
 import java.util.concurrent.TimeUnit
 
 @Module
@@ -87,6 +88,9 @@ object NetworkModule {
                     .header("accept", "*/*")
                     .build()
             }
+
+            Timber.d("Request URL: ${newRequest.url}")
+            Timber.d("Authorization Header: ${newRequest.header("Authorization")}")
 
             chain.proceed(newRequest)
         }

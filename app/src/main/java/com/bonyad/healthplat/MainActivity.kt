@@ -11,7 +11,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.bonyad.healthplat.data.local.UserPreferencesDataStore
-import com.bonyad.healthplat.ui.HealthPlatEntryPoint
 import com.bonyad.healthplat.ui.navigation.HealthPlatNavGraph
 import com.bonyad.healthplat.ui.navigation.NavRoutes
 import com.bonyad.healthplat.ui.theme.HealthPlatTheme
@@ -61,7 +60,12 @@ class MainActivity : ComponentActivity() {
         return runBlocking {
             try {
                 val isOnboardingComplete = userPreferences.isOnboardingComplete().first()
+                val token = userPreferences.getAuthToken().first()
+                val refreshToken = userPreferences.getRefreshToken().first()
                 val userId = userPreferences.getUserId().first()
+
+                if (userId != null && token != null && refreshToken != null)
+                    return@runBlocking NavRoutes.PhoneAuth.route
 
                 when {
                     !isOnboardingComplete -> NavRoutes.Onboarding.route

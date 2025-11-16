@@ -4,10 +4,13 @@ import com.bonyad.healthplat.data.local.UserPreferencesDataStore
 import com.bonyad.healthplat.data.network.HealthPlatApiService
 import com.bonyad.healthplat.domain.model.LoginByPhoneRequest
 import com.bonyad.healthplat.domain.model.LoginResponse
+import com.bonyad.healthplat.domain.model.PhoneVerificationData
+import com.bonyad.healthplat.domain.model.RegisterByPhoneRequest
 import com.bonyad.healthplat.domain.model.RequestPhoneVerificationRequest
 import com.bonyad.healthplat.domain.model.SendOtpRequest
 import com.bonyad.healthplat.domain.model.VerifyOtpRequest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import javax.inject.Inject
@@ -26,14 +29,15 @@ class AuthRepository @Inject constructor(
 ) {
 
     /**
-     * Request OTP for phone number
-     * Sends verification code via SMS
+     * Step 1: Request phone verification (send OTP)
+     * Returns userId if user exists, null if new user
      */
-    suspend fun requestPhoneVerification(phoneNumber: String): AuthResult<String> {
+    suspend fun requestPhoneVerification(phoneNumber: String): AuthResult<PhoneVerificationData> {
         return withContext(Dispatchers.IO) {
             try {
                 val request = RequestPhoneVerificationRequest(
-                    phoneNumber = phoneNumber
+                    phoneNumber = phoneNumber,
+                    codeExpirationMinutes = 2
                 )
 
                 val response = apiService.requestPhoneVerification(request)
@@ -41,12 +45,10 @@ class AuthRepository @Inject constructor(
                 if (response.isSuccessful) {
                     val body = response.body()
 
-                    if (body != null && body.isSuccess) {
-                        // Success - OTP sent
-                        Timber.i("OTP sent successfully to $phoneNumber")
-                        AuthResult.Success(body.message ?: "کد با موفقیت ارسال شد")
+                    if (body != null && body.isSuccess && body.data != null) {
+                        Timber.i("OTP sent to $phoneNumber - userId: ${body.data.userId ?: "NEW USER"}")
+                        AuthResult.Success(body.data)
                     } else {
-                        // API returned error
                         val errorMessage = body?.errors?.firstOrNull()
                             ?: body?.message
                             ?: "خطا در ارسال کد"
@@ -54,7 +56,6 @@ class AuthRepository @Inject constructor(
                         AuthResult.Error(errorMessage)
                     }
                 } else {
-                    // HTTP error
                     val errorMessage = "خطای سرور: ${response.code()}"
                     Timber.e("Request OTP HTTP error: ${response.code()}")
                     AuthResult.Error(errorMessage)
@@ -67,8 +68,8 @@ class AuthRepository @Inject constructor(
     }
 
     /**
-     * Verify OTP and login
-     * Returns access token and user info
+     * Step 2a: Login (for existing users)
+     * Called when userId was returned from requestPhoneVerification
      */
     suspend fun loginByPhone(
         phoneNumber: String,
@@ -89,17 +90,12 @@ class AuthRepository @Inject constructor(
                     if (body != null && body.isSuccess && body.data != null) {
                         val loginData = body.data
 
-                        // Save tokens and user info to preferences
-                        userPreferences.saveAuthToken(loginData.accessToken)
-                        userPreferences.saveRefreshToken(loginData.refreshToken)
-                        // Convert GUID string to Long for storage (hash it)
-                        userPreferences.saveUserId(loginData.userId.hashCode().toLong())
-                        userPreferences.savePhoneNumber(phoneNumber)
+                        // Save tokens and user info
+                        saveAuthData(loginData, phoneNumber)
 
                         Timber.i("Login successful for user: ${loginData.userId}")
                         AuthResult.Success(loginData)
                     } else {
-                        // API returned error
                         val errorMessage = body?.errors?.firstOrNull()
                             ?: body?.message
                             ?: "کد تایید نامعتبر است"
@@ -107,43 +103,95 @@ class AuthRepository @Inject constructor(
                         AuthResult.Error(errorMessage)
                     }
                 } else {
-                    // HTTP error
                     val errorMessage = when (response.code()) {
                         401, 403 -> "کد تایید نامعتبر یا منقضی شده است"
-                        404 -> "سرویس یافت نشد"
-                        500 -> "خطای سرور"
-                        else -> "خطا در ورود: ${response.code()}"
+                        404 -> "کاربر یافت نشد"
+                        else -> "خطا در ورود"
                     }
                     Timber.e("Login HTTP error: ${response.code()}")
                     AuthResult.Error(errorMessage)
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Login exception")
-                AuthResult.Error("خطا در ارتباط با سرور. لطفا اتصال اینترنت خود را بررسی کنید")
+                AuthResult.Error("خطا در ارتباط با سرور")
+            }
+        }
+    }
+    /**
+     * Step 2b: Register (for new users)
+     * Called when userId was null from requestPhoneVerification
+     */
+    suspend fun registerByPhone(
+        phoneNumber: String,
+        verificationCode: String
+    ): AuthResult<LoginResponse> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val request = RegisterByPhoneRequest(
+                    phoneNumber = phoneNumber,
+                    verificationCode = verificationCode
+                )
+
+                val response = apiService.registerByPhone(request)
+
+                if (response.isSuccessful) {
+                    val body = response.body()
+
+                    if (body != null && body.isSuccess && body.data != null) {
+                        val registerData = body.data
+
+                        // Save tokens and user info
+                        saveAuthData(registerData, phoneNumber)
+
+                        Timber.i("Registration successful for user: ${registerData.userId}")
+                        AuthResult.Success(registerData)
+                    } else {
+                        val errorMessage = body?.errors?.firstOrNull()
+                            ?: body?.message
+                            ?: "خطا در ثبت‌نام"
+                        Timber.w("Registration failed: $errorMessage")
+                        AuthResult.Error(errorMessage)
+                    }
+                } else {
+                    val errorMessage = when (response.code()) {
+                        401, 403 -> "کد تایید نامعتبر یا منقضی شده است"
+                        else -> "خطا در ثبت‌نام"
+                    }
+                    Timber.e("Registration HTTP error: ${response.code()}")
+                    AuthResult.Error(errorMessage)
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Registration exception")
+                AuthResult.Error("خطا در ارتباط با سرور")
             }
         }
     }
 
     /**
+     * Save authentication data to preferences
+     */
+    private suspend fun saveAuthData(authData: LoginResponse, phoneNumber: String) {
+        userPreferences.saveAuthToken(authData.accessToken)
+        userPreferences.saveRefreshToken(authData.refreshToken)
+        // Convert UUID string to Long (use hashCode)
+        userPreferences.saveUserId(authData.userId)
+        userPreferences.savePhoneNumber(phoneNumber)
+    }
+
+    /**
      * Logout user
-     * Clears tokens and calls logout API
      */
     suspend fun logout(): AuthResult<Unit> {
         return withContext(Dispatchers.IO) {
             try {
                 // Call logout API
-                val response = apiService.logout()
+                apiService.logout()
 
                 // Clear local data regardless of API response
                 userPreferences.clearAll()
 
-                if (response.isSuccessful) {
-                    Timber.i("Logout successful")
-                    AuthResult.Success(Unit)
-                } else {
-                    Timber.w("Logout API failed but local data cleared")
-                    AuthResult.Success(Unit) // Still success since local data is cleared
-                }
+                Timber.i("Logout successful")
+                AuthResult.Success(Unit)
             } catch (e: Exception) {
                 Timber.e(e, "Logout exception")
                 // Clear local data anyway
@@ -156,19 +204,6 @@ class AuthRepository @Inject constructor(
     /**
      * Check if user is logged in
      */
-    suspend fun isLoggedIn(): Boolean {
-        return withContext(Dispatchers.IO) {
-            try {
-                val token = userPreferences.getAuthToken()
-                var hasToken = false
-                token.collect { t ->
-                    hasToken = !t.isNullOrEmpty()
-                }
-                hasToken
-            } catch (e: Exception) {
-                Timber.e(e, "Error checking login status")
-                false
-            }
-        }
-    }
+    suspend fun isLoggedIn() =
+        userPreferences.getAuthToken().first().isNullOrEmpty().not()
 }

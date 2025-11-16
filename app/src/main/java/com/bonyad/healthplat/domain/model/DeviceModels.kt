@@ -22,30 +22,6 @@ data class RegisterDeviceRequest(
 )
 
 @Serializable
-data class UserDevice(
-    @SerialName("Id")
-    val id: Int,
-    @SerialName("UserId")
-    val userId: String,
-    @SerialName("DeviceMac")
-    val deviceMac: String,
-    @SerialName("DeviceName")
-    val deviceName: String?,
-    @SerialName("DeviceType")
-    val deviceType: String,
-    @SerialName("FirmwareVersion")
-    val firmwareVersion: String?,
-    @SerialName("BatteryLevel")
-    val batteryLevel: Int?,
-    @SerialName("IsActive")
-    val isActive: Boolean,
-    @SerialName("CreatedAt")
-    val createdAt: String?,
-    @SerialName("UpdatedAt")
-    val updatedAt: String?
-)
-
-@Serializable
 data class UpdateDeviceRequest(
     @SerialName("Id")
     val id: Int,
@@ -59,6 +35,22 @@ data class UpdateDeviceRequest(
     val batteryLevel: Int? = null,
     @SerialName("IsActive")
     val isActive: Boolean? = null
+)
+
+@Serializable
+data class AddUserDeviceRequest(
+    @SerialName("UserId")
+    val userId: String,
+    @SerialName("DeviceMac")
+    val deviceMac: String,
+    @SerialName("DeviceName")
+    val deviceName: String?,
+    @SerialName("DeviceType")
+    val deviceType: String = "ring",
+    @SerialName("FirmwareVersion")
+    val firmwareVersion: String?,
+    @SerialName("IsActive")
+    val isActive: Boolean = true
 )
 
 // Legacy model

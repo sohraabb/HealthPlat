@@ -152,7 +152,7 @@ fun DeviceScanningScreen(
                         style = MaterialTheme.typography.bodyLarge.copy(
                             fontSize = 14.sp,
                             textAlign = TextAlign.Center,
-                            lineHeight = 22.sp
+                            lineHeight = 26.sp
                         ),
                         color = Color(0xFF666666),
                         modifier = Modifier.padding(bottom = 32.dp)

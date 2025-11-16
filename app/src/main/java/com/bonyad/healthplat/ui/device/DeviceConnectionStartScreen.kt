@@ -207,7 +207,7 @@ fun DeviceConnectionStartScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(36.dp))
             }
         }
     }

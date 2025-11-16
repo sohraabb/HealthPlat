@@ -153,7 +153,7 @@ fun PhoneAuthScreen(
                             focusedContainerColor = Color.White,
                             unfocusedContainerColor = Color.White
                         ),
-                        textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End)
+                        textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End, color = Color.Black)
                     )
 
                     Spacer(modifier = Modifier.weight(1f))

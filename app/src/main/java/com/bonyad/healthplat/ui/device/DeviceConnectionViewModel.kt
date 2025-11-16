@@ -31,8 +31,7 @@ sealed class DeviceConnectionUiState {
 @HiltViewModel
 class DeviceConnectionViewModel @Inject constructor(
     private val deviceManager: HealthDeviceManager,
-    private val deviceRepository: DeviceRepository,
-    private val userPreferences: UserPreferencesDataStore
+    private val deviceRepository: DeviceRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<DeviceConnectionUiState>(DeviceConnectionUiState.Idle)
@@ -63,7 +62,7 @@ class DeviceConnectionViewModel @Inject constructor(
                         _uiState.value = DeviceConnectionUiState.Connecting
                     }
                     ConnectionState.CONNECTED -> {
-                        _uiState.value = DeviceConnectionUiState.Connected
+//                        _uiState.value = DeviceConnectionUiState.Connected
                         stopScanTimer()
                     }
                 }
@@ -126,23 +125,21 @@ class DeviceConnectionViewModel @Inject constructor(
         _uiState.value = DeviceConnectionUiState.Connecting
 
         try {
-            // Connect to device via Bluetooth
+            // Step 1: Connect via Bluetooth
             deviceManager.connect(mac)
 
-            // After successful BLE connection, register to backend
+            // Step 2: After successful BLE connection, register to backend
             viewModelScope.launch {
                 delay(2000) // Wait for stable connection
 
-                // Get firmware version and battery from device
-                val firmwareVersion = "1.0.0" // Get from device if available
-                val batteryLevel = deviceManager.batteryLevel.value
+                // Get firmware version from device (if available)
+                val firmwareVersion = "1.0.0" // TODO: Get from device
 
-                // Register device to backend
-                when (val result = deviceRepository.registerDevice(
+                // Step 3: Register device to backend
+                when (val result = deviceRepository.addUserDevice(
                     deviceMac = mac,
                     deviceName = name,
-                    firmwareVersion = firmwareVersion,
-                    batteryLevel = batteryLevel
+                    firmwareVersion = firmwareVersion
                 )) {
                     is AuthResult.Success -> {
                         Timber.i("Device registered to backend: ${result.data.id}")
@@ -150,10 +147,18 @@ class DeviceConnectionViewModel @Inject constructor(
                     }
                     is AuthResult.Error -> {
                         Timber.w("Failed to register device to backend: ${result.message}")
-                        // Still connected to BLE, just backend registration failed
-                        // You might want to retry or show a warning
+                        // Still mark as connected since BLE is connected
+                        // User can continue, backend registration can be retried later
                         _uiState.value = DeviceConnectionUiState.Connected
                     }
+                }
+            }
+
+            // Timeout after 15 seconds
+            viewModelScope.launch {
+                delay(15000)
+                if (_uiState.value is DeviceConnectionUiState.Connecting) {
+                    _uiState.value = DeviceConnectionUiState.Error("اتصال ناموفق بود")
                 }
             }
         } catch (e: Exception) {

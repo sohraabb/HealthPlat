@@ -11,12 +11,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -66,6 +71,7 @@ fun OtpVerificationScreen(
     val authState by viewModel.authState.collectAsState()
     val otp by viewModel.otp.collectAsState()
     val resendTimer by viewModel.resendTimer.collectAsState()
+    val userId by viewModel.userId.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val focusManager = LocalFocusManager.current
@@ -87,11 +93,13 @@ fun OtpVerificationScreen(
         }
     }
 
-    // Navigate when verified
     LaunchedEffect(authState) {
         if (authState is AuthState.OtpVerified) {
             keyboardController?.hide()
             delay(100)
+
+            // The navigation is handled in NavGraph based on userId
+            // Just trigger the callback
             onVerified()
         }
     }
@@ -119,7 +127,7 @@ fun OtpVerificationScreen(
                     })
                 }
                 .padding(padding)
-                .imePadding()
+                .windowInsetsPadding(WindowInsets.ime.only(WindowInsetsSides.Bottom))
         ) {
             Column(
                 modifier = Modifier

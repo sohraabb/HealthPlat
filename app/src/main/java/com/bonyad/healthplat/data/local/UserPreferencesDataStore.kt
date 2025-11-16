@@ -25,7 +25,7 @@ class UserPreferencesDataStore @Inject constructor(
     private object PreferencesKeys {
         val AUTH_TOKEN = stringPreferencesKey("auth_token")
         val REFRESH_TOKEN = stringPreferencesKey("refresh_token")
-        val USER_ID = longPreferencesKey("user_id")
+        val USER_ID = stringPreferencesKey("user_id")
         val PHONE_NUMBER = stringPreferencesKey("phone_number")
         val ONBOARDING_COMPLETE = booleanPreferencesKey("onboarding_complete")
         val TERMS_ACCEPTED = booleanPreferencesKey("terms_accepted")
@@ -82,13 +82,13 @@ class UserPreferencesDataStore @Inject constructor(
 
     // ============ User ID ============
 
-    suspend fun saveUserId(userId: Long) {
+    suspend fun saveUserId(userId: String) {
         dataStore.edit { preferences ->
             preferences[PreferencesKeys.USER_ID] = userId
         }
     }
 
-    fun getUserId(): Flow<Long?> {
+    fun getUserId(): Flow<String?> {
         return dataStore.data
             .catch { exception ->
                 if (exception is IOException) {

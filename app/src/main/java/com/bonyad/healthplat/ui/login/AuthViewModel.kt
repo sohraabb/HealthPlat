@@ -1,5 +1,6 @@
 package com.yourpackage.healthplat.ui.auth
 
+import androidx.compose.ui.autofill.ContentType.Companion.Gender
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bonyad.healthplat.data.repository.AuthRepository
@@ -34,6 +35,9 @@ class AuthViewModel @Inject constructor(
     private val _userId = MutableStateFlow<String?>(null)
     val userId: StateFlow<String?> = _userId.asStateFlow()
 
+    private val _isNewUser = MutableStateFlow<Boolean?>(null)
+    val isNewUser: StateFlow<Boolean?> = _isNewUser.asStateFlow()
+
     private val _resendTimer = MutableStateFlow(0)
     val resendTimer: StateFlow<Int> = _resendTimer.asStateFlow()
 
@@ -55,6 +59,7 @@ class AuthViewModel @Inject constructor(
 
     fun sendOtp() {
         val phone = convertPersianToEnglish(_phoneNumber.value)
+
         if (phone.length != 11) {
             _authState.value = AuthState.Error("شماره تلفن باید ۱۱ رقم باشد")
             return
@@ -69,40 +74,45 @@ class AuthViewModel @Inject constructor(
         viewModelScope.launch {
             _authState.value = AuthState.Loading
 
-//            when (val result = authRepository.requestPhoneVerification(phone)) {
-//                is AuthResult.Success -> {
+            when (val result = authRepository.requestPhoneVerification(phone)) {
+                is AuthResult.Success -> {
+                    val data = result.data
+//                    Store userId (null for new users, has value for existing)
+                    _isNewUser.value = data.userId == null
+                    _userId.value = data.userId
+
+                    _authState.value = AuthState.PhoneSubmitted
+                    Timber.i("OTP sent to $phone - userId: ${data.userId ?: "NEW USER"}")
+                    // In dev/test mode, the code is returned: data.code
+                    Timber.d("OTP Code (dev mode): ${data.code}")
+                    startResendTimer()
+                }
+
+                is AuthResult.Error -> {
+                    _authState.value = AuthState.Error(result.message)
+                    Timber.w("Failed to send OTP: ${result.message}")
+                }
+            }
+
+
+//            try {
+//                // Mock API call - replace with real API later
+//                delay(1500)
+//                val response = mockSendOtp(phone)
+//
+//                if (response.success) {
 //                    _authState.value = AuthState.PhoneSubmitted
 //                    Timber.i("OTP sent successfully to $phone")
 //                    startResendTimer()
+//                } else {
+//                    _authState.value = AuthState.Error(response.message)
 //                }
-//
-//                is AuthResult.Error -> {
-//                    _authState.value = AuthState.Error(result.message)
-//                    Timber.w("Failed to send OTP: ${result.message}")
-//                }
+//            } catch (e: Exception) {
+//                Timber.e(e, "Failed to send OTP")
+//                _authState.value = AuthState.Error("خطا در ارسال کد. لطفا دوباره تلاش کنید")
 //            }
-//        }
-
-
-            try {
-                // Mock API call - replace with real API later
-                delay(1500)
-                val response = mockSendOtp(phone)
-
-                if (response.success) {
-                    _authState.value = AuthState.PhoneSubmitted
-                    Timber.i("OTP sent successfully to $phone")
-                    startResendTimer()
-                } else {
-                    _authState.value = AuthState.Error(response.message)
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to send OTP")
-                _authState.value = AuthState.Error("خطا در ارسال کد. لطفا دوباره تلاش کنید")
-            }
         }
     }
-
 
     fun verifyOtp() {
         val code = convertPersianToEnglish(_otp.value)
@@ -112,43 +122,63 @@ class AuthViewModel @Inject constructor(
             return
         }
 
+        val phone = convertPersianToEnglish(_phoneNumber.value)
+//        val isExistingUser = _userId.value != null
+        val userIsNew = _isNewUser.value ?: true
+
         viewModelScope.launch {
             _authState.value = AuthState.Loading
 
-//            val phone = convertPersianToEnglish(_phoneNumber.value)
-//
-//            when (val result = authRepository.loginByPhone(phone, code)) {
-//                is AuthResult.Success -> {
-//                    val loginData = result.data
-//                    _userId.value = loginData.userId
-//                    _authState.value = AuthState.OtpVerified
-//                    Timber.i("OTP verified successfully, userId: ${loginData.userId}")
-//                }
-//
-//                is AuthResult.Error -> {
-//                    _authState.value = AuthState.Error(result.message)
-//                    Timber.w("Failed to verify OTP: ${result.message}")
-//                }
-//            }
-//        }
+            if (!userIsNew) {
+                // EXISTING USER: Login immediately
+                when (val result = authRepository.loginByPhone(phone, code)) {
+                    is AuthResult.Success -> {
+                        val loginData = result.data
+                        _userId.value = loginData.userId
+                        _authState.value = AuthState.OtpVerified
+                        Timber.i("Existing user logged in: ${loginData.userId}")
+                    }
 
-            try {
-                // Mock API call - replace with real API later
-                delay(1500)
-                val phone = convertPersianToEnglish(_phoneNumber.value)
-                val response = mockVerifyOtp(phone, code)
-
-                if (response.success) {
-                    _userId.value = response.userId.toString()
-                    _authState.value = AuthState.OtpVerified
-                    Timber.i("OTP verified successfully, userId: ${response.userId}")
-                } else {
-                    _authState.value = AuthState.Error(response.message)
+                    is AuthResult.Error -> {
+                        _authState.value = AuthState.Error(result.message)
+                        Timber.w("Failed to login: ${result.message}")
+                    }
                 }
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to verify OTP")
-                _authState.value = AuthState.Error("خطا در تایید کد. لطفا دوباره تلاش کنید")
+            } else {
+                // NEW USER: Register and get tokens
+                when (val result = authRepository.registerByPhone(phone, code)) {
+                    is AuthResult.Success -> {
+                        val registerData = result.data
+                        _userId.value = registerData.userId
+                        _authState.value = AuthState.OtpVerified
+                        Timber.i("New user registered: ${registerData.userId}")
+                    }
+
+                    is AuthResult.Error -> {
+                        _authState.value = AuthState.Error(result.message)
+                        Timber.w("Failed to register: ${result.message}")
+                    }
+                }
             }
+
+
+//        try {
+//            // Mock API call - replace with real API later
+//            delay(1500)
+//            val phone = convertPersianToEnglish(_phoneNumber.value)
+//            val response = mockVerifyOtp(phone, code)
+//
+//            if (response.success) {
+//                _userId.value = response.userId.toString()
+//                _authState.value = AuthState.OtpVerified
+//                Timber.i("OTP verified successfully, userId: ${response.userId}")
+//            } else {
+//                _authState.value = AuthState.Error(response.message)
+//            }
+//        } catch (e: Exception) {
+//            Timber.e(e, "Failed to verify OTP")
+//            _authState.value = AuthState.Error("خطا در تایید کد. لطفا دوباره تلاش کنید")
+//        }
         }
 
 
@@ -239,4 +269,9 @@ class AuthViewModel @Inject constructor(
             "${phone.substring(0, 4)} ${phone.substring(4, 7)} ${phone.substring(7)}"
         else phone
     }
+
+    fun shouldShowDeviceConnection(): Boolean {
+        return _isNewUser.value == true
+    }
+
 }

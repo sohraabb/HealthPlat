@@ -18,7 +18,9 @@ sealed class AuthState {
 @Serializable
 data class RequestPhoneVerificationRequest(
     @SerialName("PhoneNumber")
-    val phoneNumber: String
+    val phoneNumber: String,
+    @SerialName("CodeExpirationMinutes")
+    val codeExpirationMinutes: Int = 2
 )
 
 @Serializable
@@ -28,6 +30,15 @@ data class LoginByPhoneRequest(
     @SerialName("VerificationCode")
     val verificationCode: String
 )
+
+@Serializable
+data class RegisterByPhoneRequest(
+    @SerialName("PhoneNumber")
+    val phoneNumber: String,
+    @SerialName("VerificationCode")
+    val verificationCode: String
+)
+
 
 // ============ Legacy Models (Keep for compatibility) ============
 

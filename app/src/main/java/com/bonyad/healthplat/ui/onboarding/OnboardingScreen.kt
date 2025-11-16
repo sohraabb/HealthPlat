@@ -44,7 +44,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.bonyad.healthplat.domain.model.Onboarding
 import kotlinx.coroutines.launch
 
@@ -103,8 +103,7 @@ fun OnboardingScreen(
                     .fillMaxSize()
                     .padding(horizontal = 24.dp, vertical = 32.dp)
                     .windowInsetsPadding(WindowInsets.navigationBars),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.SpaceBetween
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Spacer(modifier = Modifier.weight(1f))
 
@@ -135,52 +134,45 @@ fun OnboardingScreen(
                     )
                 }
 
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
+                HorizontalPagerIndicator(
+                    pagerState = pagerState,
+                    pageCount = viewModel.pages.size,
+                    activeColor = Color.White,
+                    inactiveColor = Color.White.copy(alpha = 0.3f),
+                    indicatorWidth = 8.dp,
+                    indicatorHeight = 8.dp,
+                    spacing = 8.dp,
+                    modifier = Modifier.padding(bottom = 24.dp)
+                )
+
+                val isLastPage = pagerState.currentPage == viewModel.pages.size - 1
+                val buttonText = if (isLastPage) "شروع" else "ادامه"
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = {
+                        scope.launch {
+                            if (isLastPage) viewModel.completeOnboarding()
+                            else pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5BA3A3))
                 ) {
-                    HorizontalPagerIndicator(
-                        pagerState = pagerState,
-                        pageCount = viewModel.pages.size,
-                        activeColor = Color.White,
-                        inactiveColor = Color.White.copy(alpha = 0.3f),
-                        indicatorWidth = 8.dp,
-                        indicatorHeight = 8.dp,
-                        spacing = 8.dp,
-                        modifier = Modifier.padding(bottom = 24.dp)
+                    Text(
+                        text = buttonText,
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        ),
+                        color = Color.White
                     )
-
-                    val isLastPage = pagerState.currentPage == viewModel.pages.size - 1
-                    val buttonText = if (isLastPage) "شروع" else "ادامه"
-
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                if (isLastPage) {
-                                    viewModel.completeOnboarding()
-                                } else {
-                                    pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                                }
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF5BA3A3)
-                        )
-                    ) {
-                        Text(
-                            text = buttonText,
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            ),
-                            color = Color.White
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
                 }
+
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }

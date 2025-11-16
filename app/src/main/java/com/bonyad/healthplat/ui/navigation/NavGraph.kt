@@ -20,6 +20,7 @@ import com.bonyad.healthplat.ui.login.PhoneAuthScreen
 import com.bonyad.healthplat.ui.onboarding.OnboardingScreen
 import com.bonyad.healthplat.ui.profile.PersonalInfoScreen
 import com.yourpackage.healthplat.ui.auth.AuthViewModel
+import timber.log.Timber
 
 @Composable
 fun HealthPlatNavGraph(
@@ -43,36 +44,41 @@ fun HealthPlatNavGraph(
         }
 
         // 2. Phone Authentication
-        composable(NavRoutes.PhoneAuth.route) {
+        composable(NavRoutes.PhoneAuth.route) { backStackEntry ->
+            // ✅ Use the current backStackEntry
+            val viewModel: AuthViewModel = hiltViewModel(backStackEntry)
+
             PhoneAuthScreen(
+                viewModel = viewModel,
                 onPhoneSubmitted = { phoneNumber ->
                     navController.navigate(NavRoutes.OtpVerification.route + "/$phoneNumber")
                 }
             )
         }
 
-        // 3. OTP Verification
+        // 3. OTP Verification - SHARED VIEWMODEL
         composable(
             route = NavRoutes.OtpVerification.route + "/{phoneNumber}",
             arguments = listOf(navArgument("phoneNumber") { type = NavType.StringType })
         ) { backStackEntry ->
             val phoneNumber = backStackEntry.arguments?.getString("phoneNumber") ?: ""
-            val viewModel: AuthViewModel = hiltViewModel()
+            val parentEntry = remember(backStackEntry) {
+                navController.getBackStackEntry(NavRoutes.PhoneAuth.route)
+            }
+            val viewModel: AuthViewModel = hiltViewModel(parentEntry)
 
             OtpVerificationScreen(
                 phoneNumber = phoneNumber,
                 viewModel = viewModel,
                 onVerified = {
-                    // Check if user is new or existing
-                    // TODO: Get this from ViewModel/API response
-                    val isNewUser = true  // Replace with actual check
-
-                    if (isNewUser) {
+                    // ✅ CORRECT: Check isNewUser flag that was set during requestPhoneVerification
+                    if (viewModel.shouldShowDeviceConnection()) {
+                        // New user -> Device Connection
                         navController.navigate(NavRoutes.DeviceConnection.route) {
                             popUpTo(NavRoutes.PhoneAuth.route) { inclusive = true }
                         }
                     } else {
-                        // Existing user - go straight to dashboard
+                        // Existing user -> Dashboard
                         navController.navigate(NavRoutes.Dashboard.route) {
                             popUpTo(0) { inclusive = true }
                         }
@@ -95,7 +101,7 @@ fun HealthPlatNavGraph(
             )
         }
 
-        // 5. Terms and Privacy (Access screens from GitHub)
+        // 5. Terms and Privacy
         composable(NavRoutes.TermsAndPrivacy.route) {
             TermsAndPrivacyScreen(
                 onAccept = {
@@ -107,10 +113,8 @@ fun HealthPlatNavGraph(
             )
         }
 
-
         // 6. Personal Information
         composable(NavRoutes.PersonalInfo.route) {
-            // TODO: Create PersonalInfoScreen
             PersonalInfoScreen(
                 onComplete = {
                     navController.navigate(NavRoutes.Dashboard.route) {

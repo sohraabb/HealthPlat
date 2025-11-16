@@ -3,6 +3,8 @@ package com.bonyad.healthplat.ui.profile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bonyad.healthplat.data.local.UserPreferencesDataStore
+import com.bonyad.healthplat.data.repository.AuthResult
+import com.bonyad.healthplat.data.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import jakarta.inject.Inject
 import kotlinx.coroutines.delay
@@ -24,8 +26,9 @@ sealed class PersonalInfoUiState {
 
 @HiltViewModel
 class PersonalInfoViewModel @Inject constructor(
+    private val userRepository: UserRepository,
     private val userPreferences: UserPreferencesDataStore
-    // TODO: Inject UserRepository when backend is ready
+
 ) : ViewModel() {
 
     private val _name = MutableStateFlow("")
@@ -107,7 +110,12 @@ class PersonalInfoViewModel @Inject constructor(
     }
 
     fun onDateSelected(year: Int, month: Int, day: Int) {
-        _birthDate.value = "${convertToPersianNumber(year)}/${convertToPersianNumber(month).padStart(2, '۰')}/${convertToPersianNumber(day).padStart(2, '۰')}"
+        _birthDate.value = "${convertToPersianNumber(year)}/${
+            convertToPersianNumber(month).padStart(
+                2,
+                '۰'
+            )
+        }/${convertToPersianNumber(day).padStart(2, '۰')}"
     }
 
     fun onGenderPickerClick() {
@@ -129,28 +137,39 @@ class PersonalInfoViewModel @Inject constructor(
             _uiState.value = PersonalInfoUiState.Loading
 
             try {
-                // Convert Persian digits to English
+                // Convert Persian to English
                 val heightInt = convertPersianToEnglish(_height.value).toInt()
                 val weightInt = convertPersianToEnglish(_weight.value).toInt()
 
-                // Mock API call - replace with real API later
-                delay(1500)
+                // Convert Persian date to ISO format
+                val birthDateIso = convertPersianDateToIso(_birthDate.value)
 
-                // Save to local preferences
-                userPreferences.savePersonalInfo(
+                // Convert gender to API format
+                val genderInt = if (_gender.value == "مرد") 1 else 2
+
+                // Call real API
+                when (val result = userRepository.updateUserInfo(
                     name = _name.value,
-                    birthDate = _birthDate.value,
+                    birthDate = birthDateIso,
+                    gender = genderInt,
                     height = heightInt,
-                    weight = weightInt,
-                    gender = _gender.value
-                )
+                    weight = weightInt
 
-                Timber.i("Personal info saved: ${_name.value}, $heightInt cm, $weightInt kg")
-                _uiState.value = PersonalInfoUiState.Success
+                )) {
+                    is AuthResult.Success -> {
+                        Timber.i("Personal info saved successfully")
+                        _uiState.value = PersonalInfoUiState.Success
+                    }
+
+                    is AuthResult.Error -> {
+                        Timber.e("Failed to save personal info: ${result.message}")
+                        _uiState.value = PersonalInfoUiState.Error(result.message)
+                    }
+                }
 
             } catch (e: Exception) {
                 Timber.e(e, "Failed to save personal info")
-                _uiState.value = PersonalInfoUiState.Error("خطا در ذخیره اطلاعات. لطفا دوباره تلاش کنید")
+                _uiState.value = PersonalInfoUiState.Error("خطا در ذخیره اطلاعات")
             }
         }
     }
@@ -177,5 +196,91 @@ class PersonalInfoViewModel @Inject constructor(
             val index = persianDigits.indexOf(char)
             if (index != -1) englishDigits[index] else char
         }.joinToString("")
+    }
+
+    /**
+     * Convert Persian date (1379/09/05) to ISO format (2000-11-25T00:00:00Z)
+     */
+    private fun convertPersianDateToIso(persianDate: String): String {
+        try {
+            // Parse Persian date
+            val dateEnglish = convertPersianToEnglish(persianDate)
+            val parts = dateEnglish.split("/")
+
+            if (parts.size != 3) {
+                throw IllegalArgumentException("Invalid date format")
+            }
+
+            val year = parts[0].toInt()
+            val month = parts[1].toInt()
+            val day = parts[2].toInt()
+
+            // Convert Jalali to Gregorian
+            val (gYear, gMonth, gDay) = jalaliToGregorian(year, month, day)
+
+            // Format as ISO
+            return String.format("%04d-%02d-%02dT00:00:00Z", gYear, gMonth, gDay)
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to convert date")
+            return "2000-01-01T00:00:00Z" // Fallback
+        }
+    }
+
+    /**
+     * Convert Jalali (Persian) calendar to Gregorian
+     */
+    private fun jalaliToGregorian(jy: Int, jm: Int, jd: Int): Triple<Int, Int, Int> {
+        var gy: Int
+        var gm: Int
+        var gd: Int
+
+        val jy2 = jy + 1595
+        var days = 365 * jy2 + (jy2 / 33 * 8 + (jy2 % 33 + 3) / 4)
+
+        if (jm < 7) {
+            days += (jm - 1) * 31
+        } else {
+            days += (jm - 7) * 30 + 186
+        }
+        days += jd
+
+        gy = 400 * (days / 146097)
+        days %= 146097
+
+        var leap = true
+        if (days >= 36525) {
+            days--
+            gy += 100 * (days / 36524)
+            days %= 36524
+            if (days >= 365) {
+                days++
+            } else {
+                leap = false
+            }
+        }
+
+        gy += 4 * (days / 1461)
+        days %= 1461
+
+        if (days >= 366) {
+            leap = false
+            days--
+            gy += days / 365
+            days %= 365
+        }
+
+        val sal_a = intArrayOf(
+            0, 31, if (leap && gy >= 0 || !leap && gy < 0) 29 else 28,
+            31, 30, 31, 30, 31, 31, 30, 31, 30, 31
+        )
+
+        gm = 0
+        while (gm < 13 && days >= sal_a[gm]) {
+            days -= sal_a[gm]
+            gm++
+        }
+        gd = days + 1
+
+        return Triple(gy, gm, gd)
     }
 }

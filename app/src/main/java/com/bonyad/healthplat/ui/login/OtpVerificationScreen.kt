@@ -1,5 +1,6 @@
 package com.bonyad.healthplat.ui.login
 
+import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -46,6 +48,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
@@ -77,13 +80,21 @@ fun OtpVerificationScreen(
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
 
+    val serverOtp by viewModel.serverOtp.collectAsState()
 
+    val context = LocalContext.current
+
+    // Change the LaunchedEffect to observe serverOtp
+    LaunchedEffect(serverOtp) {
+        if (serverOtp.isNotEmpty()) {
+            Toast.makeText(context, "Debug OTP: $serverOtp", Toast.LENGTH_LONG).show()
+        }
+    }
     // Set the phone number in ViewModel when screen opens
     LaunchedEffect(phoneNumber) {
         viewModel.setPhoneNumber(phoneNumber)
         Timber.d("Phone number set: $phoneNumber")
     }
-
 
     // Auto-submit when 5 digits entered
     LaunchedEffect(otp) {
@@ -132,13 +143,14 @@ fun OtpVerificationScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .systemBarsPadding()
                     .padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Spacer(modifier = Modifier.height(60.dp))
 
                 Image(
-                    painter = painterResource(id = R.drawable.ic_launcher_background),
+                    painter = painterResource(id = R.drawable.logo_tan),
                     contentDescription = "Logo",
                     modifier = Modifier.size(100.dp)
                 )
@@ -172,10 +184,12 @@ fun OtpVerificationScreen(
                 Text(
                     text = "کد پیامک شده",
                     style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
-                    color = Color(0xFF666666)
+                    textAlign = TextAlign.Right,
+                    color = Color(0xFF666666),
+                    modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 // OTP Input boxes
                 OtpInputField(

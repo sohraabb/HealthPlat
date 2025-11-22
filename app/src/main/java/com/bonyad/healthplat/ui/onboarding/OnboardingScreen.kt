@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
@@ -101,12 +102,12 @@ fun OnboardingScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .systemBarsPadding()
                     .padding(horizontal = 24.dp, vertical = 32.dp)
                     .windowInsetsPadding(WindowInsets.navigationBars),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Spacer(modifier = Modifier.weight(1f))
-
+                Spacer(Modifier.weight(1f))
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.padding(horizontal = 16.dp)
@@ -119,7 +120,7 @@ fun OnboardingScreen(
                             textAlign = TextAlign.Center
                         ),
                         color = Color.White,
-                        modifier = Modifier.padding(bottom = 16.dp)
+                        modifier = Modifier.padding(bottom = 64.dp)
                     )
 
                     Text(
@@ -130,9 +131,11 @@ fun OnboardingScreen(
                             lineHeight = 24.sp
                         ),
                         color = Color.White.copy(alpha = 0.9f),
-                        modifier = Modifier.padding(bottom = 32.dp)
+                        modifier = Modifier.padding(bottom = 16.dp, top = 64.dp)
                     )
                 }
+
+                Spacer(Modifier.height(8.dp))
 
                 HorizontalPagerIndicator(
                     pagerState = pagerState,
@@ -142,13 +145,14 @@ fun OnboardingScreen(
                     indicatorWidth = 8.dp,
                     indicatorHeight = 8.dp,
                     spacing = 8.dp,
-                    modifier = Modifier.padding(bottom = 24.dp)
+                    modifier = Modifier.padding(bottom = 16.dp)
                 )
 
                 val isLastPage = pagerState.currentPage == viewModel.pages.size - 1
                 val buttonText = if (isLastPage) "شروع" else "ادامه"
 
                 Spacer(modifier = Modifier.height(16.dp))
+
                 Button(
                     onClick = {
                         scope.launch {
@@ -172,7 +176,7 @@ fun OnboardingScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(24.dp))
             }
         }
     }

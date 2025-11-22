@@ -16,9 +16,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import timber.log.Timber
-
 
 sealed class DeviceConnectionUiState {
     object Idle : DeviceConnectionUiState()
@@ -52,7 +53,7 @@ class DeviceConnectionViewModel @Inject constructor(
                 when (state) {
                     ConnectionState.DISCONNECTED -> {
                         if (_uiState.value is DeviceConnectionUiState.Connecting) {
-                            _uiState.value = DeviceConnectionUiState.Error("اتصال ناموفق بود")
+                            //_uiState.value = DeviceConnectionUiState.Error("اتصال ناموفق بود")
                         }
                     }
                     ConnectionState.SCANNING -> {
@@ -121,19 +122,28 @@ class DeviceConnectionViewModel @Inject constructor(
             return
         }
 
-        stopScan()
         _uiState.value = DeviceConnectionUiState.Connecting
+        stopScan()
 
         try {
             // Step 1: Connect via Bluetooth
             deviceManager.connect(mac)
 
-            // Step 2: After successful BLE connection, register to backend
+            // Step 2: Wait for stable connection and collect device info
             viewModelScope.launch {
-                delay(2000) // Wait for stable connection
+                // Wait for connection to be established
+                deviceManager.connectionState
+                    .filter { it == ConnectionState.CONNECTED }
+                    .first()
 
-                // Get firmware version from device (if available)
-                val firmwareVersion = "1.0.0" // TODO: Get from device
+                // Wait a bit more for initialization to complete
+                //delay(3000) // ← INCREASE THIS from 2000
+
+                delay(4000)
+                // Get firmware version from device
+                val firmwareVersion = deviceManager.firmwareVersion.value ?: "Unknown"
+
+                Timber.i("Device connected, firmware: $firmwareVersion")
 
                 // Step 3: Register device to backend
                 when (val result = deviceRepository.addUserDevice(
@@ -148,15 +158,14 @@ class DeviceConnectionViewModel @Inject constructor(
                     is AuthResult.Error -> {
                         Timber.w("Failed to register device to backend: ${result.message}")
                         // Still mark as connected since BLE is connected
-                        // User can continue, backend registration can be retried later
                         _uiState.value = DeviceConnectionUiState.Connected
                     }
                 }
             }
 
-            // Timeout after 15 seconds
+            // Timeout after 30 seconds (increased from 15)
             viewModelScope.launch {
-                delay(15000)
+                delay(40000)
                 if (_uiState.value is DeviceConnectionUiState.Connecting) {
                     _uiState.value = DeviceConnectionUiState.Error("اتصال ناموفق بود")
                 }
@@ -231,7 +240,7 @@ class DeviceConnectionViewModel @Inject constructor(
         scanTimerJob?.cancel()
         scanTimerJob = viewModelScope.launch {
             while (true) {
-                delay(1000)
+                delay(2000)
                 _scanDuration.value += 1
             }
         }

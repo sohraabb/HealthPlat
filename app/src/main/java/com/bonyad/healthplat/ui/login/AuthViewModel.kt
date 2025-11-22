@@ -41,6 +41,11 @@ class AuthViewModel @Inject constructor(
     private val _resendTimer = MutableStateFlow(0)
     val resendTimer: StateFlow<Int> = _resendTimer.asStateFlow()
 
+
+    // Debugging reason
+    private val _serverOtp = MutableStateFlow("")
+    val serverOtp: StateFlow<String> = _serverOtp.asStateFlow()
+
     private var timerJob: Job? = null
 
     fun setPhoneNumber(phone: String) {
@@ -83,6 +88,11 @@ class AuthViewModel @Inject constructor(
 
                     _authState.value = AuthState.PhoneSubmitted
                     Timber.i("OTP sent to $phone - userId: ${data.userId ?: "NEW USER"}")
+
+                    data.code.let { code ->
+                        _serverOtp.value = code
+                    }
+
                     // In dev/test mode, the code is returned: data.code
                     Timber.d("OTP Code (dev mode): ${data.code}")
                     startResendTimer()
@@ -215,6 +225,10 @@ class AuthViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         timerJob?.cancel()
+    }
+
+    fun resetAuthState() {
+        _authState.value = AuthState.Idle
     }
 
     // Mock API functions - replace with real API calls later

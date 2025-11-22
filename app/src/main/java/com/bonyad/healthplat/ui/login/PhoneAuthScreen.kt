@@ -47,6 +47,7 @@ fun PhoneAuthScreen(
             keyboardController?.hide()
             delay(100)
             onPhoneSubmitted(phoneNumber)
+            viewModel.resetAuthState()
         }
     }
 
@@ -79,6 +80,7 @@ fun PhoneAuthScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
+                        .systemBarsPadding()
                         .padding(horizontal = 24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -86,7 +88,7 @@ fun PhoneAuthScreen(
 
                     // Logo/Icon
                     Image(
-                        painter = painterResource(id = R.drawable.ic_launcher_background),
+                        painter = painterResource(id = R.drawable.logo_tan),
                         contentDescription = "Logo",
                         modifier = Modifier.size(100.dp)
                     )

@@ -14,6 +14,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.bonyad.healthplat.data.local.UserPreferencesDataStore
 import com.bonyad.healthplat.ui.access.TermsAndPrivacyScreen
+import com.bonyad.healthplat.ui.dashboard.DashboardScreen
 import com.bonyad.healthplat.ui.device.DeviceConnectionScreen
 import com.bonyad.healthplat.ui.login.OtpVerificationScreen
 import com.bonyad.healthplat.ui.login.PhoneAuthScreen
@@ -130,7 +131,7 @@ fun HealthPlatNavGraph(
         // 7. Dashboard (Main App)
         composable(NavRoutes.Dashboard.route) {
             // TODO: Create DashboardScreen
-//            DashboardScreen()
+            DashboardScreen()
         }
     }
 }

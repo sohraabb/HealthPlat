@@ -8,8 +8,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -54,73 +56,55 @@ fun DeviceConnectionStartScreen(
         onBack?.invoke()
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFF5F5F5))
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally
+    Scaffold(
+        containerColor = Color(0xFFF5F5F5)
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .background(Color(0xFFF5F5F5))
         ) {
-            // Image with gradient
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(300.dp)
-            ) {
-                Image(
-                    painter = painterResource(id = R.drawable.onboarding_2), // Ring/band image
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-
-                Box(
+            // 1. Back Button (Absolute positioning at Top Left)
+            if (onBack != null) {
+                IconButton(
+                    onClick = { onBack() },
                     modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    Color(0xFFF5F5F5).copy(alpha = 0.3f),
-                                    Color(0xFFF5F5F5).copy(alpha = 0.9f),
-                                    Color(0xFFF5F5F5)
-                                )
-                            )
-                        )
-                )
-                if (onBack != null) {
-                    IconButton(
-                        onClick = { onBack() },
-                        modifier = Modifier
-                            .padding(16.dp)
-                            .background(Color.White.copy(alpha = 0.9f), CircleShape)
-                            .size(48.dp)
-                            .align(Alignment.TopStart) // Ensures correct position
-                            .zIndex(1f) // Keeps it visible above overlays
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack, // <— use ArrowBack
-                            contentDescription = "بازگشت",
-                            tint = Color(0xFF2C2C2C)
-                        )
-                    }
+                        .align(Alignment.TopStart)
+                        // IMPORTANT: Adds padding for status bar (clock/battery)
+                        .statusBarsPadding()
+                        // Fixed padding to match Figma (not too close to edge)
+                        .padding(start = 24.dp, top = 16.dp)
+                        .size(48.dp)
+                ) {
+                    Icon(
+                        // FIX: Using your custom drawable
+                        painter = painterResource(id = R.drawable.back_arrow),
+                        contentDescription = "بازگشت",
+                        tint = Color(0xFF2C2C2C)
+                    )
                 }
-
             }
 
-            // Content
+            // 2. Main Content Column
+
+            val scrollState = rememberScrollState()
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 24.dp),
+                    .padding(horizontal = 24.dp)
+                    .verticalScroll(scrollState)
+                    // Ensures content doesn't overlap with system bars at bottom
+                    .systemBarsPadding(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Spacer(modifier = Modifier.height(16.dp))
 
+                // Push text down slightly so it's not behind the back button
+                Spacer(modifier = Modifier.height(80.dp))
+
+                // --- TEXT SECTION ---
                 Text(
-                    text = "دستگاه خود را متصل کنید",
+                    text = "حلقه خود را متصل کنید",
                     style = MaterialTheme.typography.headlineSmall.copy(
                         fontWeight = FontWeight.Bold,
                         fontSize = 24.sp,
@@ -137,16 +121,27 @@ fun DeviceConnectionStartScreen(
                         textAlign = TextAlign.Center,
                         lineHeight = 24.sp
                     ),
-                    color = Color(0xFF666666),
-                    modifier = Modifier.padding(bottom = 48.dp)
+                    color = Color(0xFF666666)
+                )
+
+                // --- IMAGE SECTION (CENTERED) ---
+                // Using weights to center the image between text and buttons
+                Spacer(modifier = Modifier.weight(1f))
+
+                Image(
+                    painter = painterResource(id = R.drawable.ring_img),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxWidth(1f) // Adjust size (60% of screen width)
+                        .aspectRatio(1f),   // Keep it square
+                    contentScale = ContentScale.Fit
                 )
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                // Start button
+                // --- BUTTONS SECTION ---
                 Button(
                     onClick = {
-                        // Request permissions first
                         val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                             arrayOf(
                                 Manifest.permission.BLUETOOTH_SCAN,
@@ -182,7 +177,6 @@ fun DeviceConnectionStartScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Manual input button (outlined)
                 OutlinedButton(
                     onClick = { onSkip?.invoke() },
                     modifier = Modifier
@@ -207,6 +201,7 @@ fun DeviceConnectionStartScreen(
                     )
                 }
 
+                // Bottom padding
                 Spacer(modifier = Modifier.height(36.dp))
             }
         }

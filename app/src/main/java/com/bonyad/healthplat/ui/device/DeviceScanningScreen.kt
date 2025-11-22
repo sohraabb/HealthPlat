@@ -22,12 +22,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.bonlala.bonlalable.bean.ScanDeviceInfo
+import com.bonyad.healthplat.R
 import timber.log.Timber
 
 @Composable
@@ -84,36 +86,33 @@ fun DeviceScanningScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+
+            if (onBack != null) {
+                IconButton(
+                    onClick = { onBack() },
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        // IMPORTANT: Adds padding for status bar (clock/battery)
+                        .statusBarsPadding()
+                        // Fixed padding to match Figma (not too close to edge)
+                        .padding(start = 24.dp, top = 16.dp)
+                        .size(48.dp)
+                ) {
+                    Icon(
+                        // FIX: Using your custom drawable
+                        painter = painterResource(id = R.drawable.back_arrow),
+                        contentDescription = "بازگشت",
+                        tint = Color(0xFF2C2C2C)
+                    )
+                }
+            }
+
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Add back button at top
-                if (onBack != null) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Start
-                    ) {
-                        IconButton(
-                            onClick = {
-                                viewModel.stopScan()
-                                onBack()
-                            },
-                            modifier = Modifier
-                                .background(Color.White, CircleShape)
-                                .size(48.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "بازگشت",
-                                tint = Color(0xFF2C2C2C)
-                            )
-                        }
-                    }
-                }
-
                 Spacer(modifier = Modifier.height(40.dp))
 
                 // Animated scanning indicator
@@ -128,9 +127,9 @@ fun DeviceScanningScreen(
                 // Title
                 Text(
                     text = when (uiState) {
-                        is DeviceConnectionUiState.Scanning -> "جستجو برای دستگاه شما"
-                        is DeviceConnectionUiState.Connecting -> "در حال اتصال..."
-                        else -> "جستجو برای دستگاه شما"
+                        is DeviceConnectionUiState.Scanning -> "جستجو برای حلقه شما"
+                        is DeviceConnectionUiState.Connecting -> "در حال اتصال ..."
+                        else -> "جستجو برای حلقه شما"
                     },
                     style = MaterialTheme.typography.headlineSmall.copy(
                         fontWeight = FontWeight.Bold,
@@ -152,7 +151,7 @@ fun DeviceScanningScreen(
                         style = MaterialTheme.typography.bodyLarge.copy(
                             fontSize = 14.sp,
                             textAlign = TextAlign.Center,
-                            lineHeight = 26.sp
+                            lineHeight = 26.sp,
                         ),
                         color = Color(0xFF666666),
                         modifier = Modifier.padding(bottom = 32.dp)
@@ -284,7 +283,6 @@ fun DeviceListItem(
     val deviceAddress = remember(device) {
         device.bluetoothDevice?.address ?: "Unknown"
     }
-
 
     Card(
         modifier = Modifier

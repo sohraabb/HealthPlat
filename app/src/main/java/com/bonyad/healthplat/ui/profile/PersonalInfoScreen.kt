@@ -91,7 +91,7 @@ fun PersonalInfoScreen(
                             .height(280.dp)
                     ) {
                         Image(
-                            painter = painterResource(id = R.drawable.onboarding_3),
+                            painter = painterResource(id = R.drawable.personal_ring_img),
                             contentDescription = null,
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop
@@ -117,13 +117,13 @@ fun PersonalInfoScreen(
                             IconButton(
                                 onClick = { onBack() },
                                 modifier = Modifier
-                                    .padding(16.dp)
-                                    .background(Color.White.copy(alpha = 0.9f), CircleShape)
+                                    .align(Alignment.TopEnd)
+                                    .statusBarsPadding()
+                                    .padding(end = 24.dp, top = 16.dp)
                                     .size(48.dp)
-                                    .align(Alignment.TopStart)
                             ) {
                                 Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    painter = painterResource(id = R.drawable.back_arrow),
                                     contentDescription = "بازگشت",
                                     tint = Color(0xFF2C2C2C)
                                 )
@@ -160,6 +160,25 @@ fun PersonalInfoScreen(
                                 horizontalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
                                 // Birth Date (right)
+
+
+                                // Name (left)
+                                OutlinedTextField(
+                                    value = name,
+                                    onValueChange = { viewModel.updateName(it) },
+                                    modifier = Modifier.weight(1f),
+                                    label = { Text("نام") },
+                                    placeholder = { Text("علی کمالی", color = Color(0xFFCCCCCC)) },
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = Color(0xFF5BA3A3),
+                                        unfocusedBorderColor = Color(0xFFE0E0E0),
+                                        focusedContainerColor = Color.White,
+                                        unfocusedContainerColor = Color.White
+                                    ),
+                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Start, color = Color.Black)
+                                )
                                 OutlinedTextField(
                                     value = birthDate,
                                     onValueChange = { },
@@ -185,25 +204,7 @@ fun PersonalInfoScreen(
                                         disabledTrailingIconColor = Color(0xFF5BA3A3)
                                     ),
                                     shape = RoundedCornerShape(12.dp),
-                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End, color = Color.Black)
-                                )
-
-                                // Name (left)
-                                OutlinedTextField(
-                                    value = name,
-                                    onValueChange = { viewModel.updateName(it) },
-                                    modifier = Modifier.weight(1f),
-                                    label = { Text("نام") },
-                                    placeholder = { Text("علی کمالی", color = Color(0xFFCCCCCC)) },
-                                    singleLine = true,
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = Color(0xFF5BA3A3),
-                                        unfocusedBorderColor = Color(0xFFE0E0E0),
-                                        focusedContainerColor = Color.White,
-                                        unfocusedContainerColor = Color.White
-                                    ),
-                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End, color = Color.Black)
+                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Start, color = Color.Black)
                                 )
                             }
 
@@ -214,24 +215,6 @@ fun PersonalInfoScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
-                                // Weight (left in RTL)
-                                OutlinedTextField(
-                                    value = weight,
-                                    onValueChange = { viewModel.updateWeight(it) },
-                                    modifier = Modifier.weight(1f),
-                                    label = { Text("وزن") },
-                                    placeholder = { Text("کیلوگرم", color = Color(0xFFCCCCCC)) },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                    singleLine = true,
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = Color(0xFF5BA3A3),
-                                        unfocusedBorderColor = Color(0xFFE0E0E0),
-                                        focusedContainerColor = Color.White,
-                                        unfocusedContainerColor = Color.White
-                                    ),
-                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End, color = Color.Black)
-                                )
 
                                 // Height (right in RTL)
                                 OutlinedTextField(
@@ -249,40 +232,74 @@ fun PersonalInfoScreen(
                                         focusedContainerColor = Color.White,
                                         unfocusedContainerColor = Color.White
                                     ),
-                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End, color = Color.Black)
+                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Start, color = Color.Black)
+                                )
+
+                                // Weight (left in RTL)
+                                OutlinedTextField(
+                                    value = weight,
+                                    onValueChange = { viewModel.updateWeight(it) },
+                                    modifier = Modifier.weight(1f),
+                                    label = { Text("وزن") },
+                                    placeholder = { Text("کیلوگرم", color = Color(0xFFCCCCCC)) },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = Color(0xFF5BA3A3),
+                                        unfocusedBorderColor = Color(0xFFE0E0E0),
+                                        focusedContainerColor = Color.White,
+                                        unfocusedContainerColor = Color.White
+                                    ),
+                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Start, color = Color.Black)
                                 )
                             }
 
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            // Gender selector
-                            OutlinedTextField(
-                                value = gender,
-                                onValueChange = { },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { viewModel.onGenderPickerClick() },
-                                label = { Text("جنسیت") },
-                                placeholder = { Text("انتخاب کنید", color = Color(0xFFCCCCCC)) },
-                                trailingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Default.KeyboardArrowDown,
-                                        contentDescription = null,
-                                        tint = Color(0xFF5BA3A3)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                // Gender selector
+                                OutlinedTextField(
+                                    value = gender,
+                                    onValueChange = { },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { viewModel.onGenderPickerClick() },
+                                    label = { Text("جنسیت") },
+                                    placeholder = {
+                                        Text(
+                                            "انتخاب کنید",
+                                            color = Color(0xFFCCCCCC)
+                                        )
+                                    },
+                                    trailingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.KeyboardArrowDown,
+                                            contentDescription = null,
+                                            tint = Color(0xFF5BA3A3)
+                                        )
+                                    },
+                                    readOnly = true,
+                                    enabled = false,
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        disabledBorderColor = Color(0xFFE0E0E0),
+                                        disabledContainerColor = Color.White,
+                                        disabledLabelColor = Color(0xFF666666),
+                                        disabledTextColor = Color(0xFF2C2C2C),
+                                        disabledTrailingIconColor = Color(0xFF5BA3A3)
+                                    ),
+                                    shape = RoundedCornerShape(12.dp),
+                                    textStyle = LocalTextStyle.current.copy(
+                                        textAlign = TextAlign.Start,
+                                        color = Color.Black
                                     )
-                                },
-                                readOnly = true,
-                                enabled = false,
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    disabledBorderColor = Color(0xFFE0E0E0),
-                                    disabledContainerColor = Color.White,
-                                    disabledLabelColor = Color(0xFF666666),
-                                    disabledTextColor = Color(0xFF2C2C2C),
-                                    disabledTrailingIconColor = Color(0xFF5BA3A3)
-                                ),
-                                shape = RoundedCornerShape(12.dp),
-                                textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Start, color = Color.Black)
-                            )
+                                )
+
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
                         }
 
                         // Submit Button - At bottom

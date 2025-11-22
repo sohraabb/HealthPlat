@@ -5,8 +5,10 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -58,8 +60,12 @@ fun TermsAndPrivacyScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            val scrollState = rememberScrollState()
+
             Column(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize()
+                    .verticalScroll(scrollState),
+
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // Image with gradient overlay
@@ -69,7 +75,7 @@ fun TermsAndPrivacyScreen(
                         .height(280.dp)
                 ) {
                     Image(
-                        painter = painterResource(id = R.drawable.onboarding_1),
+                        painter = painterResource(id = R.drawable.terms_ring_img),
                         contentDescription = "Product Image",
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
@@ -90,17 +96,18 @@ fun TermsAndPrivacyScreen(
                             )
                     )
 
-                    // Back button overlay
                     if (onBack != null) {
                         IconButton(
                             onClick = { onBack() },
                             modifier = Modifier
-                                .padding(16.dp)
-                                .background(Color.White.copy(alpha = 0.9f), CircleShape)
+                                .align(Alignment.TopStart)
+                                .statusBarsPadding()
+                                .padding(start = 24.dp, top = 16.dp)
                                 .size(48.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                // FIX: Using your custom drawable
+                                painter = painterResource(id = R.drawable.back_arrow),
                                 contentDescription = "بازگشت",
                                 tint = Color(0xFF2C2C2C)
                             )

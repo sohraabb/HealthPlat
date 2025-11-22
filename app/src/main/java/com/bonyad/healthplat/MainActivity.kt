@@ -20,7 +20,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import timber.log.Timber
 
-
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
@@ -65,7 +64,7 @@ class MainActivity : ComponentActivity() {
                 val userId = userPreferences.getUserId().first()
 
                 if (userId != null && token != null && refreshToken != null)
-                    return@runBlocking NavRoutes.PhoneAuth.route
+                    return@runBlocking NavRoutes.Dashboard.route
 
                 when {
                     !isOnboardingComplete -> NavRoutes.Onboarding.route

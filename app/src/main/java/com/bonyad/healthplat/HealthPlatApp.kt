@@ -13,6 +13,7 @@ class HealthPlatApp: Application() {
     override fun onCreate() {
         super.onCreate()
 
+//        if (BuildConfig.DEBUG)
         Timber.plant(Timber.DebugTree())
 
         // Initialize Ring SDK

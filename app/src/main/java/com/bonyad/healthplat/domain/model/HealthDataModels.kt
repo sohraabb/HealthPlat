@@ -1,5 +1,12 @@
 package com.bonyad.healthplat.domain.model
 
+import com.bonlala.bonlalable.bean.RecordHeartRateBean
+import com.bonlala.bonlalable.bean.RecordHrvBean
+import com.bonlala.bonlalable.bean.RecordSleepBean
+import com.bonlala.bonlalable.bean.RecordSpo2Bean
+import com.bonlala.bonlalable.bean.RecordStepBean
+import com.bonlala.bonlalable.bean.RecordStressBean
+
 data class SyncHealthDataRequest(
     val date: String,
     val heartRateData: List<Int>? = null,
@@ -38,3 +45,16 @@ data class RealtimeData(
     val steps: Int,
     val timestamp: Long
 )
+
+sealed class RecordDataResult {
+    data class Success(
+        val heartRate: RecordHeartRateBean?,
+        val steps: RecordStepBean?,
+        val sleep: RecordSleepBean?,
+        val stress: RecordStressBean?,
+        val spo2: RecordSpo2Bean?,
+        val hrv: RecordHrvBean?
+    ) : RecordDataResult()
+
+    data class Error(val code: Int) : RecordDataResult()
+}

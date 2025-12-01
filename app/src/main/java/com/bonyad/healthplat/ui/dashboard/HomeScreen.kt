@@ -106,7 +106,8 @@ fun HomeScreen(
                 // 1. New Main Health Status Card
                 NewHealthStatusCard(
                     score = 87, // Mock score
-                    insights = insights
+                    insights = insights,
+                    viewModel = viewModel
                 )
 
                 // 2. 2x2 Grid of Cards (Manually constructed with Rows)
@@ -151,7 +152,8 @@ fun HomeScreen(
 @Composable
 fun NewHealthStatusCard(
     score: Int,
-    insights: List<String>
+    insights: List<String>,
+    viewModel: DashboardViewModel
 ) {
     Card(
         modifier = Modifier
@@ -228,7 +230,7 @@ fun NewHealthStatusCard(
             Spacer(modifier = Modifier.height(20.dp))
 
             Button(
-                onClick = { /* TODO: AI Analysis */ },
+                onClick = { viewModel.connectDevice() },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp),

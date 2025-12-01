@@ -79,6 +79,7 @@ class AuthViewModel @Inject constructor(
         viewModelScope.launch {
             _authState.value = AuthState.Loading
 
+
             when (val result = authRepository.requestPhoneVerification(phone)) {
                 is AuthResult.Success -> {
                     val data = result.data
@@ -105,22 +106,25 @@ class AuthViewModel @Inject constructor(
             }
 
 
-//            try {
-//                // Mock API call - replace with real API later
-//                delay(1500)
-//                val response = mockSendOtp(phone)
-//
-//                if (response.success) {
-//                    _authState.value = AuthState.PhoneSubmitted
-//                    Timber.i("OTP sent successfully to $phone")
-//                    startResendTimer()
-//                } else {
-//                    _authState.value = AuthState.Error(response.message)
-//                }
-//            } catch (e: Exception) {
-//                Timber.e(e, "Failed to send OTP")
-//                _authState.value = AuthState.Error("خطا در ارسال کد. لطفا دوباره تلاش کنید")
-//            }
+            /*
+            try {
+                // Mock API call - replace with real API later
+                delay(1500)
+                val response = mockSendOtp(phone)
+
+                if (response.success) {
+                    _authState.value = AuthState.PhoneSubmitted
+                    Timber.i("OTP sent successfully to $phone")
+                    startResendTimer()
+                } else {
+                    _authState.value = AuthState.Error(response.message)
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to send OTP")
+                _authState.value = AuthState.Error("خطا در ارسال کد. لطفا دوباره تلاش کنید")
+            }
+
+             */
         }
     }
 
@@ -134,6 +138,8 @@ class AuthViewModel @Inject constructor(
 
         val phone = convertPersianToEnglish(_phoneNumber.value)
 //        val isExistingUser = _userId.value != null
+
+
         val userIsNew = _isNewUser.value ?: true
 
         viewModelScope.launch {
@@ -172,23 +178,26 @@ class AuthViewModel @Inject constructor(
             }
 
 
-//        try {
-//            // Mock API call - replace with real API later
-//            delay(1500)
-//            val phone = convertPersianToEnglish(_phoneNumber.value)
-//            val response = mockVerifyOtp(phone, code)
-//
-//            if (response.success) {
-//                _userId.value = response.userId.toString()
-//                _authState.value = AuthState.OtpVerified
-//                Timber.i("OTP verified successfully, userId: ${response.userId}")
-//            } else {
-//                _authState.value = AuthState.Error(response.message)
-//            }
-//        } catch (e: Exception) {
-//            Timber.e(e, "Failed to verify OTP")
-//            _authState.value = AuthState.Error("خطا در تایید کد. لطفا دوباره تلاش کنید")
-//        }
+            /*
+            try {
+                // Mock API call - replace with real API later
+                delay(1500)
+                val phone = convertPersianToEnglish(_phoneNumber.value)
+                val response = mockVerifyOtp(phone, code)
+
+                if (response.success) {
+                    _userId.value = response.userId.toString()
+                    _authState.value = AuthState.OtpVerified
+                    Timber.i("OTP verified successfully, userId: ${response.userId}")
+                } else {
+                    _authState.value = AuthState.Error(response.message)
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to verify OTP")
+                _authState.value = AuthState.Error("خطا در تایید کد. لطفا دوباره تلاش کنید")
+            }
+
+             */
         }
 
 
@@ -243,7 +252,6 @@ class AuthViewModel @Inject constructor(
         // For testing: accept any 5-digit OTP
         // In production, you might want to accept specific test codes like "12345"
         Timber.d("Mock: Verifying OTP $otp for $phoneNumber")
-
 
         val userExists = false
 

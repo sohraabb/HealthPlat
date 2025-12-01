@@ -5,6 +5,8 @@ import com.bonyad.healthplat.data.network.HealthPlatApiService
 import com.bonyad.healthplat.domain.model.LoginByPhoneRequest
 import com.bonyad.healthplat.domain.model.LoginResponse
 import com.bonyad.healthplat.domain.model.PhoneVerificationData
+import com.bonyad.healthplat.domain.model.RefreshTokenRequest
+import com.bonyad.healthplat.domain.model.RefreshTokenResponse
 import com.bonyad.healthplat.domain.model.RegisterByPhoneRequest
 import com.bonyad.healthplat.domain.model.RequestPhoneVerificationRequest
 import com.bonyad.healthplat.domain.model.SendOtpRequest
@@ -176,6 +178,81 @@ class AuthRepository @Inject constructor(
         // Convert UUID string to Long (use hashCode)
         userPreferences.saveUserId(authData.userId)
         userPreferences.savePhoneNumber(phoneNumber)
+    }
+
+
+    /**
+     * Refresh access token using refresh token
+     */
+    suspend fun refreshToken(): AuthResult<RefreshTokenResponse> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val currentAccessToken = userPreferences.getAuthToken().first()
+                val currentRefreshToken = userPreferences.getRefreshToken().first()
+
+                if (currentAccessToken.isNullOrEmpty() || currentRefreshToken.isNullOrEmpty()) {
+                    Timber.w("No tokens available for refresh")
+                    return@withContext AuthResult.Error("لطفا دوباره وارد شوید")
+                }
+
+                val request = RefreshTokenRequest(
+                    accessToken = currentAccessToken,
+                    refreshToken = currentRefreshToken
+                )
+
+                Timber.d("🔄 Attempting to refresh token...")
+                val response = apiService.refreshToken(request)
+
+                if (response.isSuccessful) {
+                    val body = response.body()
+                    if (body != null && body.isSuccess && body.data != null) {
+                        val refreshData = body.data
+
+                        // Save new tokens
+                        userPreferences.saveAuthToken(refreshData.accessToken)
+                        userPreferences.saveRefreshToken(refreshData.refreshToken)
+
+                        Timber.i("✅ Token refreshed successfully")
+                        logTokenExpiration(refreshData.accessToken)
+
+                        AuthResult.Success(refreshData)
+                    } else {
+                        val errorMessage = body?.errors?.firstOrNull()
+                            ?: body?.message
+                            ?: "خطا در بازنشانی توکن"
+                        Timber.w("Token refresh failed: $errorMessage")
+                        AuthResult.Error(errorMessage)
+                    }
+                } else {
+                    val errorMessage = when (response.code()) {
+                        401, 403 -> "نشست شما منقضی شده است. لطفا دوباره وارد شوید"
+                        else -> "خطا در بازنشانی توکن"
+                    }
+                    Timber.e("Token refresh HTTP error: ${response.code()}")
+                    AuthResult.Error(errorMessage)
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Token refresh exception")
+                AuthResult.Error("خطا در ارتباط با سرور")
+            }
+        }
+    }
+
+    private fun logTokenExpiration(token: String) {
+        try {
+            val parts = token.split(".")
+            val payload = String(
+                android.util.Base64.decode(parts[1], android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP)
+            )
+            val json = org.json.JSONObject(payload)
+            val exp = json.getLong("exp")
+            val now = System.currentTimeMillis() / 1000
+            val minutesUntilExpiry = (exp - now) / 60.0
+
+            Timber.d("⏰ New token expires in: %.1f minutes", minutesUntilExpiry)
+        } catch (e: Exception) {
+            Timber.w("Could not parse token expiration")
+        }
     }
 
     /**

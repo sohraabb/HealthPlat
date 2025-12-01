@@ -56,6 +56,20 @@ data class LoginResponse(
     val expDate: String
 )
 
+@Serializable
+data class RefreshTokenResponse(
+    @SerialName("RequiresTwoFactor")
+    val requiresTwoFactor: Boolean = false,
+    @SerialName("UserId")
+    val userId: String? = null,
+    @SerialName("AccessToken")
+    val accessToken: String,
+    @SerialName("RefreshToken")
+    val refreshToken: String,
+    @SerialName("ExpDate")
+    val expDate: String? = null
+)
+
 // ============ User Response Models ============
 
 @Serializable
@@ -124,4 +138,14 @@ data class UserDeviceData(
     val isActive: Boolean,
     @SerialName("CreatedDate")
     val createdDate: String
+)
+
+    // ============ Metrics Response Models ============
+
+@Serializable
+data class MetricResponse(
+    @SerialName("Data") val data: MetricData?,
+    @SerialName("IsSuccess") val isSuccess: Boolean,
+    @SerialName("Message") val message: String?,
+    @SerialName("Errors") val errors: List<String> = emptyList()
 )

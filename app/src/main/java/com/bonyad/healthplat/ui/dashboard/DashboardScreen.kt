@@ -29,6 +29,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.bonyad.healthplat.R
+import com.bonyad.healthplat.ui.dashboard.calory.CaloryScreen
 import com.bonyad.healthplat.ui.dashboard.care.CareScreen
 import com.bonyad.healthplat.ui.dashboard.profile.ProfileScreenDashboard
 
@@ -69,7 +70,7 @@ fun DashboardScreen(
             }
 
             composable(DashboardScreen.Calory.route) {
-                CaloryScreen()
+                CaloryScreenDashboard()
             }
 
             composable(DashboardScreen.Profile.route) {
@@ -137,13 +138,8 @@ fun CareScreenDashboard() {
 }
 
 @Composable
-fun CaloryScreen() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = androidx.compose.ui.Alignment.Center
-    ) {
-        Text("Health Screen - Coming Soon")
-    }
+fun CaloryScreenDashboard() {
+    CaloryScreen()
 }
 
 @Composable

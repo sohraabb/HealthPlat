@@ -6,6 +6,7 @@ import com.bonyad.healthplat.blesdk.model.ConnectionState
 import com.bonyad.healthplat.blesdk.model.RealTimeData
 import com.bonyad.healthplat.domain.model.RecordDataResult
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.util.UUID
 
@@ -15,6 +16,7 @@ interface HealthDeviceManager {
     val scannedDevices: StateFlow<List<ScanDeviceInfo>>
     val batteryLevel: StateFlow<Int?>
     val firmwareVersion: StateFlow<String?>
+    val initializationComplete: SharedFlow<Unit>
 
     fun startScan()
     fun stopScan()

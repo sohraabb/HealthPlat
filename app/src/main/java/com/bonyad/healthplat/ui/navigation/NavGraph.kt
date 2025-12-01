@@ -1,10 +1,7 @@
 package com.bonyad.healthplat.ui.navigation
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -12,7 +9,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.bonyad.healthplat.data.local.UserPreferencesDataStore
 import com.bonyad.healthplat.ui.access.TermsAndPrivacyScreen
 import com.bonyad.healthplat.ui.dashboard.DashboardScreen
 import com.bonyad.healthplat.ui.device.DeviceConnectionScreen
@@ -21,7 +17,6 @@ import com.bonyad.healthplat.ui.login.PhoneAuthScreen
 import com.bonyad.healthplat.ui.onboarding.OnboardingScreen
 import com.bonyad.healthplat.ui.profile.PersonalInfoScreen
 import com.yourpackage.healthplat.ui.auth.AuthViewModel
-import timber.log.Timber
 
 @Composable
 fun HealthPlatNavGraph(

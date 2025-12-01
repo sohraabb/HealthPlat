@@ -103,7 +103,7 @@ fun OnboardingScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .systemBarsPadding()
-                    .padding(horizontal = 24.dp, vertical = 32.dp)
+                    .padding(horizontal = 24.dp, vertical = 16.dp)
                     .windowInsetsPadding(WindowInsets.navigationBars),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -176,7 +176,7 @@ fun OnboardingScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(8.dp))
             }
         }
     }

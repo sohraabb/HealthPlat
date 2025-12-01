@@ -3,6 +3,7 @@ package com.bonyad.healthplat.di
 import android.content.Context
 import com.bonyad.healthplat.data.local.UserPreferencesDataStore
 import com.bonyad.healthplat.data.network.HealthPlatApiService
+import com.bonyad.healthplat.data.network.TokenAuthenticator
 import com.inuker.bluetooth.library.BuildConfig
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import dagger.Module
@@ -10,6 +11,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import jakarta.inject.Named
 import jakarta.inject.Singleton
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -26,14 +28,8 @@ import java.util.concurrent.TimeUnit
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-    // IMPORTANT: Update this with the actual API URL http://192.168.18.165:7005/api/
-    // For emulator: use http://10.0.2.2:7005/api/
-    // For real device on same network: use your computer's IP
     private const val BASE_URL = "http://192.168.18.165:7005/api/"
 
-
-
-    // Keep your existing provider!
     @Provides
     @Singleton
     fun provideUserPreferences(
@@ -71,10 +67,33 @@ object NetworkModule {
     ): Interceptor {
         return Interceptor { chain ->
             val originalRequest = chain.request()
+            val path = originalRequest.url.encodedPath
+
+            // Skip auth for auth endpoints (login, register, refresh)
+            val isAuthEndpoint =
+                path.contains("/Auth/login", true) ||
+                        path.contains("/Auth/register", true) ||
+                        path.contains("/Auth/requestPhoneVerification", true) ||
+                        path.contains("/Auth/verifyPhone", true)
+
+            if (isAuthEndpoint) {
+                Timber.d("🔓 Auth endpoint: $path")
+                return@Interceptor chain.proceed(
+                    originalRequest.newBuilder()
+                        .header("accept", "*/*")
+                        .build()
+                )
+            }
 
             // Get token from preferences
             val token = runBlocking {
                 userPreferences.getAuthToken().first()
+            }
+
+            if (token.isNullOrEmpty()) {
+                Timber.w("⚠️ No token available for: $path")
+            } else {
+                Timber.d("🔑 Using token for: $path")
             }
 
             // Add token to request if available
@@ -89,22 +108,58 @@ object NetworkModule {
                     .build()
             }
 
-            Timber.d("Request URL: ${newRequest.url}")
-            Timber.d("Authorization Header: ${newRequest.header("Authorization")}")
+            val response = chain.proceed(newRequest)
 
-            chain.proceed(newRequest)
+            if (response.code == 401) {
+                Timber.e("🚫 401 Unauthorized for: $path")
+            }
+
+            response
         }
+    }
+
+    @Provides
+    @Singleton
+    @Named("AuthRetrofit")
+    fun provideAuthRetrofit(
+        json: Json,
+        loggingInterceptor: HttpLoggingInterceptor
+    ): Retrofit {
+        val okHttpClient = OkHttpClient.Builder()
+            .addInterceptor(loggingInterceptor)
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .build()
+
+        return Retrofit.Builder()
+            .baseUrl(BASE_URL)
+            .client(okHttpClient)
+            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideTokenAuthenticator(
+        userPreferences: UserPreferencesDataStore,
+        @Named("AuthRetrofit") authRetrofit: Retrofit
+    ): TokenAuthenticator {
+        val apiService = authRetrofit.create(HealthPlatApiService::class.java)
+        return TokenAuthenticator(userPreferences, apiService)
     }
 
     @Provides
     @Singleton
     fun provideOkHttpClient(
         loggingInterceptor: HttpLoggingInterceptor,
-        authInterceptor: Interceptor
+        authInterceptor: Interceptor,
+        tokenAuthenticator: TokenAuthenticator
     ): OkHttpClient {
         return OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
             .addInterceptor(loggingInterceptor)
+            .authenticator(tokenAuthenticator)  // ✅ ADD THIS LINE - THE KEY CHANGE!
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)

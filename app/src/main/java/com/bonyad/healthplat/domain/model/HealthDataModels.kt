@@ -6,6 +6,28 @@ import com.bonlala.bonlalable.bean.RecordSleepBean
 import com.bonlala.bonlalable.bean.RecordSpo2Bean
 import com.bonlala.bonlalable.bean.RecordStepBean
 import com.bonlala.bonlalable.bean.RecordStressBean
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
+
+@Serializable
+data class MetricData(
+    @SerialName("Id") val id: Int,
+    @SerialName("UserId") val userId: String,
+    @SerialName("DeviceId") val deviceId: Int,
+    @SerialName("RecordDate") val recordDate: String,
+    @SerialName("Values") val values: List<Int>,
+    @SerialName("LastSyncedTime") val lastSyncedTime: String,
+    @SerialName("LastSyncedIndex") val lastSyncedIndex: Int
+)
+
+@Serializable
+data class MetricRequest(
+    @SerialName("UserId") val userId: String,
+    @SerialName("DeviceId") val deviceId: Int,
+    @SerialName("RecordDate") val recordDate: String,
+    @SerialName("Values") val values: List<Int>
+)
 
 data class SyncHealthDataRequest(
     val date: String,

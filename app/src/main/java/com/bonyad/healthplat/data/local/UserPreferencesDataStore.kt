@@ -32,6 +32,7 @@ class UserPreferencesDataStore @Inject constructor(
         val MARKETING_ACCEPTED = booleanPreferencesKey("marketing_accepted")
         val DEVICE_MAC = stringPreferencesKey("device_mac")
         val DEVICE_NAME = stringPreferencesKey("device_name")
+        val DEVICE_ID = intPreferencesKey("device_id")
     }
 
     // ============ Auth Token ============
@@ -211,6 +212,7 @@ class UserPreferencesDataStore @Inject constructor(
         }
     }
 
+
     fun getUserBirthDate(): Flow<String?> {
         return dataStore.data.map { preferences ->
             preferences[stringPreferencesKey("user_birth_date")]
@@ -254,6 +256,12 @@ class UserPreferencesDataStore @Inject constructor(
                 preferences[PreferencesKeys.DEVICE_MAC]
             }
     }
+
+    suspend fun saveDeviceId(id: Int) {
+        dataStore.edit { it[PreferencesKeys.DEVICE_ID] = id }
+    }
+
+    fun getDeviceId(): Flow<Int?> = dataStore.data.map { it[PreferencesKeys.DEVICE_ID] }
 
     // ============ Clear All ============
 

@@ -4,9 +4,12 @@ import com.bonyad.healthplat.domain.model.AddUserDeviceRequest
 import com.bonyad.healthplat.domain.model.ApiResponse
 import com.bonyad.healthplat.domain.model.LoginByPhoneRequest
 import com.bonyad.healthplat.domain.model.LoginResponse
+import com.bonyad.healthplat.domain.model.MetricData
+import com.bonyad.healthplat.domain.model.MetricRequest
 import com.bonyad.healthplat.domain.model.PhoneVerificationData
+import com.bonyad.healthplat.domain.model.RefreshTokenRequest
+import com.bonyad.healthplat.domain.model.RefreshTokenResponse
 import com.bonyad.healthplat.domain.model.RegisterByPhoneRequest
-import com.bonyad.healthplat.domain.model.RegisterDeviceRequest
 import com.bonyad.healthplat.domain.model.RequestPhoneVerificationRequest
 import com.bonyad.healthplat.domain.model.UpdateDeviceRequest
 import com.bonyad.healthplat.domain.model.UpdateUserProfileRequest
@@ -56,6 +59,16 @@ interface HealthPlatApiService {
     suspend fun registerByPhone(
         @Body request: RegisterByPhoneRequest
     ): Response<ApiResponse<LoginResponse>>
+
+    /**
+     * Refresh access token
+     * POST /api/Auth/refresh
+     */
+    @POST("Auth/refresh")
+    @Headers("Content-Type: application/json")
+    suspend fun refreshToken(
+        @Body request: RefreshTokenRequest
+    ): Response<ApiResponse<RefreshTokenResponse>>
 
     /**
      * Logout
@@ -124,5 +137,27 @@ interface HealthPlatApiService {
     suspend fun deleteDevice(
         @Path("id") deviceId: Int
     ): Response<ApiResponse<Unit>>
+
+
+// ============ Metrics APIs ============
+
+
+    @POST("Metrics/HeartRate")
+    suspend fun uploadHeartRate(@Body request: MetricRequest): Response<ApiResponse<MetricData>>
+
+    @POST("Metrics/Steps")
+    suspend fun uploadSteps(@Body request: MetricRequest): Response<ApiResponse<MetricData>>
+
+    @POST("Metrics/Sleep")
+    suspend fun uploadSleep(@Body request: MetricRequest): Response<ApiResponse<MetricData>>
+
+    @POST("Metrics/Spo2")
+    suspend fun uploadSpo2(@Body request: MetricRequest): Response<ApiResponse<MetricData>>
+
+    @POST("Metrics/Stress")
+    suspend fun uploadStress(@Body request: MetricRequest): Response<ApiResponse<MetricData>>
+
+    @POST("Metrics/Hrv")
+    suspend fun uploadHrv(@Body request: MetricRequest): Response<ApiResponse<MetricData>>
 
 }

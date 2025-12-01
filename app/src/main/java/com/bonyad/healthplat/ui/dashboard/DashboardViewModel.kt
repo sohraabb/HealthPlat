@@ -59,24 +59,33 @@ class DashboardViewModel @Inject constructor(
         Timber.i("📱 DashboardViewModel initialized")
         loadUserData()
         observeDeviceConnection()
-        observeRealTimeData()
-        observeBatteryLevel()
-        autoConnectDevice()
 
+        observeInitializationComplete()
+
+
+        observeRealTimeData()
+//        observeBatteryLevel()
+
+
+
+    }
+
+    private fun observeInitializationComplete() {
         viewModelScope.launch {
-            deviceManager.connectionState.collect { state ->
-                if (state == ConnectionState.CONNECTED) {
-                    Timber.i("✅ Device Connected - Triggering Sync")
-                    delay(2000)
-                    syncDeviceHistory()
-                }
+            deviceManager.initializationComplete.collect {
+                Timber.i("🎯🎯🎯 Device initialization complete - starting history sync 🎯🎯🎯")
+                delay(2000) // Extra safety margin
+//                syncDeviceHistory()
             }
         }
     }
 
-    private fun syncDeviceHistory() {
+    fun syncDeviceHistory() {
         viewModelScope.launch {
             Timber.i("🔄 Syncing history data (UI + Server)...")
+
+            deviceManager.closeRealTimeHeartRate()
+            delay(1000)
 
             // 1. Call Repository (It fetches from Ring AND Uploads to Server)
             val result = healthRepository.syncDashboardData()
@@ -88,6 +97,11 @@ class DashboardViewModel @Inject constructor(
             } else {
                 Timber.w("⚠️ Sync failed or no data found")
             }
+
+            delay(1000)
+            Timber.i("🔄 History sync done, restarting real-time monitoring")
+            deviceManager.openRealTimeHeartRate()
+
         }
     }
 
@@ -104,7 +118,8 @@ class DashboardViewModel @Inject constructor(
                 bloodOxygen = data.spo2?.sourceList?.lastOrNull { it > 0 } ?: current.bloodOxygen,
 
                 // Get average or last stress value
-                stressLevel = data.stress?.stressSource?.lastOrNull { it > 0 } ?: current.stressLevel,
+                stressLevel = data.stress?.stressSource?.lastOrNull { it > 0 }
+                    ?: current.stressLevel,
 
                 // Get HRV
                 hrv = data.hrv?.hrvSource?.lastOrNull { it > 0 } ?: current.hrv
@@ -149,6 +164,7 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+
     private fun observeDeviceConnection() {
         viewModelScope.launch {
             deviceManager.connectionState.collect { state ->
@@ -162,11 +178,12 @@ class DashboardViewModel @Inject constructor(
 
                 if (state == ConnectionState.CONNECTED) {
                     Timber.i("✅ Device connected - starting monitoring")
-                    // Start real-time monitoring
-                    deviceManager.openRealTimeHeartRate()
-                    delay(800) // Small delay before reading battery
-                    deviceManager.readBatteryLevel()
+//                    deviceManager.openRealTimeHeartRate()
+//                    delay(800)
+//                    deviceManager.readBatteryLevel()
+
                 } else if (state == ConnectionState.DISCONNECTED) {
+                    autoConnectDevice()
                     Timber.w("⚠️ Device disconnected")
                     // Clear battery level on disconnect
                     _healthOverview.update {
@@ -225,6 +242,36 @@ class DashboardViewModel @Inject constructor(
                 }
             } catch (e: Exception) {
                 Timber.e(e, "❌ Error getting device MAC from preferences")
+            }
+        }
+    }
+
+    private fun getDeviceInfo() {
+        viewModelScope.launch {
+            try {
+                deviceManager.getDeviceInfo().onSuccess { deviceInfo ->
+                    Timber.i("📱 Device Info (Device ID): ${deviceInfo.deviceId}")
+                    Timber.i("📱 Device Info (Device State): ${deviceInfo.deviceState}")
+
+                    when (deviceInfo.deviceState) {
+                        1 -> Timber.i("Invalid Message")
+                        2 -> Timber.i("Battery is low")
+                        3 -> Timber.i("Data channel is not open")
+                        4 -> Timber.i("The device is requesting a communication interval")
+                        5 -> Timber.i("Device busy")
+                        6 -> Timber.i("No data")
+                        else -> Timber.i("📱 Device Info (Device State): Unknown")
+                    }
+
+                    Timber.i("📱 Device Info (Power On time): ${deviceInfo.powerOnTime}")
+                    Timber.i("📱 Device Info (History Day): ${deviceInfo.historyDay}")
+                    Timber.i("📱 Device info (Time): ${deviceInfo.time}")
+                }.onFailure {
+                    Timber.e(it, "❌ Error getting device info")
+                }
+
+            } catch (e: Exception) {
+
             }
         }
     }

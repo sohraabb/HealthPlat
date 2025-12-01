@@ -39,6 +39,14 @@ data class RegisterByPhoneRequest(
     val verificationCode: String
 )
 
+@Serializable
+data class RefreshTokenRequest(
+    @SerialName("AccessToken")
+    val accessToken: String,
+    @SerialName("RefreshToken")
+    val refreshToken: String
+)
+
 
 // ============ Legacy Models (Keep for compatibility) ============
 
@@ -57,11 +65,4 @@ data class VerifyOtpResponse(
     val token: String? = null,
     val refreshToken: String? = null,
     val isNewUser: Boolean = true
-)
-
-data class RefreshTokenRequest(val refreshToken: String)
-data class RefreshTokenResponse(
-    val success: Boolean,
-    val token: String? = null,
-    val refreshToken: String? = null
 )

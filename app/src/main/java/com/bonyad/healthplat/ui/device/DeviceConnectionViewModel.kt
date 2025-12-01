@@ -32,7 +32,8 @@ sealed class DeviceConnectionUiState {
 @HiltViewModel
 class DeviceConnectionViewModel @Inject constructor(
     private val deviceManager: HealthDeviceManager,
-    private val deviceRepository: DeviceRepository
+    private val deviceRepository: DeviceRepository,
+    private val userPreferences: UserPreferencesDataStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<DeviceConnectionUiState>(DeviceConnectionUiState.Idle)
@@ -139,7 +140,7 @@ class DeviceConnectionViewModel @Inject constructor(
                 // Wait a bit more for initialization to complete
                 //delay(3000) // ← INCREASE THIS from 2000
 
-                delay(4000)
+                delay(3000)
                 // Get firmware version from device
                 val firmwareVersion = deviceManager.firmwareVersion.value ?: "Unknown"
 
@@ -153,6 +154,7 @@ class DeviceConnectionViewModel @Inject constructor(
                 )) {
                     is AuthResult.Success -> {
                         Timber.i("Device registered to backend: ${result.data.id}")
+                        userPreferences.saveDeviceId(result.data.id)
                         _uiState.value = DeviceConnectionUiState.Connected
                     }
                     is AuthResult.Error -> {

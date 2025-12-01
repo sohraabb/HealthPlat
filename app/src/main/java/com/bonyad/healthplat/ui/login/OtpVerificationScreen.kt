@@ -124,6 +124,7 @@ fun OtpVerificationScreen(
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
 
@@ -138,12 +139,12 @@ fun OtpVerificationScreen(
                     })
                 }
                 .padding(padding)
-                .windowInsetsPadding(WindowInsets.ime.only(WindowInsetsSides.Bottom))
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .systemBarsPadding()
+                    .imePadding()
                     .padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {

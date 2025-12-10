@@ -296,4 +296,9 @@ class AuthViewModel @Inject constructor(
         return _isNewUser.value == true
     }
 
+    fun isValidPersianPhoneNumber(phone: String): Boolean {
+        // Persian phone numbers: 09xx xxx xxxx with valid operator codes
+        val regex = "^09((14)|(13)|(12)|(19)|(18)|(17)|(15)|(16)|(11)|(10)|(90)|(91)|(92)|(93)|(94)|(95)|(96)|(32)|(30)|(33)|(35)|(36)|(37)|(38)|(39)|(00)|(01)|(02)|(03)|(04)|(05)|(41)|(20)|(21)|(22)|(23)|(31)|(34))\\d{7}$".toRegex()
+        return regex.matches(phone)
+    }
 }

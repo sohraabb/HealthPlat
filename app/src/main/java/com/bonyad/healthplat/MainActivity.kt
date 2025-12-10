@@ -57,34 +57,33 @@ class MainActivity : ComponentActivity() {
 
     private fun determineStartDestination(): String {
         return runBlocking {
-            try {
-                val isOnboardingComplete = userPreferences.isOnboardingComplete().first()
-                val token = userPreferences.getAuthToken().first()
-                val refreshToken = userPreferences.getRefreshToken().first()
-                val userId = userPreferences.getUserId().first()
+            val isOnboardingComplete = userPreferences.isOnboardingComplete().first()
+            val token = userPreferences.getAuthToken().first()
+            val refreshToken = userPreferences.getRefreshToken().first()
+            val userId = userPreferences.getUserId().first()
 
-                if (userId != null && token != null && refreshToken != null)
-                    return@runBlocking NavRoutes.Dashboard.route
+            // 1) Already logged in → go to Dashboard
+            if (userId != null && token != null && refreshToken != null)
+                return@runBlocking NavRoutes.Dashboard.route
 
-                when {
-                    !isOnboardingComplete -> NavRoutes.Onboarding.route
-                    userId == null -> NavRoutes.PhoneAuth.route
-                    else -> {
-                        val deviceMac = userPreferences.getDeviceMac().first()
-                        val termsAccepted = userPreferences.isTermsAccepted().first()
-                        val userName = userPreferences.getUserName().first()
+            // 2) New user → start onboarding
+            if (!isOnboardingComplete)
+                return@runBlocking NavRoutes.Onboarding.route
 
-                        when {
-                            deviceMac.isNullOrEmpty() -> NavRoutes.DeviceConnection.route
-                            !termsAccepted -> NavRoutes.TermsAndPrivacy.route
-                            userName.isNullOrEmpty() -> NavRoutes.PersonalInfo.route
-                            else -> NavRoutes.Dashboard.route
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "Error determining start destination")
-                NavRoutes.Onboarding.route
+            // 3) No user ID → authentication
+            if (userId == null)
+                return@runBlocking NavRoutes.PhoneAuth.route
+
+            // 4) Additional steps:
+            val deviceMac = userPreferences.getDeviceMac().first()
+            val termsAccepted = userPreferences.isTermsAccepted().first()
+            val userName = userPreferences.getUserName().first()
+
+            return@runBlocking when {
+                deviceMac.isNullOrEmpty() -> NavRoutes.DeviceConnection.route
+                !termsAccepted -> NavRoutes.TermsAndPrivacy.route
+                userName.isNullOrEmpty() -> NavRoutes.PersonalInfo.route
+                else -> NavRoutes.Dashboard.route
             }
         }
     }

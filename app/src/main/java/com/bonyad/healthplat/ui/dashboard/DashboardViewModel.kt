@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.bonyad.healthplat.blesdk.manager.HealthDeviceManager
 import com.bonyad.healthplat.blesdk.model.ConnectionState
 import com.bonyad.healthplat.data.local.UserPreferencesDataStore
+import com.bonyad.healthplat.data.network.SignalRManager
 import com.bonyad.healthplat.data.repository.HealthDataRepository
 import com.bonyad.healthplat.domain.model.RecordDataResult
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -39,7 +40,8 @@ data class HealthOverview(
 class DashboardViewModel @Inject constructor(
     private val deviceManager: HealthDeviceManager,
     private val healthRepository: HealthDataRepository,
-    private val userPreferences: UserPreferencesDataStore
+    private val userPreferences: UserPreferencesDataStore,
+    private val srManager: SignalRManager
 ) : ViewModel() {
 
     private val _healthOverview = MutableStateFlow(HealthOverview())
@@ -63,6 +65,9 @@ class DashboardViewModel @Inject constructor(
         observeInitializationComplete()
 
 
+        viewModelScope.launch {
+            srManager.connect()
+        }
         observeRealTimeData()
 //        observeBatteryLevel()
 
@@ -75,7 +80,7 @@ class DashboardViewModel @Inject constructor(
             deviceManager.initializationComplete.collect {
                 Timber.i("🎯🎯🎯 Device initialization complete - starting history sync 🎯🎯🎯")
                 delay(2000) // Extra safety margin
-//                syncDeviceHistory()
+                syncDeviceHistory()
             }
         }
     }
@@ -88,7 +93,7 @@ class DashboardViewModel @Inject constructor(
             delay(1000)
 
             // 1. Call Repository (It fetches from Ring AND Uploads to Server)
-            val result = healthRepository.syncDashboardData()
+            val result = healthRepository.syncDashboardData(0)
 
             // 2. Update UI with the returned result
             if (result is RecordDataResult.Success) {
@@ -108,31 +113,42 @@ class DashboardViewModel @Inject constructor(
     private fun processHistoryData(data: RecordDataResult.Success) {
         _healthOverview.update { current ->
             current.copy(
-                // Calculate Sleep Duration (in hours)
-                // The SDK returns sleep as a list of states. You usually need to sum up the minutes.
-                // For now, let's assume you just want to display if data exists.
-                // You would typically loop through data.sleep?.sourceList to count minutes.
+                // 1. Sleep: Use the new RecordSleepBean
+                // SDK v1.4: 0=Activity, 1=Deep, 2=Light, 3=Awake, 4=REM
                 sleepDurationHours = calculateSleepHours(data.sleep?.sourceList),
 
-                // Get last non-zero SpO2 value
+                // 2. SpO2: Use RecordSpo2Bean -> sourceList [cite: 260]
+                // Get last non-zero value. Note: SpO2 is recorded every 30 mins [cite: 257]
                 bloodOxygen = data.spo2?.sourceList?.lastOrNull { it > 0 } ?: current.bloodOxygen,
 
-                // Get average or last stress value
+                // 3. Stress: Use RecordStressBean -> stressSource [cite: 252]
                 stressLevel = data.stress?.stressSource?.lastOrNull { it > 0 }
                     ?: current.stressLevel,
 
-                // Get HRV
-                hrv = data.hrv?.hrvSource?.lastOrNull { it > 0 } ?: current.hrv
+                // 4. HRV: Use RecordHrvBean -> hrvSource [cite: 266]
+                hrv = data.hrv?.hrvSource?.lastOrNull { it > 0 } ?: current.hrv,
+
+                // 5. Steps: Use RecordStepBean -> stepSource
+                // If history sync provides a more accurate total than real-time, update it here
+                steps = data.steps?.stepSource?.sum() ?: current.steps
             )
         }
     }
 
     private fun calculateSleepHours(sleepData: List<Int>?): Float {
         if (sleepData.isNullOrEmpty()) return 0f
-        // SDK logic: Count slots that are NOT 'awake'.
-        // Note: Real implementation depends on how SDK encodes time (usually 1 min or 5 min per slot)
-        // Assuming 1 slot = 1 minute for simplicity based on generic BLE SDKs
-        val sleepMinutes = sleepData.count { it != 0 && it != 3 } // Assuming 3 is awake [cite: 223]
+
+        // SDK v1.4 Definition :
+        // 0: activities
+        // 1: deep sleep
+        // 2: light sleep
+        // 3: awake sleep
+        // 4: rem
+
+        // Count minutes where status is Deep(1), Light(2), or REM(4).
+        // Usually, we exclude 'Awake'(3) and 'Activity'(0) from total duration.
+        val sleepMinutes = sleepData.count { it == 1 || it == 2 || it == 4 }
+
         return sleepMinutes / 60f
     }
 
@@ -163,7 +179,6 @@ class DashboardViewModel @Inject constructor(
             }
         }
     }
-
 
     private fun observeDeviceConnection() {
         viewModelScope.launch {
@@ -197,15 +212,23 @@ class DashboardViewModel @Inject constructor(
     private fun observeRealTimeData() {
         viewModelScope.launch {
             deviceManager.realTimeData.collect { data ->
+                val heartRate = data.heart
                 _healthOverview.update { overview ->
                     overview.copy(
                         heartRate = data.heart ?: overview.heartRate,
                         steps = data.step ?: overview.steps
                     )
                 }
+                sendHeartRateWebSocket(heartRate)
                 Timber.d("💓 Real-time data: HR=${data.heart}, Steps=${data.step}")
             }
         }
+    }
+
+    private suspend fun sendHeartRateWebSocket(heart: Int?) {
+        val deviceId = userPreferences.getDeviceId().first() ?: return
+        srManager.sendHeartRate(deviceId = deviceId, value = heart)
+
     }
 
     private fun observeBatteryLevel() {

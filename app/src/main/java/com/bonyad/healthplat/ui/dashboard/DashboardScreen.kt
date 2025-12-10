@@ -47,22 +47,27 @@ sealed class DashboardScreen(
 
 @Composable
 fun DashboardScreen(
-    viewModel: DashboardViewModel = hiltViewModel()
+    viewModel: DashboardViewModel = hiltViewModel(),
+    onNavigateToRoot: (String) -> Unit
 ) {
-    val navController = rememberNavController()
+    val bottomTabNavController = rememberNavController()
 
     Scaffold(
         bottomBar = {
-            DashboardBottomBar(navController = navController)
+            DashboardBottomBar(navController = bottomTabNavController)
         }
     ) { paddingValues ->
         NavHost(
-            navController = navController,
+            navController = bottomTabNavController,
             startDestination = DashboardScreen.Home.route,
             modifier = Modifier.padding(paddingValues)
         ) {
             composable(DashboardScreen.Home.route) {
-                HomeScreen(viewModel = viewModel)
+                HomeScreen(
+                    viewModel = viewModel,
+                    onNavigateToDetail = { route ->
+                        onNavigateToRoot(route)
+                    })
             }
 
             composable(DashboardScreen.Care.route) {

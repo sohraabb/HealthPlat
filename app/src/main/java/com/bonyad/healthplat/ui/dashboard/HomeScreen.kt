@@ -33,7 +33,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.navigation.NavController
+import androidx.navigation.compose.rememberNavController
 import com.bonyad.healthplat.R
+import com.bonyad.healthplat.ui.navigation.HealthDetailRoutes
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
 
 // Define custom colors from design
@@ -47,7 +50,8 @@ val TextGray = Color(0xFF999999)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    viewModel: DashboardViewModel
+    viewModel: DashboardViewModel,
+    onNavigateToDetail: (String) -> Unit
 ) {
     val healthOverview by viewModel.healthOverview.collectAsState()
     val userName by viewModel.userName.collectAsState()
@@ -55,7 +59,6 @@ fun HomeScreen(
 
     Scaffold(
         topBar = {
-            // Force RTL layout for the TopBar area
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                 TopAppBar(
                     title = {
@@ -79,7 +82,7 @@ fun HomeScreen(
                     actions = {
                         IconButton(onClick = { /* TODO: Help */ }) {
                             Icon(
-                                imageVector = Icons.Default.Info,
+                                painter = painterResource(R.drawable.information),
                                 contentDescription = "Help",
                                 tint = TextGray
                             )
@@ -93,56 +96,62 @@ fun HomeScreen(
         },
         containerColor = Color(0xFFF5F5F5)
     ) { paddingValues ->
-        // Force RTL for the main content
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            NewHealthStatusCard(
+                score = 87, // Mock score
+                insights = insights,
+                viewModel = viewModel
+            )
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // 1. New Main Health Status Card
-                NewHealthStatusCard(
-                    score = 87, // Mock score
-                    insights = insights,
-                    viewModel = viewModel
-                )
 
-                // 2. 2x2 Grid of Cards (Manually constructed with Rows)
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Row 1
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Box(Modifier.weight(1f)) {
-                            HeartRateCard(heartRate = healthOverview.heartRate)
-                        }
-                        Box(Modifier.weight(1f)) {
-                            StepsCard(steps = healthOverview.steps)
-                        }
+                    Box(Modifier.weight(1f)) {
+                        HeartRateCard(
+                            heartRate = healthOverview.heartRate,
+                            onClick = {
+                                onNavigateToDetail(HealthDetailRoutes.HeartRateDetail.route)
+                            }
+                        )
                     }
-
-                    // Row 2
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Box(Modifier.weight(1f)) {
-                            BloodPressureCard()
-                        }
-                        Box(Modifier.weight(1f)) {
-                            SpO2Card(spo2 = healthOverview.bloodOxygen)
-                        }
+                    Box(Modifier.weight(1f)) {
+                        StepsCard(
+                            steps = healthOverview.steps,
+                            onClick = { onNavigateToDetail(HealthDetailRoutes.StepsDetail.route) }
+                        )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(30.dp)) // Extra space at bottom
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(Modifier.weight(1f)) {
+                        BloodPressureCard(
+                            onClick = { onNavigateToDetail(HealthDetailRoutes.SleepDetail.route) }
+                        )
+                    }
+                    Box(Modifier.weight(1f)) {
+                        SpO2Card(
+                            spo2 = healthOverview.bloodOxygen,
+                            onClick = { onNavigateToDetail(HealthDetailRoutes.SpO2Detail.route) }
+                        )
+                    }
+                }
             }
+
+            Spacer(modifier = Modifier.height(30.dp)) // Extra space at bottom
         }
     }
 }
@@ -185,25 +194,11 @@ fun NewHealthStatusCard(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Main Content Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 1. Text Descriptions (On the Right in RTL layout)
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalAlignment = Alignment.End,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    insights.forEach { insight ->
-                        InsightItem(text = insight)
-                    }
-                }
 
-                Spacer(modifier = Modifier.width(16.dp))
-
-                // 2. Score Circle (On the Left in RTL layout)
                 Box(
                     modifier = Modifier
                         .size(100.dp)
@@ -225,6 +220,20 @@ fun NewHealthStatusCard(
                         )
                     }
                 }
+
+                Spacer(modifier = Modifier.width(16.dp))
+
+
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalAlignment = Alignment.End,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    insights.forEach { insight ->
+                        InsightItem(text = insight)
+                    }
+                }
+
             }
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -258,6 +267,7 @@ fun InsightItem(text: String) {
         horizontalArrangement = Arrangement.End,
         modifier = Modifier.fillMaxWidth()
     ) {
+
         Text(
             text = text,
             style = MaterialTheme.typography.bodySmall,
@@ -265,12 +275,14 @@ fun InsightItem(text: String) {
             textAlign = TextAlign.End
         )
         Spacer(modifier = Modifier.width(8.dp))
+
         Icon(
             imageVector = Icons.Default.Warning,
             contentDescription = null,
             tint = TextGray.copy(alpha = 0.6f),
             modifier = Modifier.size(14.dp)
         )
+
     }
 }
 
@@ -284,13 +296,14 @@ fun BaseMetricCard(
     statusText: String?,
     iconPainter: Painter,
     iconTint: Color,
-    chartContent: @Composable BoxScope.() -> Unit
+    onClick: () -> Unit = {},
+    chartContent: @Composable BoxScope.() -> Unit,
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth() // Fills the weight in the row
             .height(210.dp)
-            .clickable { /* TODO: Navigate */ },
+            .clickable { onClick() },
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -309,12 +322,6 @@ fun BaseMetricCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextDark,
-                    fontWeight = FontWeight.Bold
-                )
 
                 Icon(
                     painter = iconPainter,
@@ -322,6 +329,14 @@ fun BaseMetricCard(
                     tint = iconTint,
                     modifier = Modifier.size(20.dp)
                 )
+
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextDark,
+                    fontWeight = FontWeight.Bold
+                )
+
             }
 
             if (statusText != null) {
@@ -329,7 +344,7 @@ fun BaseMetricCard(
                     text = statusText,
                     style = MaterialTheme.typography.bodySmall,
                     color = TextGray,
-                    textAlign = TextAlign.Start, // Right in RTL
+                    textAlign = TextAlign.End, // Right in RTL
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -351,25 +366,7 @@ fun BaseMetricCard(
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // 1. Button (Start / Right)
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(TealPrimary.copy(alpha = 0.8f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ArrowForward,
-                        contentDescription = "Details",
-                        tint = Color.White,
-                        modifier = Modifier
-                            .size(16.dp)
-                            .rotate(-45f) // Rotate to point diagonal up
-                    )
-                }
 
-                // 2. Value + Unit (End / Left)
                 Row(
                     verticalAlignment = Alignment.Bottom,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -392,6 +389,23 @@ fun BaseMetricCard(
                         )
                     }
                 }
+
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(TealPrimary.copy(alpha = 0.8f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowForward,
+                        contentDescription = "Details",
+                        tint = Color.White,
+                        modifier = Modifier
+                            .size(16.dp)
+                            .rotate(-45f) // Rotate to point diagonal up
+                    )
+                }
             }
         }
     }
@@ -399,16 +413,21 @@ fun BaseMetricCard(
 
 
 @Composable
-fun HeartRateCard(heartRate: Int) {
+fun HeartRateCard(heartRate: Int, onClick: () -> Unit) {
     BaseMetricCard(
         title = "ضربان قلب",
         value = heartRate.toString().toFarsiDigits(),
         unit = "bpm",
         statusText = "عادی",
         iconPainter = painterResource(R.drawable.heart_rate),
-        iconTint = RedAccent
+        iconTint = RedAccent,
+        onClick = onClick
     ) {
-        Canvas(modifier = Modifier.fillMaxSize().padding(vertical = 8.dp)) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(vertical = 8.dp)
+        ) {
             val path = Path()
             val width = size.width
             val height = size.height
@@ -430,14 +449,15 @@ fun HeartRateCard(heartRate: Int) {
 }
 
 @Composable
-fun StepsCard(steps: Int) {
+fun StepsCard(steps: Int, onClick: () -> Unit) {
     BaseMetricCard(
         title = "تعداد قدم",
         value = steps.toString().toFarsiDigits(),
         unit = "steps",
         statusText = "بیشتر کن",
         iconPainter = painterResource(R.drawable.walk),
-        iconTint = OrangeAccent
+        iconTint = OrangeAccent,
+        onClick = onClick
     ) {
         Row(
             modifier = Modifier.fillMaxSize(),
@@ -459,15 +479,16 @@ fun StepsCard(steps: Int) {
 }
 
 @Composable
-fun BloodPressureCard() {
+fun BloodPressureCard(onClick: () -> Unit) {
     val systolic = 120
     BaseMetricCard(
-        title = "فشار خون",
+        title = "پایش خواب",
         value = "$systolic".toFarsiDigits(),
         unit = "mmHg",
         statusText = "عادی",
         iconPainter = painterResource(R.drawable.chemistry_flask),
-        iconTint = TealPrimary
+        iconTint = TealPrimary,
+        onClick = onClick
     ) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Box(
@@ -475,7 +496,7 @@ fun BloodPressureCard() {
                     .fillMaxWidth(0.9f)
                     .height(12.dp)
                     .clip(RoundedCornerShape(6.dp))
-                    .border(1.dp, TealPrimary.copy(alpha=0.3f), RoundedCornerShape(6.dp))
+                    .border(1.dp, TealPrimary.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
             ) {
                 Box(
                     modifier = Modifier
@@ -490,7 +511,7 @@ fun BloodPressureCard() {
 }
 
 @Composable
-fun SpO2Card(spo2: Int) {
+fun SpO2Card(spo2: Int, onClick: () -> Unit) {
     val displayValue = if (spo2 > 0) spo2.toString() else "--"
     BaseMetricCard(
         title = "اکسیژن خون",
@@ -498,9 +519,14 @@ fun SpO2Card(spo2: Int) {
         unit = "%",
         statusText = "عادی",
         iconPainter = painterResource(R.drawable.hospital),
-        iconTint = BlueAccent
+        iconTint = BlueAccent,
+        onClick = onClick
     ) {
-        Canvas(modifier = Modifier.fillMaxSize().padding(vertical = 12.dp)) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(vertical = 12.dp)
+        ) {
             val path = Path()
             val w = size.width
             val h = size.height

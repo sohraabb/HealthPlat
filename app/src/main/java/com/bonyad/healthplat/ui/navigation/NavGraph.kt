@@ -11,6 +11,10 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.bonyad.healthplat.ui.access.TermsAndPrivacyScreen
 import com.bonyad.healthplat.ui.dashboard.DashboardScreen
+import com.bonyad.healthplat.ui.dashboard.details.heart_rate.HeartRateDetailScreen
+import com.bonyad.healthplat.ui.dashboard.details.sleep.SleepDetailScreen
+import com.bonyad.healthplat.ui.dashboard.details.sp02.SpO2DetailScreen
+import com.bonyad.healthplat.ui.dashboard.details.stepts.StepsDetailScreen
 import com.bonyad.healthplat.ui.device.DeviceConnectionScreen
 import com.bonyad.healthplat.ui.login.OtpVerificationScreen
 import com.bonyad.healthplat.ui.login.PhoneAuthScreen
@@ -125,8 +129,49 @@ fun HealthPlatNavGraph(
 
         // 7. Dashboard (Main App)
         composable(NavRoutes.Dashboard.route) {
-            // TODO: Create DashboardScreen
-            DashboardScreen()
+            DashboardScreen(
+                onNavigateToRoot = { route ->
+                    navController.navigate(route)
+                }
+            )
         }
+
+        // Health Details Routes :
+        composable(HealthDetailRoutes.HeartRateDetail.route) {
+            HeartRateDetailScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(HealthDetailRoutes.SleepDetail.route) {
+            SleepDetailScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(HealthDetailRoutes.StepsDetail.route) {
+            StepsDetailScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(HealthDetailRoutes.SpO2Detail.route) {
+            SpO2DetailScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(HealthDetailRoutes.StressDetail.route) {
+//            StressDetailScreen(
+//                onBack = { navController.popBackStack() }
+//            )
+        }
+
+        composable(HealthDetailRoutes.HrvDetail.route) {
+//            HrvDetailScreen(
+//                onBack = { navController.popBackStack() }
+//            )
+        }
+
     }
 }

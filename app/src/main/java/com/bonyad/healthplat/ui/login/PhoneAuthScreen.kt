@@ -40,6 +40,9 @@ fun PhoneAuthScreen(
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
 
+    val isPhoneValid = phoneNumber.isEmpty() || viewModel.isValidPersianPhoneNumber(phoneNumber)
+    val showError = phoneNumber.isNotEmpty() && !isPhoneValid
+
 
     // Navigate when OTP is sent
     LaunchedEffect(authState) {
@@ -123,40 +126,59 @@ fun PhoneAuthScreen(
                     Spacer(modifier = Modifier.height(24.dp))
 
                     // Phone number input - FIXED
-                    OutlinedTextField(
-                        value = phoneNumber,
-                        onValueChange = { viewModel.updatePhoneNumber(it) },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = phoneNumber,
+                            onValueChange = { viewModel.updatePhoneNumber(it) },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = {
+                                Text(
+                                    text = "شماره همراه خود را وارد کنید",
+                                    color = Color(0xFF999999),
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = "شماره همراه",
+                                )
+                            },
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Phone,
+                                imeAction = ImeAction.Done
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onDone = {
+                                    focusManager.clearFocus()
+                                }
+                            ),
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = if (showError) Color.Red else Color(0xFF5BA3A3),
+                                unfocusedBorderColor = if (showError) Color.Red else Color(0xFFE0E0E0),
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color.White,
+                                errorBorderColor = Color.Red
+                            ),
+                            textStyle = LocalTextStyle.current.copy(
+                                textAlign = TextAlign.End,
+                                color = Color.Black
+                            ),
+                            isError = showError
+                        )
+
+                        // Error message
+                        if (showError) {
+                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "شماره همراه خود را وارد کنید",
-                                color = Color(0xFF999999),
+                                text = "شماره وارد شده نادرست است.",
+                                color = Color.Red,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.End
                             )
-                        },
-                        label = {
-                            Text(
-                                text = "شماره همراه",
-                            )
-                        },
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Phone,
-                            imeAction = ImeAction.Done
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onDone = {
-                                focusManager.clearFocus()
-                            }
-                        ),
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color(0xFF5BA3A3),
-                            unfocusedBorderColor = Color(0xFFE0E0E0),
-                            focusedContainerColor = Color.White,
-                            unfocusedContainerColor = Color.White
-                        ),
-                        textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End, color = Color.Black)
-                    )
+                        }
+                    }
 
                     Spacer(modifier = Modifier.weight(1f))
 

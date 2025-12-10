@@ -49,7 +49,7 @@ android {
 dependencies {
 
     // BLE SDK implementations (Keep these as they are local files)
-    implementation(files("libs/Bonlala_ble_v1.3.aar"))
+    implementation(files("libs/Bonlala_ble_v1.4.aar"))
     implementation(files("libs/NordicDfuLibrary.aar"))
 
     // Dependency Injection
@@ -84,9 +84,13 @@ dependencies {
 
     //Persian DatePicker
     implementation(libs.compose.persian.date.picker)
+    implementation("com.github.samanzamani:PersianDate:1.7.1")
 
     //Splash Screen Api
     implementation("androidx.core:core-splashscreen:1.0.1")
+
+    //SignalR
+    implementation("com.microsoft.signalr:signalr:10.0.0")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

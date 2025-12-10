@@ -338,8 +338,15 @@ fun CaregiverCard(
                     )
                 }
             }
+
+            Spacer(Modifier.height(16.dp))
+
         }
+
     }
+
+    Spacer(Modifier.height(16.dp))
+
 }
 
 @Composable

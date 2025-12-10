@@ -78,5 +78,21 @@ sealed class RecordDataResult {
         val hrv: RecordHrvBean?
     ) : RecordDataResult()
 
-    data class Error(val code: Int) : RecordDataResult()
+    data class Error(val code: Int) : RecordDataResult() {
+        val message: String
+            get() = when (code) {
+                -1 -> "خطای عمومی"
+                -2 -> "دستگاه آماده نیست"
+                -3 -> "دستگاه جفت‌سازی نشده است"
+                -98 -> "درخواست لغو شد"
+                -99 -> "زمان انتظار تمام شد"
+                1 -> "پیام نامعتبر"
+                2 -> "باتری کم است"
+                3 -> "کانال داده باز نیست"
+                4 -> "دستگاه در حال درخواست فاصله ارتباطی"
+                5 -> "دستگاه مشغول است"
+                6 -> "داده‌ای موجود نیست"
+                else -> "خطای ناشناخته: $code"
+            }
+    }
 }

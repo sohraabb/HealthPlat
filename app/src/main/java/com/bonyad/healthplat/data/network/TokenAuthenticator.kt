@@ -70,6 +70,7 @@ class TokenAuthenticator @Inject constructor(
 
     private fun clearSession() = runBlocking {
         Timber.w("🗑️ Clearing session due to refresh failure")
-        userPreferences.clearAll()
+        userPreferences.clearAuthOnly()
+//        userPreferences.clearAll()
     }
 }

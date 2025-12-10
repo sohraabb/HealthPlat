@@ -17,6 +17,7 @@ interface HealthDeviceManager {
     val batteryLevel: StateFlow<Int?>
     val firmwareVersion: StateFlow<String?>
     val initializationComplete: SharedFlow<Unit>
+    val isPaired: StateFlow<Boolean>
 
     fun startScan()
     fun stopScan()

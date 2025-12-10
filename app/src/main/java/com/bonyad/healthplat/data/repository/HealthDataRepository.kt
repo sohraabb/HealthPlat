@@ -22,10 +22,8 @@ class HealthDataRepository @Inject constructor(
     private val userPreferences: UserPreferencesDataStore
 ) {
 
-    suspend fun syncDashboardData(): RecordDataResult {
-        val today = 0
-        val yesterday = 1
-        val recordResult = deviceManager.getRecordData(5)
+    suspend fun syncDashboardData(day: Int): RecordDataResult {
+        val recordResult = deviceManager.getRecordData(day)
 
         if (recordResult is RecordDataResult.Success) {
             uploadHealthData(recordResult)
@@ -35,83 +33,88 @@ class HealthDataRepository @Inject constructor(
     }
 
     private suspend fun uploadHealthData(data: RecordDataResult.Success) = coroutineScope {
-        // 1. Get User and Device Info
         val userId = userPreferences.getUserId().first()
-        val deviceId = userPreferences.getDeviceId().first() // You need to implement getDeviceId in Prefs
+        val deviceId = userPreferences.getDeviceId().first()
 
         if (userId == null || deviceId == null) {
             Timber.e("❌ Cannot sync: Missing UserId or DeviceId")
             return@coroutineScope
         }
 
-        // 2. FIX: Get Date from the SDK Bean, not the System Clock
-        // The SDK returns "yyyy-MM-dd". We append the time.
-        // We try heartRate first, if null, try steps, etc.
+        // Get date from SDK beans [cite: 211, 217, 224]
         val sdkDateString = data.heartRate?.recordDay
             ?: data.steps?.recordDay
             ?: data.sleep?.recordDay
+            ?: getCurrentDateString() // Fallback
 
-        // Fallback to system date ONLY if SDK returns absolutely nothing (rare)
-        val finalRecordDate = if (!sdkDateString.isNullOrEmpty()) {
-            "${sdkDateString}T00:00:00Z"
-        } else {
-            getCurrentDateISO()
-        }
+        // Format to ISO 8601 as required by typical backends
+        val finalRecordDate = "${sdkDateString}T00:00:00Z"
 
-        Timber.i("🔄 Starting parallel upload for date: $finalRecordDate")
+        Timber.i("🔄 Preparing upload for $finalRecordDate")
 
-        // 3. FIX: Parallel Uploads using 'launch' inside 'coroutineScope'
-        // This fires all requests at the same time.
+        // ---------------------------------------------------------
+        // Parallel Uploads
+        // ---------------------------------------------------------
 
-        // Heart Rate
+        // 1. Heart Rate [cite: 212]
+        // Checks if there is at least one non-zero reading
         if (data.heartRate?.heartRateSource?.any { it > 0 } == true) {
-            Timber.w("HR data value : {${data.heartRate.heartRateSource}}")
-
             launch {
-                uploadMetric(userId, deviceId, finalRecordDate, data.heartRate.heartRateSource, MetricType.HEART_RATE)
+                uploadMetric(
+                    userId, deviceId, finalRecordDate,
+                    data.heartRate.heartRateSource, MetricType.HEART_RATE
+                )
             }
         }
 
-        // Steps
+        // 2. Steps [cite: 218]
         if (data.steps?.stepSource?.any { it > 0 } == true) {
-            Timber.w("Steps data value : {${data.steps.stepSource}}")
-
             launch {
-                uploadMetric(userId, deviceId, finalRecordDate, data.steps.stepSource, MetricType.STEPS)
+                uploadMetric(
+                    userId, deviceId, finalRecordDate,
+                    data.steps.stepSource, MetricType.STEPS
+                )
             }
         }
 
-        // Sleep
+        // 3. Sleep [cite: 234]
+        // Filter > 0 keeps Deep(1), Light(2), Awake(3), REM(4)
         if (data.sleep?.sourceList?.any { it > 0 } == true) {
-            Timber.w("Sleep data value : {${data.sleep.sourceList}}")
             launch {
-                uploadMetric(userId, deviceId, finalRecordDate, data.sleep.sourceList, MetricType.SLEEP)
+                uploadMetric(
+                    userId, deviceId, finalRecordDate,
+                    data.sleep.sourceList, MetricType.SLEEP
+                )
             }
         }
 
-        // SpO2
+        // 4. SpO2 [cite: 260]
         if (data.spo2?.sourceList?.any { it > 0 } == true) {
-            Timber.w("Spo2 data value : {${data.spo2.sourceList}}")
-
             launch {
-                uploadMetric(userId, deviceId, finalRecordDate, data.spo2.sourceList, MetricType.SPO2)
+                uploadMetric(
+                    userId, deviceId, finalRecordDate,
+                    data.spo2.sourceList, MetricType.SPO2
+                )
             }
         }
 
-        // Stress
+        // 5. Stress [cite: 252]
         if (data.stress?.stressSource?.any { it > 0 } == true) {
-            Timber.w("Stress data value : {${data.stress.stressSource}}")
-
             launch {
-                uploadMetric(userId, deviceId, finalRecordDate, data.stress.stressSource, MetricType.STRESS)
+                uploadMetric(
+                    userId, deviceId, finalRecordDate,
+                    data.stress.stressSource, MetricType.STRESS
+                )
             }
         }
 
-        // HRV
+        // 6. HRV [cite: 266]
         if (data.hrv?.hrvSource?.any { it > 0 } == true) {
-            Timber.w("Hrv data value : {${data.hrv.hrvSource}}")
             launch {
-                uploadMetric(userId, deviceId, finalRecordDate, data.hrv.hrvSource, MetricType.HRV)
+                uploadMetric(
+                    userId, deviceId, finalRecordDate,
+                    data.hrv.hrvSource, MetricType.HRV
+                )
             }
         }
     }
@@ -150,10 +153,10 @@ class HealthDataRepository @Inject constructor(
         }
     }
 
-    private fun getCurrentDateISO(): String {
+    private fun getCurrentDateString(): String {
         val calendar = java.util.Calendar.getInstance()
         return String.format(
-            "%04d-%02d-%02dT00:00:00Z",
+            "%04d-%02d-%02d",
             calendar.get(java.util.Calendar.YEAR),
             calendar.get(java.util.Calendar.MONTH) + 1,
             calendar.get(java.util.Calendar.DAY_OF_MONTH)

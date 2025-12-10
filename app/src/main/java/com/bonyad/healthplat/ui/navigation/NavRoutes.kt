@@ -10,3 +10,12 @@ sealed class NavRoutes(val route: String) {
     object Dashboard : NavRoutes("dashboard")
 }
 
+sealed class HealthDetailRoutes(val route: String) {
+    object HeartRateDetail : HealthDetailRoutes("heart_rate_detail")
+    object StepsDetail : HealthDetailRoutes("steps_detail")
+    object SleepDetail : HealthDetailRoutes("sleep_detail")
+    object SpO2Detail : HealthDetailRoutes("spo2_detail")
+    object StressDetail : HealthDetailRoutes("stress_detail")
+    object HrvDetail : HealthDetailRoutes("hrv_detail")
+}
+

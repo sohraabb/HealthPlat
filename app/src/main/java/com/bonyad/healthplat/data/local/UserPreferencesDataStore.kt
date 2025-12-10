@@ -270,4 +270,12 @@ class UserPreferencesDataStore @Inject constructor(
             preferences.clear()
         }
     }
+
+    suspend fun clearAuthOnly() {
+        dataStore.edit {
+            it.remove(PreferencesKeys.AUTH_TOKEN)
+            it.remove(PreferencesKeys.REFRESH_TOKEN)
+            it.remove(PreferencesKeys.USER_ID)
+        }
+    }
 }

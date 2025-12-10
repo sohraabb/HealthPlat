@@ -41,9 +41,9 @@ data class RegisterByPhoneRequest(
 
 @Serializable
 data class RefreshTokenRequest(
-    @SerialName("AccessToken")
+    @SerialName("accessToken")
     val accessToken: String,
-    @SerialName("RefreshToken")
+    @SerialName("refreshToken")
     val refreshToken: String
 )
 

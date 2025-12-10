@@ -39,6 +39,7 @@ import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
@@ -65,6 +66,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -238,7 +240,7 @@ fun DateStripSection() {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "مهر ماه",
+                text = "آذر ماه",
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 color = Color.Gray
             )
@@ -530,90 +532,103 @@ fun AddFoodBottomSheet(
     var foodName by remember { mutableStateOf("") }
     var calories by remember { mutableStateOf("") }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = Color.White
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+
+        ModalBottomSheet(
+            onDismissRequest = onDismiss,
+            sheetState = sheetState,
+            containerColor = Color.White
         ) {
-            Text(
-                text = "افزودن به ${mealType.persianName}",
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp
-                ),
-                color = Color(0xFF2C2C2C),
-                modifier = Modifier.padding(bottom = 24.dp)
-            )
-
-            // Food name input
-            OutlinedTextField(
-                value = foodName,
-                onValueChange = { foodName = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("نام غذا") },
-                placeholder = { Text("مثال: سیب") },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color(0xFF5BA3A3),
-                    unfocusedBorderColor = Color(0xFFE0E0E0)
-                )
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Calories input
-            OutlinedTextField(
-                value = calories,
-                onValueChange = { if (it.all { char -> char.isDigit() }) calories = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("کالری") },
-                placeholder = { Text("مثال: ۱۹۹") },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color(0xFF5BA3A3),
-                    unfocusedBorderColor = Color(0xFFE0E0E0)
-                )
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Add button
-            Button(
-                onClick = {
-                    if (foodName.isNotBlank() && calories.isNotBlank()) {
-                        onAddFood(foodName, calories.toInt())
-                        onDismiss()
-                    }
-                },
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF5BA3A3),
-                    disabledContainerColor = Color(0xFFE0E0E0)
-                ),
-                enabled = foodName.isNotBlank() && calories.isNotBlank()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "افزودن",
-                    style = MaterialTheme.typography.bodyLarge.copy(
+                    text = "افزودن به ${mealType.persianName}",
+                    style = MaterialTheme.typography.titleLarge.copy(
                         fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
+                        fontSize = 20.sp
                     ),
-                    color = Color.White
+                    color = Color(0xFF2C2C2C),
+                    modifier = Modifier.padding(bottom = 24.dp)
                 )
-            }
 
-            Spacer(modifier = Modifier.height(16.dp))
+                // Food name input
+                OutlinedTextField(
+                    value = foodName,
+                    onValueChange = { foodName = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("نام غذا") },
+                    placeholder = { Text("مثال: سیب") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFF5BA3A3),
+                        unfocusedBorderColor = Color(0xFFE0E0E0)
+                    ),
+                    textStyle = LocalTextStyle.current.copy(
+                        textAlign = TextAlign.End,
+                        color = Color.Black
+                    )
+
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Calories input
+                OutlinedTextField(
+                    value = calories,
+                    onValueChange = { if (it.all { char -> char.isDigit() }) calories = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("کالری") },
+                    placeholder = { Text("مثال: ۱۹۹") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFF5BA3A3),
+                        unfocusedBorderColor = Color(0xFFE0E0E0)
+                    ),
+                    textStyle = LocalTextStyle.current.copy(
+                        textAlign = TextAlign.Start,
+                        color = Color.Black
+                    )
+
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Add button
+                Button(
+                    onClick = {
+                        if (foodName.isNotBlank() && calories.isNotBlank()) {
+                            onAddFood(foodName, calories.toInt())
+                            onDismiss()
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF5BA3A3),
+                        disabledContainerColor = Color(0xFFE0E0E0)
+                    ),
+                    enabled = foodName.isNotBlank() && calories.isNotBlank()
+                ) {
+                    Text(
+                        text = "افزودن",
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        ),
+                        color = Color.White
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+            }
         }
     }
 }

@@ -3,6 +3,7 @@ package com.bonyad.healthplat.blesdk.manager
 import com.bonlala.bonlalable.bean.DeviceInfoBean
 import com.bonlala.bonlalable.bean.ScanDeviceInfo
 import com.bonyad.healthplat.blesdk.model.ConnectionState
+import com.bonyad.healthplat.blesdk.model.PairingState
 import com.bonyad.healthplat.blesdk.model.RealTimeData
 import com.bonyad.healthplat.domain.model.RecordDataResult
 import kotlinx.coroutines.flow.Flow
@@ -18,6 +19,7 @@ interface HealthDeviceManager {
     val firmwareVersion: StateFlow<String?>
     val initializationComplete: SharedFlow<Unit>
     val isPaired: StateFlow<Boolean>
+    val pairingState: StateFlow<PairingState>
 
     fun startScan()
     fun stopScan()

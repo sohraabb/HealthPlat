@@ -239,7 +239,7 @@ fun NewHealthStatusCard(
             Spacer(modifier = Modifier.height(20.dp))
 
             Button(
-                onClick = { viewModel.connectDevice() },
+                onClick = { viewModel.syncDeviceHistory() },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp),

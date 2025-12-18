@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
+import com.bonyad.healthplat.data.local.UserPreferencesDataStore.PreferencesKeys.AUTH_TOKEN
+import com.bonyad.healthplat.data.local.UserPreferencesDataStore.PreferencesKeys.REFRESH_TOKEN
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -54,7 +56,13 @@ class UserPreferencesDataStore @Inject constructor(
                 }
             }
             .map { preferences ->
-                preferences[PreferencesKeys.AUTH_TOKEN]
+                val token = preferences[AUTH_TOKEN]
+                if (token != null) {
+                    Timber.d("📖 Read auth token: ${token.take(30)}...")
+                } else {
+                    Timber.w("📖 No auth token found in storage")
+                }
+                token
             }
     }
 
@@ -77,8 +85,26 @@ class UserPreferencesDataStore @Inject constructor(
                 }
             }
             .map { preferences ->
-                preferences[PreferencesKeys.REFRESH_TOKEN]
+                val token = preferences[REFRESH_TOKEN]
+                if (token != null) {
+                    Timber.d("📖 Read refresh token: ${token.take(30)}...")
+                } else {
+                    Timber.w("📖 No refresh token found in storage")
+                }
+                token
             }
+    }
+
+    suspend fun saveTokens(accessToken: String, refreshToken: String) {
+        try {
+            dataStore.edit { preferences ->
+                preferences[PreferencesKeys.AUTH_TOKEN] = accessToken
+                preferences[PreferencesKeys.REFRESH_TOKEN] = refreshToken
+            }
+            Timber.d("💾 Both tokens saved atomically")
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Failed to save tokens")
+        }
     }
 
     // ============ User ID ============
@@ -266,16 +292,25 @@ class UserPreferencesDataStore @Inject constructor(
     // ============ Clear All ============
 
     suspend fun clearAll() {
-        dataStore.edit { preferences ->
-            preferences.clear()
+        try {
+            dataStore.edit { preferences ->
+                preferences.clear()
+            }
+            Timber.i("🗑️ All preferences cleared")
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Failed to clear all preferences")
         }
     }
 
     suspend fun clearAuthOnly() {
-        dataStore.edit {
-            it.remove(PreferencesKeys.AUTH_TOKEN)
-            it.remove(PreferencesKeys.REFRESH_TOKEN)
-            it.remove(PreferencesKeys.USER_ID)
+        try {
+            dataStore.edit {
+                it.remove(AUTH_TOKEN)
+                it.remove(REFRESH_TOKEN)
+            }
+            Timber.i("🗑️ Auth tokens cleared (keeping user data)")
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Failed to clear auth tokens")
         }
     }
 }

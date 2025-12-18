@@ -298,7 +298,12 @@ class AuthViewModel @Inject constructor(
 
     fun isValidPersianPhoneNumber(phone: String): Boolean {
         // Persian phone numbers: 09xx xxx xxxx with valid operator codes
-        val regex = "^09((14)|(13)|(12)|(19)|(18)|(17)|(15)|(16)|(11)|(10)|(90)|(91)|(92)|(93)|(94)|(95)|(96)|(32)|(30)|(33)|(35)|(36)|(37)|(38)|(39)|(00)|(01)|(02)|(03)|(04)|(05)|(41)|(20)|(21)|(22)|(23)|(31)|(34))\\d{7}$".toRegex()
+        // Valid prefixes in Iran (as of 2024):
+        // - Hamrah-e Aval (MCI): 0910-0919
+        // - Irancell: 0930-0933, 0935-0939
+        // - Rightel: 0920-0921
+        // - Taliya: 0932
+        // - Aptel (MVNO): 09415
+        val regex = "^09((1[0-9])|(2[0-1])|(3[0-3])|(3[5-9])|(41))\\d{7}$".toRegex()
         return regex.matches(phone)
-    }
-}
+    }}

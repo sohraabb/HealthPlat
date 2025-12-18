@@ -93,7 +93,7 @@ class DashboardViewModel @Inject constructor(
             delay(1000)
 
             // 1. Call Repository (It fetches from Ring AND Uploads to Server)
-            val result = healthRepository.syncDashboardData(0)
+            val result = healthRepository.syncDashboardData(2)
 
             // 2. Update UI with the returned result
             if (result is RecordDataResult.Success) {

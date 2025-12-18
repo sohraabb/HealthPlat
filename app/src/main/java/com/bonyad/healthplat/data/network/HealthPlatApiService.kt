@@ -25,6 +25,7 @@ import retrofit2.http.Headers
 import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 interface HealthPlatApiService {
 
@@ -65,9 +66,10 @@ interface HealthPlatApiService {
      * POST /api/Auth/refresh
      */
     @POST("Auth/refresh")
-    @Headers("Content-Type: application/json")
+    @Headers("accept: */*")
     suspend fun refreshToken(
-        @Body request: RefreshTokenRequest
+        @Query("accessToken") accessToken: String,
+        @Query("refreshToken") refreshToken: String
     ): Response<ApiResponse<RefreshTokenResponse>>
 
     /**

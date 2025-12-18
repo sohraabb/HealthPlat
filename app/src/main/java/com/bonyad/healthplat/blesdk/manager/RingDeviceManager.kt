@@ -1,6 +1,7 @@
 package com.bonyad.healthplat.blesdk.manager
 
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -23,6 +24,7 @@ import com.bonlala.bonlalable.listener.OnRealTimeDataListener
 import com.bonlala.bonlalable.listener.OnRecordDataListener
 import com.bonlala.bonlalable.listener.OnScanListener
 import com.bonyad.healthplat.blesdk.model.ConnectionState
+import com.bonyad.healthplat.blesdk.model.PairingState
 import com.bonyad.healthplat.blesdk.model.RealTimeData
 import com.bonyad.healthplat.domain.model.RecordDataResult
 import kotlinx.coroutines.CoroutineScope
@@ -75,6 +77,9 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
     private val _isPaired = MutableStateFlow(false)
     override val isPaired: StateFlow<Boolean> = _isPaired.asStateFlow()
 
+    private val _pairingState = MutableStateFlow<PairingState>(PairingState.NotPaired)
+    override val pairingState: StateFlow<PairingState> = _pairingState.asStateFlow()
+
     private var connectionReceiver: BroadcastReceiver? = null
     private var batteryUpdateJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -96,39 +101,75 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
         val intentFilter = IntentFilter().apply {
             addAction(BleConstant.CONNECTED_ACTION)
             addAction(BleConstant.DIS_CONNECTED_ACTION)
+            addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
         }
 
         connectionReceiver = object : BroadcastReceiver() {
+            @SuppressLint("MissingPermission")
             override fun onReceive(context: Context?, intent: Intent?) {
                 when (intent?.action) {
                     BleConstant.DIS_CONNECTED_ACTION -> {
                         _connectionState.value = ConnectionState.DISCONNECTED
                         _batteryLevel.value = null
+                        _isPaired.value = false
+                        _pairingState.value = PairingState.NotPaired
                         Timber.i("Device disconnected (broadcast)")
                     }
 
                     BleConstant.CONNECTED_ACTION -> {
                         _connectionState.value = ConnectionState.CONNECTED
-                        initializeDevice()
                         Timber.i("Device connected (broadcast)")
+                    }
+
+                    // NEW: Handle pairing state changes
+                    BluetoothDevice.ACTION_BOND_STATE_CHANGED -> {
+                        val bondState = intent.getIntExtra(
+                            BluetoothDevice.EXTRA_BOND_STATE,
+                            BluetoothDevice.BOND_NONE
+                        )
+                        val device: BluetoothDevice? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+                        } else {
+                            @Suppress("DEPRECATION")
+                            intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                        }
+
+                        device?.let {
+                            Timber.i("🔐 Bond state changed: $bondState for ${it.address}")
+
+                            when (bondState) {
+                                BluetoothDevice.BOND_BONDING -> {
+                                    Timber.i("📲 User is pairing...")
+                                    _pairingState.value = PairingState.PairingRequested
+                                }
+                                BluetoothDevice.BOND_BONDED -> {
+                                    Timber.i("✅ Device paired successfully!")
+                                    _pairingState.value = PairingState.Paired
+                                    _isPaired.value = true
+
+                                    // Continue initialization after successful pairing
+                                    scope.launch {
+                                        delay(500) // Small delay for stability
+                                        initializeDevice()
+                                    }
+                                }
+                                BluetoothDevice.BOND_NONE -> {
+                                    Timber.w("❌ Pairing failed or bond removed")
+                                    _pairingState.value = PairingState.PairingFailed("Pairing cancelled or failed")
+                                    _isPaired.value = false
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
 
-        // FIX: Add proper flag based on Android version
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             context.registerReceiver(
                 connectionReceiver,
                 intentFilter,
                 Context.RECEIVER_NOT_EXPORTED
-            )
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.registerReceiver(
-                connectionReceiver,
-                intentFilter,
-                null,
-                null
             )
         } else {
             context.registerReceiver(connectionReceiver, intentFilter)
@@ -140,15 +181,14 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
             BonlalaOperateManager.getInstance().setBleConnStatusListener { mac, status ->
                 when (status) {
                     0 -> {
-                        // Disconnected
                         _connectionState.value = ConnectionState.DISCONNECTED
                         _batteryLevel.value = null
                         _firmwareVersion.value = null
+                        _isPaired.value = false
+                        _pairingState.value = PairingState.NotPaired
                         Timber.i("Global listener: Disconnected from $mac")
                     }
-
                     1 -> {
-                        // Connected
                         _connectionState.value = ConnectionState.CONNECTED
                         Timber.i("Global listener: Connected to $mac")
                     }
@@ -248,38 +288,30 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
     override fun connect(deviceMac: String) {
         Timber.i("🔵 connect() called with MAC: $deviceMac")
 
-        // 1. SDK Recommendation: Always stop scan before connecting
-
         _connectionState.value = ConnectionState.CONNECTING
+        _pairingState.value = PairingState.NotPaired
         stopScan()
 
         try {
-            // 2. Using the method taking String MAC
             manager.connDevice("", deviceMac, object : ConnStatusListener {
                 override fun connStatus(status: Int) {
                     Timber.i("connStatus callback: $status")
-                    // NOTE: We do NOT set DISCONNECTED here immediately if status is 0.
-                    // The SDK often fires '0' during the handshake or channel setup.
-                    // We rely on the BroadcastReceiver or setNoticeStatus for final confirmation.
 
                     if (status == 1) {
-                        // If we get explicit success here, great.
-                        if (status == 1 && _connectionState.value != ConnectionState.CONNECTED) {
+                        if (_connectionState.value != ConnectionState.CONNECTED) {
                             _connectionState.value = ConnectionState.CONNECTED
-                            // 🆕 V1.4: Check and initiate pairing
-                            initializeDeviceWithPairing()
                         }
                     }
                 }
 
                 override fun setNoticeStatus(noticeStatus: Int) {
                     Timber.i("📢 setNoticeStatus triggered: $noticeStatus")
-                    // SDK Sample Logic: This is the TRUE indicator that the data channel is open.
-                    // Even if noticeStatus is 0, the SDK sample treats this as "Success".
 
                     if (_connectionState.value != ConnectionState.CONNECTED) {
                         Timber.i("✅ Connection fully established via NoticeStatus")
                         _connectionState.value = ConnectionState.CONNECTED
+
+                        // NEW: Check pairing and initiate if needed
                         initializeDeviceWithPairing()
                     }
                 }
@@ -301,6 +333,8 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
         _connectionState.value = ConnectionState.DISCONNECTED
         _batteryLevel.value = null
         _firmwareVersion.value = null
+        _isPaired.value = false
+        _pairingState.value = PairingState.NotPaired
     }
 
     override fun openRealTimeHeartRate() {
@@ -403,6 +437,7 @@ override fun readBatteryLevel() {
     override suspend fun getDeviceInfo(): Result<DeviceInfoBean> = suspendCoroutine { cont ->
         try {
             BonlalaOperateManager.getInstance().getDeviceInfoData { deviceInfo ->
+                _isPaired.value = deviceInfo.isPair
                 cont.resume(Result.success(deviceInfo))
             }
         } catch (t: Throwable) {
@@ -413,7 +448,6 @@ override fun readBatteryLevel() {
     override suspend fun getRecordData(day: Int): RecordDataResult {
         Timber.i("📊 Requesting record data for day: $day")
 
-        // ✅ V1.4: Check pairing first
         if (!_isPaired.value) {
             Timber.w("❌ Cannot get record data - device not paired")
             return RecordDataResult.Error(-3)
@@ -429,10 +463,10 @@ override fun readBatteryLevel() {
 
         when (deviceState) {
             null, 0 -> Timber.d("✅ Device ready (state: $deviceState)")
-            2 -> return RecordDataResult.Error(-2) // Battery low
-            3 -> return RecordDataResult.Error(-2) // Channel not open
-            4, 5 -> return RecordDataResult.Error(-2) // Busy
-            6 -> return RecordDataResult.Error(-2) // No data
+            2 -> return RecordDataResult.Error(-2)
+            3 -> return RecordDataResult.Error(-2)
+            4, 5 -> return RecordDataResult.Error(-2)
+            6 -> return RecordDataResult.Error(-2)
         }
 
         return try {
@@ -441,7 +475,6 @@ override fun readBatteryLevel() {
                     BonlalaOperateManager.getInstance().getRecordByData(
                         day,
                         object : OnRecordDataListener {
-                            // 🆕 V1.4: Updated signature with dayStr
                             override fun isNoResponseData(dayStr: String, stateCode: Int) {
                                 val errorMessage = when (stateCode) {
                                     1 -> "Invalid message"
@@ -460,56 +493,22 @@ override fun readBatteryLevel() {
                                 }
                             }
 
-                            // 🆕 V1.4: Updated signature with new beans
                             override fun backRecordData(
-                                recordHeartBean: RecordHeartRateBean?, // NEW
+                                recordHeartBean: RecordHeartRateBean?,
                                 recordStepBean: RecordStepBean?,
                                 recordSleepBean: RecordSleepBean?,
-                                recordSleepStepBean: RecordSleepStepBean?, // NEW
+                                recordSleepStepBean: RecordSleepStepBean?,
                                 recordStressBean: RecordStressBean?,
                                 recordSpo2Bean: RecordSpo2Bean?,
                                 recordHrvBean: RecordHrvBean?,
-                                recordSleepActivityBean: RecordSleepActivityBean? // NEW
+                                recordSleepActivityBean: RecordSleepActivityBean?
                             ) {
                                 Timber.i("📥 Ring Record Data Received for day $day")
-                                Timber.i("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-                                // Log Heart Rate (now separate)
-                                if (recordHeartBean != null) {
-                                    val validHeartData = recordHeartBean.heartRateSource?.count { it > 0 } ?: 0
-                                    Timber.i("❤️ Heart Rate:")
-                                    Timber.i("   Date: ${recordHeartBean.recordDay}")
-                                    Timber.i("   Valid readings: $validHeartData/1440")
-                                }
-
-                                // Log Steps
-                                if (recordStepBean != null) {
-                                    val totalSteps = recordStepBean.stepSource?.sum() ?: 0
-                                    Timber.i("🦶 Steps: Total = $totalSteps")
-                                }
-
-                                // Log Sleep
-                                if (recordSleepBean != null) {
-                                    val sleepMinutes = recordSleepBean.sourceList?.count { it in 1..4 } ?: 0
-                                    Timber.i("😴 Sleep: ${sleepMinutes} minutes")
-                                }
-
-                                // 🆕 Log new SleepStep data
-                                if (recordSleepStepBean != null) {
-                                    Timber.i("💤 Sleep Step Bean: ${recordSleepStepBean.recordDay}")
-                                }
-
-                                // 🆕 Log new SleepActivity data
-                                if (recordSleepActivityBean != null) {
-                                    Timber.i("💤 Sleep Activity Bean available : ${recordSleepActivityBean.sourceList}")
-                                }
-
-                                Timber.i("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
                                 if (continuation.isActive) {
                                     continuation.resume(
                                         RecordDataResult.Success(
-                                            heartRate = recordHeartBean, // Now separate
+                                            heartRate = recordHeartBean,
                                             steps = recordStepBean,
                                             sleep = recordSleepBean,
                                             stress = recordStressBean,
@@ -615,9 +614,9 @@ override fun readBatteryLevel() {
 
     private fun initializeDeviceWithPairing() {
         scope.launch {
-            Timber.i("🚀 Starting Device Initialization with Pairing Check")
-
             try {
+                Timber.i("🚀 Starting Device Initialization with Pairing Check")
+
                 delay(1000) // Settle time
 
                 // STEP 1: Get device info to check pairing status
@@ -626,50 +625,45 @@ override fun readBatteryLevel() {
                 if (deviceInfo != null && deviceInfo.isPair) {
                     Timber.i("✅ Device already paired")
                     _isPaired.value = true
-                    // Proceed with normal initialization
+                    _pairingState.value = PairingState.Paired
                     initializeDevice()
                 } else {
                     Timber.i("⚠️ Device not paired - initiating pairing")
+
                     // STEP 2: Read MAC and pair
-                    manager.readDeviceMac { mac ->
-                        Timber.i("📱 Device MAC: $mac")
-                        manager.toPairDevice(mac)
+                    manager.readDeviceMac { macBytes ->
+                        Timber.i("📱 Device MAC: ${macBytes.contentToString()}")
 
-                        // Wait for system pairing to complete
-                        scope.launch {
-                            delay(3000) // Give time for pairing
+                        // This triggers Android's pairing dialog
+                        manager.toPairDevice(macBytes)
 
-                            // Verify pairing succeeded
-                            val updatedInfo = getDeviceInfo().getOrNull()
-                            if (updatedInfo?.isPair == true) {
-                                Timber.i("✅ Pairing successful")
-                                _isPaired.value = true
-                                initializeDevice()
-                            } else {
-                                Timber.e("❌ Pairing failed")
-                                _isPaired.value = false
-                            }
-                        }
+                        Timber.i("📲 Pairing request sent - waiting for user confirmation...")
+                        _pairingState.value = PairingState.PairingRequested
+
+                        // Don't continue here - wait for broadcast receiver
+                        // to confirm pairing and call initializeDevice()
                     }
                 }
             } catch (t: Throwable) {
-                Timber.e(t, "❌ Error during pairing check")
+                Timber.e(t, "❌ Pairing check failed")
+                _pairingState.value = PairingState.PairingFailed(t.message ?: "Unknown error")
+                // Still emit initialization complete to avoid timeout
                 _initializationComplete.emit(Unit)
             }
         }
     }
 
+    // MODIFIED: Only called AFTER pairing succeeds
     private fun initializeDevice() {
         scope.launch {
-            Timber.i("🚀 Starting Device Initialization")
-
-//            setupRealTimeDataListener()
-//            delay(1000)
-
             try {
+                Timber.i("🚀 Starting Device Initialization")
+
+                delay(500)
+
                 Timber.i("⚙️ Syncing device time...")
                 syncDeviceTime()
-                delay(1500)
+                delay(500)
 
                 Timber.i("⚙️ Reading battery level...")
                 readBatteryLevel()

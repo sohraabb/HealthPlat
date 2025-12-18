@@ -40,9 +40,21 @@ fun PhoneAuthScreen(
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    val isPhoneValid = phoneNumber.isEmpty() || viewModel.isValidPersianPhoneNumber(phoneNumber)
-    val showError = phoneNumber.isNotEmpty() && !isPhoneValid
+    // Track if user has tried to submit - only show error after submit attempt
+    var hasAttemptedSubmit by remember { mutableStateOf(false) }
 
+    // Validation state
+    val isPhoneComplete = phoneNumber.length == 11
+    val isPhoneValid = viewModel.isValidPersianPhoneNumber(phoneNumber)
+    val shouldShowError = hasAttemptedSubmit && isPhoneComplete && !isPhoneValid
+
+
+    // Reset error state when user changes phone number
+    LaunchedEffect(phoneNumber) {
+        if (hasAttemptedSubmit && isPhoneValid) {
+            hasAttemptedSubmit = false
+        }
+    }
 
     // Navigate when OTP is sent
     LaunchedEffect(authState) {
@@ -125,7 +137,7 @@ fun PhoneAuthScreen(
 
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // Phone number input - FIXED
+                    // Phone number input with error handling
                     Column(modifier = Modifier.fillMaxWidth()) {
                         OutlinedTextField(
                             value = phoneNumber,
@@ -138,9 +150,7 @@ fun PhoneAuthScreen(
                                 )
                             },
                             label = {
-                                Text(
-                                    text = "شماره همراه",
-                                )
+                                Text(text = "شماره همراه")
                             },
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Phone,
@@ -149,31 +159,35 @@ fun PhoneAuthScreen(
                             keyboardActions = KeyboardActions(
                                 onDone = {
                                     focusManager.clearFocus()
+                                    hasAttemptedSubmit = true
+                                    if (isPhoneComplete && isPhoneValid) {
+                                        viewModel.sendOtp()
+                                    }
                                 }
                             ),
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = if (showError) Color.Red else Color(0xFF5BA3A3),
-                                unfocusedBorderColor = if (showError) Color.Red else Color(0xFFE0E0E0),
+                                focusedBorderColor = if (shouldShowError) Color(0xFFE53935) else Color(0xFF5BA3A3),
+                                unfocusedBorderColor = if (shouldShowError) Color(0xFFE53935) else Color(0xFFE0E0E0),
+                                errorBorderColor = Color(0xFFE53935),
                                 focusedContainerColor = Color.White,
-                                unfocusedContainerColor = Color.White,
-                                errorBorderColor = Color.Red
+                                unfocusedContainerColor = Color.White
                             ),
                             textStyle = LocalTextStyle.current.copy(
                                 textAlign = TextAlign.End,
                                 color = Color.Black
                             ),
-                            isError = showError
+                            isError = shouldShowError
                         )
 
                         // Error message
-                        if (showError) {
+                        if (shouldShowError) {
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "شماره وارد شده نادرست است.",
-                                color = Color.Red,
-                                style = MaterialTheme.typography.bodySmall,
+                                text = "شماره همراه وارد شده معتبر نیست",
+                                color = Color(0xFFE53935),
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                                 modifier = Modifier.fillMaxWidth(),
                                 textAlign = TextAlign.End
                             )
@@ -186,20 +200,24 @@ fun PhoneAuthScreen(
                     Button(
                         onClick = {
                             focusManager.clearFocus()
-                            viewModel.sendOtp()
+                            hasAttemptedSubmit = true
+
+                            if (isPhoneComplete && isPhoneValid) {
+                                viewModel.sendOtp()
+                            }
                         },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp),
                         shape = RoundedCornerShape(16.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (phoneNumber.length == 11)
+                            containerColor = if (isPhoneComplete && isPhoneValid)
                                 Color(0xFF5BA3A3)
                             else
                                 Color(0xFFE0E0E0),
                             disabledContainerColor = Color(0xFFE0E0E0)
                         ),
-                        enabled = phoneNumber.length == 11 && authState !is AuthState.Loading
+                        enabled = isPhoneComplete && authState !is AuthState.Loading
                     ) {
                         if (authState is AuthState.Loading) {
                             CircularProgressIndicator(

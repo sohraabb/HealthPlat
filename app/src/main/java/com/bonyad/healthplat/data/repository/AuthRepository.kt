@@ -173,17 +173,16 @@ class AuthRepository @Inject constructor(
      * Save authentication data to preferences
      */
     private suspend fun saveAuthData(authData: LoginResponse, phoneNumber: String) {
-        userPreferences.saveAuthToken(authData.accessToken)
-        userPreferences.saveRefreshToken(authData.refreshToken)
-        // Convert UUID string to Long (use hashCode)
+        // Save tokens atomically
+        userPreferences.saveTokens(authData.accessToken, authData.refreshToken)
+
+        // Save other user data
         userPreferences.saveUserId(authData.userId)
         userPreferences.savePhoneNumber(phoneNumber)
+
+        Timber.d("✅ Auth data saved for user: ${authData.userId}")
     }
 
-
-    /**
-     * Refresh access token using refresh token
-     */
     suspend fun refreshToken(): AuthResult<RefreshTokenResponse> {
         return withContext(Dispatchers.IO) {
             try {
@@ -201,16 +200,15 @@ class AuthRepository @Inject constructor(
                 )
 
                 Timber.d("🔄 Attempting to refresh token...")
-                val response = apiService.refreshToken(request)
+                val response = apiService.refreshToken(currentAccessToken,currentRefreshToken)
 
                 if (response.isSuccessful) {
                     val body = response.body()
                     if (body != null && body.isSuccess && body.data != null) {
                         val refreshData = body.data
 
-                        // Save new tokens
-                        userPreferences.saveAuthToken(refreshData.accessToken)
-                        userPreferences.saveRefreshToken(refreshData.refreshToken)
+                        // ✅ Save new tokens atomically
+                        userPreferences.saveTokens(refreshData.accessToken, refreshData.refreshToken)
 
                         Timber.i("✅ Token refreshed successfully")
                         logTokenExpiration(refreshData.accessToken)

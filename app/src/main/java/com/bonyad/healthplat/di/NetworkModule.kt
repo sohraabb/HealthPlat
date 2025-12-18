@@ -69,12 +69,12 @@ object NetworkModule {
             val originalRequest = chain.request()
             val path = originalRequest.url.encodedPath
 
-            // Skip auth for auth endpoints (login, register, refresh)
             val isAuthEndpoint =
                 path.contains("/Auth/login", true) ||
                         path.contains("/Auth/register", true) ||
                         path.contains("/Auth/requestPhoneVerification", true) ||
-                        path.contains("/Auth/verifyPhone", true)
+                        path.contains("/Auth/verifyPhone", true) ||
+                        path.contains("/Auth/refresh", true)
 
             if (isAuthEndpoint) {
                 Timber.d("🔓 Auth endpoint: $path")
@@ -85,24 +85,23 @@ object NetworkModule {
                 )
             }
 
-            // Get token from preferences
+            // ✅ Add detailed logging
             val token = runBlocking {
-                userPreferences.getAuthToken().first()
+                val t = userPreferences.getAuthToken().first()
+                Timber.d("🔍 Auth Interceptor checking token for: $path")
+                Timber.d("   Token exists: ${t != null}")
+                Timber.d("   Token value: ${t?.take(30)}...")
+                t
             }
 
-            if (token.isNullOrEmpty()) {
-                Timber.w("⚠️ No token available for: $path")
-            } else {
-                Timber.d("🔑 Using token for: $path")
-            }
-
-            // Add token to request if available
             val newRequest = if (!token.isNullOrEmpty()) {
+                Timber.d("🔑 Adding Authorization header for: $path")
                 originalRequest.newBuilder()
                     .header("Authorization", "Bearer $token")
                     .header("accept", "*/*")
                     .build()
             } else {
+                Timber.w("⚠️ No token available for: $path")
                 originalRequest.newBuilder()
                     .header("accept", "*/*")
                     .build()
@@ -159,7 +158,7 @@ object NetworkModule {
         return OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
             .addInterceptor(loggingInterceptor)
-            .authenticator(tokenAuthenticator)  // ✅ ADD THIS LINE - THE KEY CHANGE!
+            .authenticator(tokenAuthenticator)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)

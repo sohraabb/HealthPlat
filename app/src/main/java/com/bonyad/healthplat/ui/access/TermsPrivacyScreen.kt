@@ -60,11 +60,11 @@ fun TermsAndPrivacyScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            val scrollState = rememberScrollState()
+//            val scrollState = rememberScrollState()
 
             Column(
-                modifier = Modifier.fillMaxSize()
-                    .verticalScroll(scrollState),
+                modifier = Modifier.fillMaxSize(),
+//                    .verticalScroll(scrollState),
 
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {

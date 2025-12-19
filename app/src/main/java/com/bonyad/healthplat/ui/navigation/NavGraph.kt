@@ -11,10 +11,12 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.bonyad.healthplat.ui.access.TermsAndPrivacyScreen
 import com.bonyad.healthplat.ui.dashboard.DashboardScreen
+import com.bonyad.healthplat.ui.dashboard.ai.AiAnalysisScreen
 import com.bonyad.healthplat.ui.dashboard.details.heart_rate.HeartRateDetailScreen
 import com.bonyad.healthplat.ui.dashboard.details.sleep.SleepDetailScreen
 import com.bonyad.healthplat.ui.dashboard.details.sp02.SpO2DetailScreen
 import com.bonyad.healthplat.ui.dashboard.details.stepts.StepsDetailScreen
+import com.bonyad.healthplat.ui.dashboard.details.stress.StressDetailScreen
 import com.bonyad.healthplat.ui.device.DeviceConnectionScreen
 import com.bonyad.healthplat.ui.login.OtpVerificationScreen
 import com.bonyad.healthplat.ui.login.PhoneAuthScreen
@@ -136,6 +138,13 @@ fun HealthPlatNavGraph(
             )
         }
 
+        // 8. AI
+        composable(NavRoutes.AiScreen.route) {
+            AiAnalysisScreen (
+                onBack = { navController.popBackStack() }
+            )
+        }
+
         // Health Details Routes :
         composable(HealthDetailRoutes.HeartRateDetail.route) {
             HeartRateDetailScreen(
@@ -162,16 +171,11 @@ fun HealthPlatNavGraph(
         }
 
         composable(HealthDetailRoutes.StressDetail.route) {
-//            StressDetailScreen(
-//                onBack = { navController.popBackStack() }
-//            )
+            StressDetailScreen(
+                onBack = { navController.popBackStack() }
+            )
         }
 
-        composable(HealthDetailRoutes.HrvDetail.route) {
-//            HrvDetailScreen(
-//                onBack = { navController.popBackStack() }
-//            )
-        }
 
     }
 }

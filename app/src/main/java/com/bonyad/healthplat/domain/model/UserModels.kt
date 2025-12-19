@@ -24,28 +24,57 @@ data class UpdateUserRequest(
     val enabledEmailMarketing: Boolean? = null
 )
 
+@Serializable
+data class UserOverviewData(
+    @SerialName("Id")
+    val id: String,
+    @SerialName("UserName")
+    val userName: String,
+    @SerialName("Email")
+    val email: String?,
+    @SerialName("EmailConfirmed")
+    val emailConfirmed: Boolean,
+    @SerialName("PhoneNumber")
+    val phoneNumber: String,
+    @SerialName("PhoneNumberConfirmed")
+    val phoneNumberConfirmed: Boolean,
+    @SerialName("TwoFactorEnabled")
+    val twoFactorEnabled: Boolean,
+    @SerialName("EnabledEmailMarketing")
+    val enabledEmailMarketing: Boolean,
+    @SerialName("AcceptedTermsAndPolicy")
+    val acceptedTermsAndPolicy: Boolean,
+    @SerialName("Name")
+    val name: String?,
+    @SerialName("BirthDate")
+    val birthDate: String?,
+    @SerialName("Gender")
+    val gender: Int?,
+    @SerialName("Height")
+    val height: Int?,
+    @SerialName("Weight")
+    val weight: Int?,
+    @SerialName("CreatedDate")
+    val createdDate: String?,
+    @SerialName("UserDevices")
+    val userDevices: List<UserDeviceOverview>?
+)
 
-
-object GenderConverter {
-    const val MALE = 1
-    const val FEMALE = 2
-
-    fun toApiValue(gender: String): Int {
-        return when (gender.lowercase()) {
-            "male", "مرد" -> MALE
-            "female", "زن" -> FEMALE
-            else -> MALE
-        }
-    }
-
-    fun fromApiValue(value: Int): String {
-        return when (value) {
-            MALE -> "مرد"
-            FEMALE -> "زن"
-            else -> "نامشخص"
-        }
-    }
-}
+@Serializable
+data class UserDeviceOverview(
+    @SerialName("Id")
+    val id: Int,
+    @SerialName("DeviceMac")
+    val deviceMac: String,
+    @SerialName("DeviceName")
+    val deviceName: String? = null,
+    @SerialName("DeviceType")
+    val deviceType: String,
+    @SerialName("FirmwareVersion")
+    val firmwareVersion: String? = null,
+    @SerialName("IsActive")
+    val isActive: Boolean
+)
 
 
 

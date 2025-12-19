@@ -40,8 +40,73 @@ class SleepDetailViewModel @Inject constructor(
     private val _sleepQuality = MutableStateFlow(0)
     val sleepQuality: StateFlow<Int> = _sleepQuality.asStateFlow()
 
+
+    // 1. Sleep Timeline Data
+    // We need segments to draw the blocks on the time axis
+    data class SleepSegment(
+        val stage: SleepStage,
+        val startRatio: Float, // 0.0 (21:00) to 1.0 (09:00)
+        val widthRatio: Float  // Width of the block
+    )
+
+    enum class SleepStage { AWAKE, LIGHT, DEEP, REM }
+
+    private val _sleepTimeline = MutableStateFlow<List<SleepSegment>>(emptyList())
+    val sleepTimeline: StateFlow<List<SleepSegment>> = _sleepTimeline.asStateFlow()
+
+    // 2. Stats
+    private val _sleepStats = MutableStateFlow(SleepStats(8, 40, 95)) // 8h 40m, Score 95
+    val sleepStats: StateFlow<SleepStats> = _sleepStats.asStateFlow()
+
+    // 3. Percentages for Donut
+    private val _stagePercentages = MutableStateFlow(Triple(29, 18, 53)) // Deep, Light, REM (approx from image)
+    val stagePercentages: StateFlow<Triple<Int, Int, Int>> = _stagePercentages.asStateFlow()
+
+    data class SleepStats(val hours: Int, val minutes: Int, val score: Int)
+
+    private val _selectedTimeRange = MutableStateFlow("روزانه")
+    val selectedTimeRange: StateFlow<String> = _selectedTimeRange.asStateFlow()
+
+    private val _selectedDayOffset = MutableStateFlow(0) // 0 = today
+    val selectedDayOffset = _selectedDayOffset.asStateFlow()
+
     init {
-        loadSleepData()
+        loadMockData()
+//        loadSleepData()
+    }
+
+    private fun loadMockData() {
+        // Mocking segments to look like the screenshot
+        // Chart spans 12 hours: 21:00 to 09:00
+        val segments = listOf(
+            // Light Sleep (Green)
+            SleepSegment(SleepStage.LIGHT, 0.26f, 0.02f),
+            SleepSegment(SleepStage.LIGHT, 0.45f, 0.02f),
+            SleepSegment(SleepStage.LIGHT, 0.60f, 0.05f),
+            SleepSegment(SleepStage.LIGHT, 0.70f, 0.02f), // Tall bar on right
+
+            // Deep Sleep (Blue)
+            SleepSegment(SleepStage.DEEP, 0.30f, 0.05f),
+            SleepSegment(SleepStage.DEEP, 0.40f, 0.06f),
+            SleepSegment(SleepStage.DEEP, 0.48f, 0.05f),
+            SleepSegment(SleepStage.DEEP, 0.55f, 0.04f),
+            SleepSegment(SleepStage.DEEP, 0.66f, 0.04f),
+
+            // REM (Purple)
+            SleepSegment(SleepStage.REM, 0.28f, 0.015f),
+            SleepSegment(SleepStage.REM, 0.36f, 0.03f),
+            SleepSegment(SleepStage.REM, 0.52f, 0.015f),
+            SleepSegment(SleepStage.REM, 0.58f, 0.03f),
+        )
+        _sleepTimeline.value = segments
+    }
+
+    fun setTimeRange(range: String) {
+        _selectedTimeRange.value = range
+    }
+
+    fun selectDay(offset: Int) {
+        _selectedDayOffset.value = offset
     }
 
     private fun calculateSleepQuality(

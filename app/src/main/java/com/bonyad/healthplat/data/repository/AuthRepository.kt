@@ -174,8 +174,11 @@ class AuthRepository @Inject constructor(
      */
     private suspend fun saveAuthData(authData: LoginResponse, phoneNumber: String) {
         // Save tokens atomically
-        userPreferences.saveTokens(authData.accessToken, authData.refreshToken)
-
+        userPreferences.saveTokens(
+            authData.accessToken,
+            authData.refreshToken,
+            authData.expDate
+        )
         // Save other user data
         userPreferences.saveUserId(authData.userId)
         userPreferences.savePhoneNumber(phoneNumber)
@@ -183,56 +186,24 @@ class AuthRepository @Inject constructor(
         Timber.d("✅ Auth data saved for user: ${authData.userId}")
     }
 
-    suspend fun refreshToken(): AuthResult<RefreshTokenResponse> {
-        return withContext(Dispatchers.IO) {
-            try {
-                val currentAccessToken = userPreferences.getAuthToken().first()
-                val currentRefreshToken = userPreferences.getRefreshToken().first()
+    suspend fun refreshTokenInternal(): RefreshTokenResponse? {
+        val currentAccess = userPreferences.getAuthToken().first() ?: return null
+        val currentRefresh = userPreferences.getRefreshToken().first() ?: return null
 
-                if (currentAccessToken.isNullOrEmpty() || currentRefreshToken.isNullOrEmpty()) {
-                    Timber.w("No tokens available for refresh")
-                    return@withContext AuthResult.Error("لطفا دوباره وارد شوید")
-                }
+        val response = apiService.refreshToken(
+            expiredTokenWithBearer = "Bearer $currentAccess",
+            accessToken = currentAccess,
+            refreshToken = currentRefresh
+        )
 
-                val request = RefreshTokenRequest(
-                    accessToken = currentAccessToken,
-                    refreshToken = currentRefreshToken
-                )
-
-                Timber.d("🔄 Attempting to refresh token...")
-                val response = apiService.refreshToken(currentAccessToken,currentRefreshToken)
-
-                if (response.isSuccessful) {
-                    val body = response.body()
-                    if (body != null && body.isSuccess && body.data != null) {
-                        val refreshData = body.data
-
-                        // ✅ Save new tokens atomically
-                        userPreferences.saveTokens(refreshData.accessToken, refreshData.refreshToken)
-
-                        Timber.i("✅ Token refreshed successfully")
-                        logTokenExpiration(refreshData.accessToken)
-
-                        AuthResult.Success(refreshData)
-                    } else {
-                        val errorMessage = body?.errors?.firstOrNull()
-                            ?: body?.message
-                            ?: "خطا در بازنشانی توکن"
-                        Timber.w("Token refresh failed: $errorMessage")
-                        AuthResult.Error(errorMessage)
-                    }
-                } else {
-                    val errorMessage = when (response.code()) {
-                        401, 403 -> "نشست شما منقضی شده است. لطفا دوباره وارد شوید"
-                        else -> "خطا در بازنشانی توکن"
-                    }
-                    Timber.e("Token refresh HTTP error: ${response.code()}")
-                    AuthResult.Error(errorMessage)
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "Token refresh exception")
-                AuthResult.Error("خطا در ارتباط با سرور")
-            }
+        return if (response.isSuccessful && response.body()?.isSuccess == true) {
+            val newData = response.body()?.data
+            if (newData != null) {
+                userPreferences.saveTokens(newData.accessToken, newData.refreshToken, newData.expDate!!)
+                newData
+            } else null
+        } else {
+            null
         }
     }
 

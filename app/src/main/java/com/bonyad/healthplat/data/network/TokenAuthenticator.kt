@@ -12,142 +12,74 @@ import timber.log.Timber
 import java.io.IOException
 import javax.inject.Inject
 
-class TokenAuthenticator @Inject constructor(
+class TokenAuthenticator(
     private val userPreferences: UserPreferencesDataStore,
     private val apiService: HealthPlatApiService
 ) : Authenticator {
 
-    private val refreshLock = Any()
-    private var refreshInProgress = false
-    private var lastRefreshTime = 0L
-    private val MIN_REFRESH_INTERVAL = 5000L
-
     override fun authenticate(route: Route?, response: Response): Request? {
+        // 🔍 DEBUG LOG: Use this to confirm the method is hit
+        Timber.e("🚨 Authenticator HIT! Response code: ${response.code} for path: ${response.request.url.encodedPath}")
 
+        // 1. Infinite Loop Prevention
         if (response.request.header("Token-Refresh-Attempted") != null) {
-            Timber.e("♻️ Already tried refresh, giving up")
-            clearSession()
+            Timber.e("🛑 Authenticator: Already tried refreshing, giving up.")
             return null
         }
 
-        val path = response.request.url.encodedPath
+        // 2. Synchronized Refresh Logic
+        return runBlocking {
+            val accessToken = userPreferences.getAuthToken().first()
+            val refreshToken = userPreferences.getRefreshToken().first()
 
-        if (path.contains("/Auth/login", true) ||
-            path.contains("/Auth/register", true) ||
-            path.contains("/Auth/verify", true)) {
-            Timber.d("🔵 Auth endpoint, not refreshing")
-            return null
-        }
-
-        val authHeader = response.request.header("Authorization")
-        if (authHeader == null) {
-            Timber.w("⚪ No Authorization header, cannot refresh (user needs to login)")
-            clearSession()
-            return null
-        }
-
-        synchronized(refreshLock) {
-            val now = System.currentTimeMillis()
-
-            if (refreshInProgress && (now - lastRefreshTime) < MIN_REFRESH_INTERVAL) {
-                Timber.w("⏳ Refresh in progress, skipping duplicate attempt")
-                return null
+            if (accessToken.isNullOrEmpty() || refreshToken.isNullOrEmpty()) {
+                Timber.w("⚠️ Authenticator: No tokens found in storage.")
+                return@runBlocking null
             }
 
-            refreshInProgress = true
-            lastRefreshTime = now
-        }
+            // 🔍 DEBUG LOG
+            Timber.d("🔄 Authenticator: Calling Refresh API...")
 
-        return try {
-            runBlocking {
-                val accessToken = userPreferences.getAuthToken().first()
-                val refreshToken = userPreferences.getRefreshToken().first()
+            // 3. The Refresh Call (Wrapped in Try/Catch is safer)
+            val newTokens = try {
+                val refreshResponse = apiService.refreshToken(
+                    expiredTokenWithBearer = "Bearer $accessToken", // Needs Header
+                    accessToken = accessToken, // Needs Query
+                    refreshToken = refreshToken // Needs Query
+                )
 
-                Timber.d("🔄 Attempting token refresh for: $path")
-                Timber.d("   Current Access: ${accessToken?.take(30)}...")
-                Timber.d("   Current Refresh: ${refreshToken?.take(30)}...")
+                if (refreshResponse.isSuccessful && refreshResponse.body()?.isSuccess == true) {
+                    refreshResponse.body()?.data
+                } else {
+                    Timber.e("❌ Refresh API Failed: Code=${refreshResponse.code()}, Msg=${refreshResponse.message()}")
+                    null
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "❌ Refresh API Exception")
+                null
+            }
 
-                if (refreshToken.isNullOrEmpty()) {
-                    Timber.e("❌ No refresh token available, clearing session")
-                    clearSession()
+            // 4. Handle Result
+            if (newTokens != null) {
+                val access = newTokens.accessToken
+                val refresh = newTokens.refreshToken
+                val exp = newTokens.expDate
+
+                if (access.isNullOrEmpty() || refresh.isNullOrEmpty() || exp.isNullOrEmpty()) {
+                    Timber.e("❌ Authenticator received invalid token data")
                     return@runBlocking null
                 }
 
-                // ✅ FIX: Use query parameters instead of body
-                try {
-                    val refreshResponse = apiService.refreshToken(
-                        accessToken = accessToken ?: "",
-                        refreshToken = refreshToken
-                    )
+                userPreferences.saveTokens(access, refresh, exp)
 
-                    when {
-                        refreshResponse.isSuccessful &&
-                                refreshResponse.body()?.isSuccess == true &&
-                                refreshResponse.body()?.data != null -> {
-
-                            val responseData = refreshResponse.body()!!.data!!
-                            val newAccessToken = responseData.accessToken
-                            val newRefreshToken = responseData.refreshToken
-
-                            Timber.i("✅ Token refresh successful")
-                            Timber.d("   New Access: ${newAccessToken.take(30)}...")
-                            Timber.d("   New Refresh: ${newRefreshToken.take(30)}...")
-
-                            // Save new tokens
-                            userPreferences.saveAuthToken(newAccessToken)
-                            userPreferences.saveRefreshToken(newRefreshToken)
-
-                            // Also save expiry if available
-                            responseData.expDate?.let { expDate ->
-                                Timber.d("   Expires: $expDate")
-                                // You can parse and save this if needed
-                            }
-
-                            // Retry original request with new token
-                            response.request.newBuilder()
-                                .header("Authorization", "Bearer $newAccessToken")
-                                .header("Token-Refresh-Attempted", "true")
-                                .build()
-                        }
-
-                        refreshResponse.code() == 401 -> {
-                            Timber.e("❌ Refresh token expired (401), clearing session")
-                            clearSession()
-                            null
-                        }
-
-                        else -> {
-                            val errorCode = refreshResponse.code()
-                            val errorBody = refreshResponse.errorBody()?.string()
-                            val errorMessage = refreshResponse.body()?.message ?: "Unknown error"
-
-                            Timber.e("❌ Refresh failed: $errorCode - $errorMessage")
-                            Timber.e("   Error body: $errorBody")
-
-                            if (errorCode in 400..499) {
-                                clearSession()
-                            }
-                            null
-                        }
-                    }
-                } catch (e: IOException) {
-                    Timber.e(e, "❌ Network error during token refresh")
-                    null
-                } catch (e: Exception) {
-                    Timber.e(e, "❌ Unexpected error during token refresh")
-                    clearSession()
-                    null
-                }
-            }
-        } finally {
-            synchronized(refreshLock) {
-                refreshInProgress = false
+                response.request.newBuilder()
+                    .header("Authorization", "Bearer $access")
+                    .header("Token-Refresh-Attempted", "true")
+                    .build()
+            } else {
+                Timber.e("🚫 Authenticator: Failed to refresh")
+                null
             }
         }
-    }
-
-    private fun clearSession() = runBlocking {
-        Timber.w("🗑️ Clearing auth session")
-        userPreferences.clearAuthOnly()
     }
 }

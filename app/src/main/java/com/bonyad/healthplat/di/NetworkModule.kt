@@ -11,8 +11,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
-import jakarta.inject.Named
-import jakarta.inject.Singleton
+import javax.inject.Named
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -23,6 +22,7 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
+import javax.inject.Singleton
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -59,6 +59,17 @@ object NetworkModule {
             }
         }
     }
+
+
+    @Provides
+    @Singleton
+    @Named("RefreshApiService")
+    fun provideRefreshApiService(
+        @Named("RefreshRetrofit") retrofit: Retrofit
+    ): HealthPlatApiService {
+        return retrofit.create(HealthPlatApiService::class.java)
+    }
+
 
     @Provides
     @Singleton
@@ -142,9 +153,8 @@ object NetworkModule {
     @Singleton
     fun provideTokenAuthenticator(
         userPreferences: UserPreferencesDataStore,
-        @Named("AuthRetrofit") authRetrofit: Retrofit
+        @Named("RefreshApiService") apiService: HealthPlatApiService
     ): TokenAuthenticator {
-        val apiService = authRetrofit.create(HealthPlatApiService::class.java)
         return TokenAuthenticator(userPreferences, apiService)
     }
 
@@ -153,12 +163,12 @@ object NetworkModule {
     fun provideOkHttpClient(
         loggingInterceptor: HttpLoggingInterceptor,
         authInterceptor: Interceptor,
-        tokenAuthenticator: TokenAuthenticator
+        tokenAuthenticator: TokenAuthenticator // Injected here
     ): OkHttpClient {
         return OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
             .addInterceptor(loggingInterceptor)
-            .authenticator(tokenAuthenticator)
+            .authenticator(tokenAuthenticator) // ✅ Attached here
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
@@ -182,5 +192,34 @@ object NetworkModule {
     @Singleton
     fun provideHealthPlatApiService(retrofit: Retrofit): HealthPlatApiService {
         return retrofit.create(HealthPlatApiService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    @Named("RefreshOkHttp")
+    fun provideRefreshOkHttp(
+        loggingInterceptor: HttpLoggingInterceptor
+    ): OkHttpClient {
+        return OkHttpClient.Builder()
+            .addInterceptor(loggingInterceptor)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(15, TimeUnit.SECONDS)
+            .build()
+    }
+
+
+    @Provides
+    @Singleton
+    @Named("RefreshRetrofit")
+    fun provideRefreshRetrofit(
+        @Named("RefreshOkHttp") okHttpClient: OkHttpClient,
+        json: Json
+    ): Retrofit {
+        return Retrofit.Builder()
+            .baseUrl(BASE_URL)
+            .client(okHttpClient)
+            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+            .build()
     }
 }

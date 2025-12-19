@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import timber.log.Timber
 import java.io.IOException
+import java.time.OffsetDateTime
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -27,6 +28,7 @@ class UserPreferencesDataStore @Inject constructor(
     private object PreferencesKeys {
         val AUTH_TOKEN = stringPreferencesKey("auth_token")
         val REFRESH_TOKEN = stringPreferencesKey("refresh_token")
+        val ACCESS_TOKEN_EXPIRY = longPreferencesKey("access_token_expiry")
         val USER_ID = stringPreferencesKey("user_id")
         val PHONE_NUMBER = stringPreferencesKey("phone_number")
         val ONBOARDING_COMPLETE = booleanPreferencesKey("onboarding_complete")
@@ -35,13 +37,24 @@ class UserPreferencesDataStore @Inject constructor(
         val DEVICE_MAC = stringPreferencesKey("device_mac")
         val DEVICE_NAME = stringPreferencesKey("device_name")
         val DEVICE_ID = intPreferencesKey("device_id")
+        val USER_NAME = stringPreferencesKey("user_name")
+        val USER_BIRTH_DATE = stringPreferencesKey("user_birth_date")
+        val USER_HEIGHT = intPreferencesKey("user_height")
+        val USER_WEIGHT = intPreferencesKey("user_weight")
+        val USER_GENDER = stringPreferencesKey("user_gender")
+
     }
 
     // ============ Auth Token ============
 
     suspend fun saveAuthToken(token: String) {
-        dataStore.edit { preferences ->
-            preferences[PreferencesKeys.AUTH_TOKEN] = token
+        try {
+            dataStore.edit { preferences ->
+                preferences[PreferencesKeys.AUTH_TOKEN] = token
+            }
+            Timber.d("💾 Auth token saved: ${token.take(30)}...")
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Failed to save auth token")
         }
     }
 
@@ -56,7 +69,7 @@ class UserPreferencesDataStore @Inject constructor(
                 }
             }
             .map { preferences ->
-                val token = preferences[AUTH_TOKEN]
+                val token = preferences[PreferencesKeys.AUTH_TOKEN]
                 if (token != null) {
                     Timber.d("📖 Read auth token: ${token.take(30)}...")
                 } else {
@@ -69,8 +82,13 @@ class UserPreferencesDataStore @Inject constructor(
     // ============ Refresh Token ============
 
     suspend fun saveRefreshToken(token: String) {
-        dataStore.edit { preferences ->
-            preferences[PreferencesKeys.REFRESH_TOKEN] = token
+        try {
+            dataStore.edit { preferences ->
+                preferences[PreferencesKeys.REFRESH_TOKEN] = token
+            }
+            Timber.d("💾 Refresh token saved: ${token.take(30)}...")
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Failed to save refresh token")
         }
     }
 
@@ -85,7 +103,7 @@ class UserPreferencesDataStore @Inject constructor(
                 }
             }
             .map { preferences ->
-                val token = preferences[REFRESH_TOKEN]
+                val token = preferences[PreferencesKeys.REFRESH_TOKEN]
                 if (token != null) {
                     Timber.d("📖 Read refresh token: ${token.take(30)}...")
                 } else {
@@ -95,23 +113,33 @@ class UserPreferencesDataStore @Inject constructor(
             }
     }
 
-    suspend fun saveTokens(accessToken: String, refreshToken: String) {
-        try {
-            dataStore.edit { preferences ->
-                preferences[PreferencesKeys.AUTH_TOKEN] = accessToken
-                preferences[PreferencesKeys.REFRESH_TOKEN] = refreshToken
-            }
-            Timber.d("💾 Both tokens saved atomically")
-        } catch (e: Exception) {
-            Timber.e(e, "❌ Failed to save tokens")
+    suspend fun saveTokens(
+        accessToken: String,
+        refreshToken: String,
+        expDate: String
+    ) {
+        val expiryMillis = OffsetDateTime.parse(expDate).toInstant().toEpochMilli()
+
+        dataStore.edit {
+            it[PreferencesKeys.AUTH_TOKEN] = accessToken
+            it[PreferencesKeys.REFRESH_TOKEN] = refreshToken
+            it[PreferencesKeys.ACCESS_TOKEN_EXPIRY] = expiryMillis
         }
     }
+
+    fun getAccessTokenExpiry(): Flow<Long?> =
+        dataStore.data.map { it[PreferencesKeys.ACCESS_TOKEN_EXPIRY] }
 
     // ============ User ID ============
 
     suspend fun saveUserId(userId: String) {
-        dataStore.edit { preferences ->
-            preferences[PreferencesKeys.USER_ID] = userId
+        try {
+            dataStore.edit { preferences ->
+                preferences[PreferencesKeys.USER_ID] = userId
+            }
+            Timber.d("💾 User ID saved: $userId")
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Failed to save user ID")
         }
     }
 
@@ -133,8 +161,13 @@ class UserPreferencesDataStore @Inject constructor(
     // ============ Phone Number ============
 
     suspend fun savePhoneNumber(phone: String) {
-        dataStore.edit { preferences ->
-            preferences[PreferencesKeys.PHONE_NUMBER] = phone
+        try {
+            dataStore.edit { preferences ->
+                preferences[PreferencesKeys.PHONE_NUMBER] = phone
+            }
+            Timber.d("💾 Phone number saved: $phone")
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Failed to save phone number")
         }
     }
 
@@ -223,48 +256,65 @@ class UserPreferencesDataStore @Inject constructor(
     // ============ Personal Info ============
 
     suspend fun savePersonalInfo(name: String, birthDate: String, height: Int, weight: Int, gender: String) {
-        dataStore.edit { preferences ->
-            preferences[stringPreferencesKey("user_name")] = name
-            preferences[stringPreferencesKey("user_birth_date")] = birthDate
-            preferences[intPreferencesKey("user_height")] = height
-            preferences[intPreferencesKey("user_weight")] = weight
-            preferences[stringPreferencesKey("user_gender")] = gender
+        try {
+            dataStore.edit { preferences ->
+                preferences[PreferencesKeys.USER_NAME] = name
+                preferences[PreferencesKeys.USER_BIRTH_DATE] = birthDate
+                preferences[PreferencesKeys.USER_HEIGHT] = height
+                preferences[PreferencesKeys.USER_WEIGHT] = weight
+                preferences[PreferencesKeys.USER_GENDER] = gender
+            }
+            Timber.d("💾 Personal info saved: $name")
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Failed to save personal info")
         }
     }
 
     fun getUserName(): Flow<String?> {
-        return dataStore.data.map { preferences ->
-            preferences[stringPreferencesKey("user_name")]
-        }
+        return dataStore.data
+            .catch { exception ->
+                if (exception is IOException) {
+                    emit(emptyPreferences())
+                } else {
+                    throw exception
+                }
+            }
+            .map { preferences ->
+                preferences[PreferencesKeys.USER_NAME]
+            }
     }
-
 
     fun getUserBirthDate(): Flow<String?> {
         return dataStore.data.map { preferences ->
-            preferences[stringPreferencesKey("user_birth_date")]
+            preferences[PreferencesKeys.USER_BIRTH_DATE]
         }
     }
 
     fun getUserHeight(): Flow<Int?> {
         return dataStore.data.map { preferences ->
-            preferences[intPreferencesKey("user_height")]
+            preferences[PreferencesKeys.USER_HEIGHT]
         }
     }
 
     fun getUserWeight(): Flow<Int?> {
         return dataStore.data.map { preferences ->
-            preferences[intPreferencesKey("user_weight")]
+            preferences[PreferencesKeys.USER_WEIGHT]
         }
     }
 
     // ============ Device Info ============
 
     suspend fun saveDeviceInfo(mac: String, name: String?) {
-        dataStore.edit { preferences ->
-            preferences[PreferencesKeys.DEVICE_MAC] = mac
-            if (name != null) {
-                preferences[PreferencesKeys.DEVICE_NAME] = name
+        try {
+            dataStore.edit { preferences ->
+                preferences[PreferencesKeys.DEVICE_MAC] = mac
+                if (name != null) {
+                    preferences[PreferencesKeys.DEVICE_NAME] = name
+                }
             }
+            Timber.d("💾 Device info saved: $mac")
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Failed to save device info")
         }
     }
 
@@ -284,10 +334,23 @@ class UserPreferencesDataStore @Inject constructor(
     }
 
     suspend fun saveDeviceId(id: Int) {
-        dataStore.edit { it[PreferencesKeys.DEVICE_ID] = id }
+        try {
+            dataStore.edit { it[PreferencesKeys.DEVICE_ID] = id }
+            Timber.d("💾 Device ID saved: $id")
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Failed to save device ID")
+        }
     }
 
-    fun getDeviceId(): Flow<Int?> = dataStore.data.map { it[PreferencesKeys.DEVICE_ID] }
+    fun getDeviceId(): Flow<Int?> = dataStore.data
+        .catch { exception ->
+            if (exception is IOException) {
+                emit(emptyPreferences())
+            } else {
+                throw exception
+            }
+        }
+        .map { it[PreferencesKeys.DEVICE_ID] }
 
     // ============ Clear All ============
 
@@ -305,8 +368,8 @@ class UserPreferencesDataStore @Inject constructor(
     suspend fun clearAuthOnly() {
         try {
             dataStore.edit {
-                it.remove(AUTH_TOKEN)
-                it.remove(REFRESH_TOKEN)
+                it.remove(PreferencesKeys.AUTH_TOKEN)
+                it.remove(PreferencesKeys.REFRESH_TOKEN)
             }
             Timber.i("🗑️ Auth tokens cleared (keeping user data)")
         } catch (e: Exception) {

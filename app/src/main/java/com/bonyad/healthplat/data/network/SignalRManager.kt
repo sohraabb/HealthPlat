@@ -7,6 +7,7 @@ import com.microsoft.signalr.TransportEnum
 import io.reactivex.rxjava3.core.Single
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,12 +30,25 @@ class SignalRManager @Inject constructor(
     private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
 
+    private var currentToken: String? = null
+
+    private var reconnectJob: Job? = null
+
+
     suspend fun connect() {
         val token = userPreferences.getAuthToken().first()
         if (token.isNullOrEmpty()) {
             Timber.e("❌ No access token")
             return
         }
+
+        // 🚫 Avoid reconnecting with the same token
+        if (_isConnected.value && token == currentToken) {
+            Timber.d("🔁 SignalR already connected with same token")
+            return
+        }
+
+        hubConnection?.stop()
 
         hubConnection = HubConnectionBuilder
             .create("http://192.168.18.165:7005/hubs")
@@ -50,6 +64,7 @@ class SignalRManager @Inject constructor(
 
         try {
             hubConnection?.start()?.blockingAwait()
+            currentToken = token        // ✅ THIS IS THE MISSING LINE
             _isConnected.value = true
             Timber.i("✅ SignalR connected!")
         } catch (e: Exception) {
@@ -81,14 +96,34 @@ class SignalRManager @Inject constructor(
     }
 
     private fun reconnect() {
-        CoroutineScope(Dispatchers.IO).launch {
+        reconnectJob?.cancel()
+        reconnectJob = CoroutineScope(Dispatchers.IO).launch {
             delay(4000)
             connect()
         }
     }
 
     fun disconnect() {
+        reconnectJob?.cancel()
         hubConnection?.stop()
         _isConnected.value = false
+    }
+
+    fun observeToken(scope: CoroutineScope) {
+        scope.launch {
+            userPreferences.getAuthToken().collect { newToken ->
+                if (newToken.isNullOrEmpty()) return@collect
+
+                if (newToken != currentToken) {
+                    Timber.i("🔄 Token updated → reconnect SignalR")
+                    reconnectWithFreshToken()
+                }
+            }
+        }
+    }
+    suspend fun reconnectWithFreshToken() {
+        disconnect()
+        delay(500)
+        connect()
     }
 }

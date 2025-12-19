@@ -16,11 +16,13 @@ import com.bonyad.healthplat.domain.model.UpdateUserProfileRequest
 import com.bonyad.healthplat.domain.model.UpdateUserRequest
 import com.bonyad.healthplat.domain.model.UserData
 import com.bonyad.healthplat.domain.model.UserDeviceData
+import com.bonyad.healthplat.domain.model.UserOverviewData
 import com.bonyad.healthplat.domain.model.UserProfile
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.Headers
 import retrofit2.http.POST
 import retrofit2.http.PUT
@@ -66,10 +68,10 @@ interface HealthPlatApiService {
      * POST /api/Auth/refresh
      */
     @POST("Auth/refresh")
-    @Headers("accept: */*")
     suspend fun refreshToken(
-        @Query("accessToken") accessToken: String,
-        @Query("refreshToken") refreshToken: String
+        @Header("Authorization") expiredTokenWithBearer: String, // 👈 REQUIRED by your backend
+        @Query("accessToken") accessToken: String, // 👈 REQUIRED as Query
+        @Query("refreshToken") refreshToken: String // 👈 REQUIRED as Query
     ): Response<ApiResponse<RefreshTokenResponse>>
 
     /**
@@ -108,6 +110,13 @@ interface HealthPlatApiService {
         @Path("id") userId: String,
         @Body request: UpdateUserProfileRequest
     ): Response<ApiResponse<UserProfile>>
+
+    /**
+     * Get user overview (includes user info + devices)
+     * GET /api/User/GetUserOverview
+     */
+    @GET("User/GetUserOverview")
+    suspend fun getUserOverview(): Response<ApiResponse<UserOverviewData>>
 
 
     // ============ Device Management APIs ============

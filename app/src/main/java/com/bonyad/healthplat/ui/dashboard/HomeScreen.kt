@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,6 +39,7 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import com.bonyad.healthplat.R
 import com.bonyad.healthplat.ui.navigation.HealthDetailRoutes
+import com.bonyad.healthplat.ui.navigation.NavRoutes
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
 
 // Define custom colors from design
@@ -47,9 +50,609 @@ val BlueAccent = Color(0xFF2196F3)
 val TextDark = Color(0xFF2C2C2C)
 val TextGray = Color(0xFF999999)
 
+// Data class for health cards
+data class HealthCardData(
+    val title: String,
+    val value: String,
+    val unit: String?,
+    val statusText: String?,
+    val iconRes: Int,
+    val iconTint: Color,
+    val route: String,
+    val chartType: ChartType
+)
+
+enum class ChartType {
+    HEART_RATE,
+    STEPS,
+    SPO2,
+    SLEEP,
+    STRESS
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
+    viewModel: DashboardViewModel,
+    onNavigateToDetail: (String) -> Unit,
+    onNavigateToAi: (String) -> Unit
+) {
+    val healthOverview by viewModel.healthOverview.collectAsState()
+    val userName by viewModel.userName.collectAsState()
+    val insights = viewModel.healthInsights
+
+    val healthCards = remember(healthOverview) {
+        listOf(
+            HealthCardData(
+                title = "ضربان قلب",
+                value = healthOverview.heartRate.toString().toFarsiDigits(),
+                unit = "bpm",
+                statusText = when {
+                    healthOverview.heartRate == 0 -> "در انتظار داده"
+                    healthOverview.heartRate < 60 -> "کمتر از حد طبیعی"
+                    healthOverview.heartRate > 100 -> "بالاتر از حد طبیعی"
+                    else -> "عادی"
+                },
+                iconRes = R.drawable.heart_rate,
+                iconTint = RedAccent,
+                route = HealthDetailRoutes.HeartRateDetail.route,
+                chartType = ChartType.HEART_RATE
+            ),
+            HealthCardData(
+                title = "تعداد قدم",
+                value = healthOverview.steps.toString().toFarsiDigits(),
+                unit = "قدم",
+                statusText = when {
+                    healthOverview.steps == 0 -> "شروع کن!"
+                    healthOverview.steps < 5000 -> "بیشتر کن"
+                    healthOverview.steps < 10000 -> "خوب پیش میری"
+                    else -> "عالی!"
+                },
+                iconRes = R.drawable.walk,
+                iconTint = OrangeAccent,
+                route = HealthDetailRoutes.StepsDetail.route,
+                chartType = ChartType.STEPS
+            ),
+            HealthCardData(
+                title = "اکسیژن خون",
+                value = if (healthOverview.bloodOxygen > 0) {
+                    healthOverview.bloodOxygen.toString().toFarsiDigits()
+                } else {
+                    "--"
+                },
+                unit = "%",
+                statusText = when {
+                    healthOverview.bloodOxygen == 0 -> "در انتظار داده"
+                    healthOverview.bloodOxygen < 90 -> "پایین"
+                    healthOverview.bloodOxygen < 95 -> "قابل قبول"
+                    else -> "عادی"
+                },
+                iconRes = R.drawable.hospital,
+                iconTint = BlueAccent,
+                route = HealthDetailRoutes.SpO2Detail.route,
+                chartType = ChartType.SPO2
+            ),
+            HealthCardData(
+                title = "خواب",
+                value = if (healthOverview.sleepDurationHours > 0) {
+                    String.format("%.1f", healthOverview.sleepDurationHours).toFarsiDigits()
+                } else {
+                    "--"
+                },
+                unit = "ساعت",
+                statusText = when {
+                    healthOverview.sleepDurationHours == 0f -> "در انتظار داده"
+                    healthOverview.sleepDurationHours < 6f -> "کم خوابیدی"
+                    healthOverview.sleepDurationHours < 8f -> "خوب"
+                    healthOverview.sleepDurationHours > 9f -> "زیاد خوابیدی"
+                    else -> "عالی"
+                },
+                iconRes = R.drawable.chemistry_flask,
+                iconTint = TealPrimary,
+                route = HealthDetailRoutes.SleepDetail.route,
+                chartType = ChartType.SLEEP
+            ),
+            HealthCardData(
+                title = "استرس",
+                value = if (healthOverview.stressLevel > 0) {
+                    healthOverview.stressLevel.toString().toFarsiDigits()
+                } else {
+                    "--"
+                },
+                unit = null,
+                statusText = when {
+                    healthOverview.stressLevel == 0 -> "در انتظار داده"
+                    healthOverview.stressLevel < 30 -> "آرام"
+                    healthOverview.stressLevel < 60 -> "متوسط"
+                    else -> "بالا"
+                },
+                iconRes = R.drawable.care, // You might want to add a stress icon
+                iconTint = TealPrimary,
+                route = HealthDetailRoutes.StressDetail.route,
+                chartType = ChartType.STRESS
+            )
+        )
+    }
+
+    Scaffold(
+        topBar = {
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = "سلام ${userName ?: "کاربر"}",
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = TextDark
+                            )
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = { /* TODO: Notifications */ }) {
+                            Icon(
+                                imageVector = Icons.Outlined.Notifications,
+                                contentDescription = "Notifications",
+                                tint = TextGray
+                            )
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { /* TODO: Help */ }) {
+                            Icon(
+                                painter = painterResource(R.drawable.information),
+                                contentDescription = "Help",
+                                tint = TextGray
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color(0xFFF5F5F5)
+                    )
+                )
+            }
+        },
+        containerColor = Color(0xFFF5F5F5)
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            NewHealthStatusCard(
+                score = 87, // Mock score
+                insights = insights,
+                viewModel = viewModel,
+                navigateToAi = { onNavigateToAi(NavRoutes.AiScreen.route) }
+            )
+
+            // Horizontal scrollable health cards in 2x2 grid
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(horizontal = 4.dp)
+            ) {
+                // Group cards into pages of 4 (2x2 grid)
+                val pages = healthCards.chunked(4)
+                items(pages.size) { pageIndex ->
+                    val pageCards = pages[pageIndex]
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Top row
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            pageCards.getOrNull(0)?.let { card ->
+                                HealthMetricCard(
+                                    data = card,
+                                    onClick = { onNavigateToDetail(card.route) }
+                                )
+                            }
+                            pageCards.getOrNull(1)?.let { card ->
+                                HealthMetricCard(
+                                    data = card,
+                                    onClick = { onNavigateToDetail(card.route) }
+                                )
+                            }
+                        }
+                        // Bottom row
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            pageCards.getOrNull(2)?.let { card ->
+                                HealthMetricCard(
+                                    data = card,
+                                    onClick = { onNavigateToDetail(card.route) }
+                                )
+                            }
+                            pageCards.getOrNull(3)?.let { card ->
+                                HealthMetricCard(
+                                    data = card,
+                                    onClick = { onNavigateToDetail(card.route) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(30.dp)) // Extra space at bottom
+        }
+    }
+}
+
+// =========================== NEW MAIN CARD ===========================
+
+@Composable
+fun NewHealthStatusCard(
+    score: Int,
+    insights: List<String>,
+    viewModel: DashboardViewModel,
+    navigateToAi: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = 10.dp,
+                shape = RoundedCornerShape(24.dp),
+                ambientColor = TealPrimary.copy(alpha = 0.3f),
+                spotColor = TealPrimary.copy(alpha = 0.3f)
+            )
+            .border(1.dp, TealPrimary.copy(alpha = 0.1f), RoundedCornerShape(24.dp)),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "وضعیت کلی سلامت",
+                style = MaterialTheme.typography.titleMedium,
+                color = TextDark,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(100.dp)
+                        .border(4.dp, TealPrimary.copy(alpha = 0.2f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = score.toString().toFarsiDigits(),
+                            style = MaterialTheme.typography.headlineLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = TextDark
+                            )
+                        )
+                        Text(
+                            text = "/۱۰۰",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextGray
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(16.dp))
+
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalAlignment = Alignment.End,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    insights.forEach { insight ->
+                        InsightItem(text = insight)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Button(
+                onClick = { navigateToAi() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.White
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.dp, TealPrimary)
+            ) {
+                Text(
+                    text = "تحلیل هوش مصنوعی",
+                    color = TealPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun InsightItem(text: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.End,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = TextGray,
+            textAlign = TextAlign.End
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+
+        Icon(
+            imageVector = Icons.Default.Warning,
+            contentDescription = null,
+            tint = TextGray.copy(alpha = 0.6f),
+            modifier = Modifier.size(14.dp)
+        )
+    }
+}
+
+// =========================== UNIFIED METRIC CARD ===========================
+
+@Composable
+fun HealthMetricCard(
+    data: HealthCardData,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .width(180.dp)
+            .height(210.dp)
+            .clickable { onClick() },
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // --- HEADER ---
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Icon(
+                    painter = painterResource(data.iconRes),
+                    contentDescription = data.title,
+                    tint = data.iconTint,
+                    modifier = Modifier.size(20.dp)
+                )
+
+                Text(
+                    text = data.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextDark,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            if (data.statusText != null) {
+                Text(
+                    text = data.statusText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextGray,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            // --- CHART AREA ---
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(60.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                ChartContent(chartType = data.chartType, color = data.iconTint)
+            }
+
+            // --- FOOTER ---
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = data.value,
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 24.sp
+                        ),
+                        color = TextDark
+                    )
+
+                    if (data.unit != null) {
+                        Text(
+                            text = data.unit,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextGray,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(TealPrimary.copy(alpha = 0.8f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowForward,
+                        contentDescription = "Details",
+                        tint = Color.White,
+                        modifier = Modifier
+                            .size(16.dp)
+                            .rotate(-45f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ChartContent(chartType: ChartType, color: Color) {
+    when (chartType) {
+        ChartType.HEART_RATE -> HeartRateChart(color)
+        ChartType.STEPS -> StepsChart(color)
+        ChartType.SPO2 -> SpO2Chart(color)
+        ChartType.SLEEP -> SleepChart(color)
+        ChartType.STRESS -> StressChart(color)
+    }
+}
+
+@Composable
+fun HeartRateChart(color: Color) {
+    Canvas(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(vertical = 8.dp)
+    ) {
+        val path = Path()
+        val width = size.width
+        val height = size.height
+        path.moveTo(0f, height * 0.7f)
+        path.lineTo(width * 0.2f, height * 0.6f)
+        path.lineTo(width * 0.4f, height * 0.8f)
+        path.lineTo(width * 0.5f, height * 0.2f)
+        path.lineTo(width * 0.6f, height * 0.7f)
+        path.lineTo(width * 0.8f, height * 0.5f)
+        path.lineTo(width, height * 0.65f)
+
+        drawPath(
+            path = path,
+            color = color,
+            style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+        )
+    }
+}
+
+@Composable
+fun StepsChart(color: Color) {
+    Row(
+        modifier = Modifier.fillMaxSize(),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.Bottom
+    ) {
+        val heights = listOf(0.4f, 0.6f, 0.3f, 0.8f, 0.5f, 0.7f, 0.4f)
+        heights.forEach { relativeHeight ->
+            Box(
+                modifier = Modifier
+                    .width(6.dp)
+                    .fillMaxHeight(relativeHeight)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(color.copy(alpha = 0.7f))
+            )
+        }
+    }
+}
+
+@Composable
+fun SpO2Chart(color: Color) {
+    Canvas(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(vertical = 12.dp)
+    ) {
+        val path = Path()
+        val w = size.width
+        val h = size.height
+        path.moveTo(0f, h * 0.5f)
+        path.lineTo(w * 0.2f, h * 0.5f)
+        path.lineTo(w * 0.2f, h * 0.3f)
+        path.lineTo(w * 0.5f, h * 0.3f)
+        path.lineTo(w * 0.5f, h * 0.6f)
+        path.lineTo(w * 0.8f, h * 0.6f)
+        path.lineTo(w * 0.8f, h * 0.4f)
+        path.lineTo(w, h * 0.4f)
+
+        drawPath(
+            path = path,
+            color = color,
+            style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Square)
+        )
+    }
+}
+
+@Composable
+fun SleepChart(color: Color) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        // Moon icon representation using canvas
+        Canvas(modifier = Modifier.size(40.dp)) {
+            drawCircle(
+                color = color.copy(alpha = 0.3f),
+                radius = size.minDimension / 2
+            )
+            drawCircle(
+                color = Color.White,
+                radius = size.minDimension / 2.5f,
+                center = center.copy(x = center.x + size.minDimension / 6)
+            )
+        }
+    }
+}
+
+@Composable
+fun StressChart(color: Color) {
+    Canvas(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(vertical = 8.dp)
+    ) {
+        val path = Path()
+        val w = size.width
+        val h = size.height
+
+        // Wavy stress line
+        path.moveTo(0f, h * 0.5f)
+        path.quadraticBezierTo(w * 0.25f, h * 0.2f, w * 0.5f, h * 0.5f)
+        path.quadraticBezierTo(w * 0.75f, h * 0.8f, w, h * 0.5f)
+
+        drawPath(
+            path = path,
+            color = color,
+            style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+        )
+    }
+}
+
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HomeScreenLegacy(
     viewModel: DashboardViewModel,
     onNavigateToDetail: (String) -> Unit
 ) {
@@ -108,7 +711,7 @@ fun HomeScreen(
                 score = 87, // Mock score
                 insights = insights,
                 viewModel = viewModel
-            )
+            ) { onNavigateToDetail("") }
             Column(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -139,6 +742,7 @@ fun HomeScreen(
                 ) {
                     Box(Modifier.weight(1f)) {
                         BloodPressureCard(
+                            healthOverview.sleepDurationHours,
                             onClick = { onNavigateToDetail(HealthDetailRoutes.SleepDetail.route) }
                         )
                     }
@@ -159,7 +763,7 @@ fun HomeScreen(
 // =========================== NEW MAIN CARD ===========================
 
 @Composable
-fun NewHealthStatusCard(
+fun NewHealthStatusCardLegacy(
     score: Int,
     insights: List<String>,
     viewModel: DashboardViewModel
@@ -261,7 +865,7 @@ fun NewHealthStatusCard(
 }
 
 @Composable
-fun InsightItem(text: String) {
+fun InsightItemLegacy(text: String) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.End,
@@ -479,11 +1083,11 @@ fun StepsCard(steps: Int, onClick: () -> Unit) {
 }
 
 @Composable
-fun BloodPressureCard(onClick: () -> Unit) {
-    val systolic = 120
+fun BloodPressureCard(sleep: Float, onClick: () -> Unit) {
+//    val systolic = 120
     BaseMetricCard(
         title = "پایش خواب",
-        value = "$systolic".toFarsiDigits(),
+        value = "$sleep".toFarsiDigits(),
         unit = "mmHg",
         statusText = "عادی",
         iconPainter = painterResource(R.drawable.chemistry_flask),

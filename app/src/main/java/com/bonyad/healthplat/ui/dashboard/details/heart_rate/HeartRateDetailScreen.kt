@@ -41,6 +41,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.bonyad.healthplat.R
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
 import saman.zamani.persiandate.PersianDate
+import kotlin.math.min
 
 
 @Composable
@@ -51,6 +52,10 @@ fun HeartRateDetailScreen(
     val chartData by viewModel.chartData.collectAsState()
     val currentHrv by viewModel.currentHrv.collectAsState()
     val selectedRange by viewModel.selectedTimeRange.collectAsState()
+
+    val maxRate by viewModel.maxHeartRate.collectAsState()
+    val minRate by viewModel.minHeartRate.collectAsState()
+    val avgRate by viewModel.avgHeartRate.collectAsState()
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
 
@@ -107,9 +112,9 @@ fun HeartRateDetailScreen(
                 Spacer(modifier = Modifier.height(32.dp))
 
                 StatsRow(
-                    max = 140,
-                    avg = 85,
-                    min = 70
+                    max = maxRate,
+                    avg = avgRate,
+                    min = minRate
                 )
 
                 Spacer(modifier = Modifier.height(32.dp))
@@ -660,7 +665,7 @@ fun HeartRateRangeChart(data: List<HeartRateRangePoint>) {
             }
 
             // Draw Bars
-            val barWidth = 12.dp.toPx()
+            val barWidth = 6.dp.toPx()
             val spacePerItem = width / data.size
 
             data.forEachIndexed { index, point ->

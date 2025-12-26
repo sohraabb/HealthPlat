@@ -71,7 +71,8 @@ class SleepDetailViewModel @Inject constructor(
     val selectedDayOffset = _selectedDayOffset.asStateFlow()
 
     init {
-        loadMockData()
+        loadSleepForDay(_selectedDayOffset.value)
+//        loadMockData()
 //        loadSleepData()
     }
 
@@ -105,8 +106,120 @@ class SleepDetailViewModel @Inject constructor(
         _selectedTimeRange.value = range
     }
 
+    fun loadSleepForDay(offset: Int) {
+        viewModelScope.launch {
+            try {
+                val result = deviceManager.getRecordData(offset)
+
+                if (result is RecordDataResult.Success) {
+                    result.sleep?.let { sleepBean ->
+                        val sourceList = sleepBean.sourceList ?: return@let
+
+                        if (sourceList.isEmpty()) {
+                            Timber.w("No sleep data for day $offset")
+                            return@let
+                        }
+
+                        // Calculate minutes per stage
+                        val deep = sourceList.count { it == 1 }
+                        val light = sourceList.count { it == 2 }
+                        val awake = sourceList.count { it == 3 }
+                        val rem = sourceList.count { it == 4 }
+
+                        val total = deep + light + rem + awake
+
+                        _deepMinutes.value = deep
+                        _lightMinutes.value = light
+                        _awakeMinutes.value = awake
+                        _remMinutes.value = rem
+                        _totalSleepMinutes.value = total
+
+                        // Update stats
+                        val hours = total / 60
+                        val minutes = total % 60
+                        val score = calculateSleepQuality(deep, light, rem, awake)
+
+                        _sleepStats.value = SleepStats(hours, minutes, score)
+
+                        // Calculate percentages for donut
+                        if (total > 0) {
+                            val deepPct = (deep * 100) / total
+                            val lightPct = (light * 100) / total
+                            val remPct = (rem * 100) / total
+                            _stagePercentages.value = Triple(deepPct, lightPct, remPct)
+                        }
+
+                        // Generate timeline
+                        _sleepTimeline.value = generateTimeline(sourceList)
+
+                        Timber.i("✅ Sleep loaded: ${hours}h ${minutes}m, score=$score")
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error loading sleep for day $offset")
+            }
+        }
+    }
+
+    private fun generateTimeline(sourceList: List<Int>): List<SleepSegment> {
+        val segments = mutableListOf<SleepSegment>()
+
+        // Assume sleep starts at 21:00 (9 PM) and spans 12 hours
+        val totalMinutes = sourceList.size
+
+        var currentStage: SleepStage? = null
+        var segmentStart = 0
+
+        sourceList.forEachIndexed { index, value ->
+            val stage = when (value) {
+                0 -> null // Activity, skip
+                1 -> SleepStage.DEEP
+                2 -> SleepStage.LIGHT
+                3 -> SleepStage.AWAKE
+                4 -> SleepStage.REM
+                else -> null
+            }
+
+            // Detect stage change
+            if (stage != currentStage) {
+                // Save previous segment
+                if (currentStage != null) {
+                    val startRatio = segmentStart.toFloat() / totalMinutes
+                    val widthRatio = (index - segmentStart).toFloat() / totalMinutes
+
+                    segments.add(
+                        SleepSegment(
+                            stage = currentStage!!,
+                            startRatio = startRatio,
+                            widthRatio = widthRatio
+                        )
+                    )
+                }
+                currentStage = stage
+                segmentStart = index
+            }
+        }
+
+        // Add final segment
+        if (currentStage != null) {
+            val startRatio = segmentStart.toFloat() / totalMinutes
+            val widthRatio = (totalMinutes - segmentStart).toFloat() / totalMinutes
+
+            segments.add(
+                SleepSegment(
+                    stage = currentStage!!,
+                    startRatio = startRatio,
+                    widthRatio = widthRatio
+                )
+            )
+        }
+
+        return segments
+    }
+
     fun selectDay(offset: Int) {
         _selectedDayOffset.value = offset
+        loadSleepForDay(offset)
     }
 
     private fun calculateSleepQuality(

@@ -13,73 +13,53 @@ import java.io.IOException
 import javax.inject.Inject
 
 class TokenAuthenticator(
-    private val userPreferences: UserPreferencesDataStore,
-    private val apiService: HealthPlatApiService
+    private val tokenManager: TokenManager,
+    private val userPreferences: UserPreferencesDataStore
 ) : Authenticator {
 
     override fun authenticate(route: Route?, response: Response): Request? {
-        // 🔍 DEBUG LOG: Use this to confirm the method is hit
-        Timber.e("🚨 Authenticator HIT! Response code: ${response.code} for path: ${response.request.url.encodedPath}")
+        val path = response.request.url.encodedPath
+        val responseCode = response.code
 
-        // 1. Infinite Loop Prevention
+        Timber.w("🚨 AUTHENTICATOR: 401 for path=$path, code=$responseCode")
+
+        // Prevent infinite loop
         if (response.request.header("Token-Refresh-Attempted") != null) {
-            Timber.e("🛑 Authenticator: Already tried refreshing, giving up.")
+            Timber.e("🛑 AUTHENTICATOR: Already attempted refresh for this request, giving up")
             return null
         }
 
-        // 2. Synchronized Refresh Logic
-        return runBlocking {
-            val accessToken = userPreferences.getAuthToken().first()
-            val refreshToken = userPreferences.getRefreshToken().first()
+        Timber.i("🔄 AUTHENTICATOR: Attempting token refresh...")
 
-            if (accessToken.isNullOrEmpty() || refreshToken.isNullOrEmpty()) {
-                Timber.w("⚠️ Authenticator: No tokens found in storage.")
-                return@runBlocking null
-            }
-
-            // 🔍 DEBUG LOG
-            Timber.d("🔄 Authenticator: Calling Refresh API...")
-
-            // 3. The Refresh Call (Wrapped in Try/Catch is safer)
-            val newTokens = try {
-                val refreshResponse = apiService.refreshToken(
-                    expiredTokenWithBearer = "Bearer $accessToken", // Needs Header
-                    accessToken = accessToken, // Needs Query
-                    refreshToken = refreshToken // Needs Query
-                )
-
-                if (refreshResponse.isSuccessful && refreshResponse.body()?.isSuccess == true) {
-                    refreshResponse.body()?.data
-                } else {
-                    Timber.e("❌ Refresh API Failed: Code=${refreshResponse.code()}, Msg=${refreshResponse.message()}")
-                    null
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "❌ Refresh API Exception")
-                null
-            }
-
-            // 4. Handle Result
-            if (newTokens != null) {
-                val access = newTokens.accessToken
-                val refresh = newTokens.refreshToken
-                val exp = newTokens.expDate
-
-                if (access.isNullOrEmpty() || refresh.isNullOrEmpty() || exp.isNullOrEmpty()) {
-                    Timber.e("❌ Authenticator received invalid token data")
-                    return@runBlocking null
-                }
-
-                userPreferences.saveTokens(access, refresh, exp)
-
-                response.request.newBuilder()
-                    .header("Authorization", "Bearer $access")
-                    .header("Token-Refresh-Attempted", "true")
-                    .build()
-            } else {
-                Timber.e("🚫 Authenticator: Failed to refresh")
-                null
-            }
+        // Synchronously refresh token
+        val success = runBlocking {
+            tokenManager.ensureValidToken()
         }
+
+        Timber.d("🔐 AUTHENTICATOR: Refresh result=$success")
+
+        if (!success) {
+            Timber.e("❌ AUTHENTICATOR: Token refresh failed, request will fail")
+            return null
+        }
+
+        // Get new token and retry request
+        val newToken = runBlocking {
+            userPreferences.getAuthToken().first()
+        }
+
+        Timber.d("🔐 AUTHENTICATOR: New token exists=${!newToken.isNullOrEmpty()}")
+
+        if (newToken.isNullOrEmpty()) {
+            Timber.e("❌ AUTHENTICATOR: No token available after refresh")
+            return null
+        }
+
+        Timber.i("✅ AUTHENTICATOR: Retrying request with new token for path=$path")
+
+        return response.request.newBuilder()
+            .header("Authorization", "Bearer $newToken")
+            .header("Token-Refresh-Attempted", "true")
+            .build()
     }
 }

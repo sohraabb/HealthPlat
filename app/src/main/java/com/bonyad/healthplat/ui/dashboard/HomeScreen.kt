@@ -79,7 +79,9 @@ fun HomeScreen(
 ) {
     val healthOverview by viewModel.healthOverview.collectAsState()
     val userName by viewModel.userName.collectAsState()
-    val insights = viewModel.healthInsights
+
+    val readinessScore by viewModel.readinessScore.collectAsState()
+    val insights by viewModel.healthInsights.collectAsState()
 
     val healthCards = remember(healthOverview) {
         listOf(
@@ -118,11 +120,11 @@ fun HomeScreen(
                 value = if (healthOverview.bloodOxygen > 0) {
                     healthOverview.bloodOxygen.toString().toFarsiDigits()
                 } else {
-                    "--"
+                    "0"
                 },
                 unit = "%",
                 statusText = when {
-                    healthOverview.bloodOxygen == 0 -> "در انتظار داده"
+                    healthOverview.bloodOxygen == 0 -> ""
                     healthOverview.bloodOxygen < 90 -> "پایین"
                     healthOverview.bloodOxygen < 95 -> "قابل قبول"
                     else -> "عادی"
@@ -137,11 +139,11 @@ fun HomeScreen(
                 value = if (healthOverview.sleepDurationHours > 0) {
                     String.format("%.1f", healthOverview.sleepDurationHours).toFarsiDigits()
                 } else {
-                    "--"
+                    "0"
                 },
                 unit = "ساعت",
                 statusText = when {
-                    healthOverview.sleepDurationHours == 0f -> "در انتظار داده"
+                    healthOverview.sleepDurationHours == 0f -> ""
                     healthOverview.sleepDurationHours < 6f -> "کم خوابیدی"
                     healthOverview.sleepDurationHours < 8f -> "خوب"
                     healthOverview.sleepDurationHours > 9f -> "زیاد خوابیدی"
@@ -157,16 +159,16 @@ fun HomeScreen(
                 value = if (healthOverview.stressLevel > 0) {
                     healthOverview.stressLevel.toString().toFarsiDigits()
                 } else {
-                    "--"
+                    "0"
                 },
                 unit = null,
                 statusText = when {
-                    healthOverview.stressLevel == 0 -> "در انتظار داده"
+                    healthOverview.stressLevel == 0 -> ""
                     healthOverview.stressLevel < 30 -> "آرام"
                     healthOverview.stressLevel < 60 -> "متوسط"
                     else -> "بالا"
                 },
-                iconRes = R.drawable.care, // You might want to add a stress icon
+                iconRes = R.drawable.care,
                 iconTint = TealPrimary,
                 route = HealthDetailRoutes.StressDetail.route,
                 chartType = ChartType.STRESS
@@ -197,7 +199,7 @@ fun HomeScreen(
                         }
                     },
                     actions = {
-                        IconButton(onClick = { /* TODO: Help */ }) {
+                        IconButton(onClick = { viewModel.syncDeviceHistory()}) {
                             Icon(
                                 painter = painterResource(R.drawable.information),
                                 contentDescription = "Help",
@@ -222,7 +224,7 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
             NewHealthStatusCard(
-                score = 87, // Mock score
+                score = readinessScore,
                 insights = insights,
                 viewModel = viewModel,
                 navigateToAi = { onNavigateToAi(NavRoutes.AiScreen.route) }
@@ -648,7 +650,7 @@ fun StressChart(color: Color) {
     }
 }
 
-
+// --------------------------------LEGACY------------------------------------
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -658,7 +660,8 @@ fun HomeScreenLegacy(
 ) {
     val healthOverview by viewModel.healthOverview.collectAsState()
     val userName by viewModel.userName.collectAsState()
-    val insights = viewModel.healthInsights
+    val readinessScore by viewModel.readinessScore.collectAsState()
+    val insights by viewModel.healthInsights.collectAsState()
 
     Scaffold(
         topBar = {
@@ -708,7 +711,7 @@ fun HomeScreenLegacy(
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
             NewHealthStatusCard(
-                score = 87, // Mock score
+                score = readinessScore, // Mock score
                 insights = insights,
                 viewModel = viewModel
             ) { onNavigateToDetail("") }

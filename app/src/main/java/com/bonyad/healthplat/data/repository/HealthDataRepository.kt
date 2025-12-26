@@ -5,6 +5,8 @@ import com.bonyad.healthplat.data.local.UserPreferencesDataStore
 import com.bonyad.healthplat.data.network.HealthPlatApiService
 import com.bonyad.healthplat.domain.model.MetricRequest
 import com.bonyad.healthplat.domain.model.RecordDataResult
+import com.bonyad.healthplat.domain.model.SleepMetricRequest
+import com.bonyad.healthplat.domain.model.SleepSummary
 import com.bonyad.healthplat.domain.model.SyncHealthDataRequest
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
@@ -127,20 +129,35 @@ class HealthDataRepository @Inject constructor(
         type: MetricType
     ) {
         try {
-            val request = MetricRequest(
-                userId = userId,
-                deviceId = deviceId,
-                recordDate = recordDate,
-                values = values
-            )
-
             val response = when (type) {
-                MetricType.HEART_RATE -> apiService.uploadHeartRate(request)
-                MetricType.STEPS -> apiService.uploadSteps(request)
-                MetricType.SLEEP -> apiService.uploadSleep(request)
-                MetricType.SPO2 -> apiService.uploadSpo2(request)
-                MetricType.STRESS -> apiService.uploadStress(request)
-                MetricType.HRV -> apiService.uploadHrv(request)
+                MetricType.SLEEP -> {
+                    val summary = calculateSleepSummary(values)
+
+                    val sleepRequest = SleepMetricRequest(
+                        userId = userId,
+                        deviceId = deviceId,
+                        recordDate = recordDate,
+                        values = values,
+                        sleepSummary = summary
+                    )
+                    apiService.uploadSleep(sleepRequest)
+                }
+                else -> {
+                    val request = MetricRequest(
+                        userId = userId,
+                        deviceId = deviceId,
+                        recordDate = recordDate,
+                        values = values
+                    )
+                    when (type) {
+                        MetricType.HEART_RATE -> apiService.uploadHeartRate(request)
+                        MetricType.STEPS -> apiService.uploadSteps(request)
+                        MetricType.SPO2 -> apiService.uploadSpo2(request)
+                        MetricType.STRESS -> apiService.uploadStress(request)
+                        MetricType.HRV -> apiService.uploadHrv(request)
+                        else -> throw IllegalArgumentException("Unknown metric type")
+                    }
+                }
             }
 
             if (response.isSuccessful && response.body()?.isSuccess == true) {
@@ -162,6 +179,31 @@ class HealthDataRepository @Inject constructor(
             calendar.get(java.util.Calendar.DAY_OF_MONTH)
         )
     }
+}
+
+private fun calculateSleepSummary(values: List<Int>): SleepSummary {
+    val deep = values.count { it == 1 }
+    val light = values.count { it == 2 }
+    val awake = values.count { it == 3 }
+    val rem = values.count { it == 4 }
+
+    val total = deep + light + rem
+
+    val sleepQuality = if (total > 0) {
+        val restorativeRatio = (deep + rem).toFloat() / total.toFloat()
+        (restorativeRatio * 200).coerceAtMost(100f).toInt()
+    } else {
+        0
+    }
+
+    return SleepSummary(
+        deepSleepMinutes = deep,
+        lightSleepMinutes = light,
+        remSleepMinutes = rem,
+        awakeMinutes = awake,
+        totalSleepMinutes = total,
+        sleepQuality = sleepQuality
+    )
 }
 
 enum class MetricType {

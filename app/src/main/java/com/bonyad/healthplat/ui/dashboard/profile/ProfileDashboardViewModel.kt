@@ -63,7 +63,7 @@ class ProfileDashboardViewModel @Inject constructor(
     fun logout() {
         viewModelScope.launch {
             try {
-                userPreferences.clearAll()
+                userPreferences.clearAuthOnly()
                 Timber.i("User logged out successfully")
                 // TODO: Navigate to login screen
             } catch (e: Exception) {

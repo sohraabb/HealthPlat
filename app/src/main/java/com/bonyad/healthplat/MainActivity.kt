@@ -13,6 +13,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import com.bonyad.healthplat.blesdk.model.PpgRawDataParser
 import com.bonyad.healthplat.data.local.UserPreferencesDataStore
 import com.bonyad.healthplat.ui.MainViewModel
 import com.bonyad.healthplat.ui.navigation.HealthPlatNavGraph
@@ -39,6 +40,8 @@ class MainActivity : ComponentActivity() {
             mainViewModel.isLoading.value
         }
 
+        PpgRawDataParser.testWithExampleData()
+
         setContent {
             HealthPlatTheme {
                 val startDest by mainViewModel.startDestination.collectAsState()
@@ -52,6 +55,18 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    fun testPpgParser() {
+        // Test with known data from image
+        val passed = PpgRawDataParser.testWithExampleData()
+
+        if (passed) {
+            Timber.d("✓ PPG Parser working correctly!")
+            Timber.d("Next: Enable device notifications and call parse() on incoming data")
+        } else {
+            Timber.e("✗ PPG Parser test failed - check byte positions")
         }
     }
 }

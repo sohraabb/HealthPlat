@@ -84,6 +84,8 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
     private var batteryUpdateJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    private var initializationJob: Job? = null
+
     init {
         // Ensure SDK is initialized (Application already called init, this is defensive)
         try {
@@ -286,8 +288,12 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
     }
 
     override fun connect(deviceMac: String) {
-        Timber.i("🔵 connect() called with MAC: $deviceMac")
+        if (_connectionState.value == ConnectionState.CONNECTING || _connectionState.value == ConnectionState.CONNECTED) {
+            Timber.i("🛑 Ignoring connect request: Already ${_connectionState.value}")
+            return
+        }
 
+        Timber.i("🔵 connect() called with MAC: $deviceMac")
         _connectionState.value = ConnectionState.CONNECTING
         _pairingState.value = PairingState.NotPaired
         stopScan()
@@ -434,14 +440,23 @@ override fun readBatteryLevel() {
         }
     }
 
-    override suspend fun getDeviceInfo(): Result<DeviceInfoBean> = suspendCoroutine { cont ->
+    override suspend fun getDeviceInfo(): Result<DeviceInfoBean> = suspendCancellableCoroutine { cont ->
         try {
             BonlalaOperateManager.getInstance().getDeviceInfoData { deviceInfo ->
-                _isPaired.value = deviceInfo.isPair
-                cont.resume(Result.success(deviceInfo))
+                if (cont.isActive) {
+                    if (deviceInfo != null) {
+                        _isPaired.value = deviceInfo.isPair
+                        cont.resume(Result.success(deviceInfo))
+                    } else {
+                        Timber.w("⚠️ SDK returned null DeviceInfo")
+                        cont.resume(Result.failure(Exception("SDK returned null device info")))
+                    }
+                }
             }
         } catch (t: Throwable) {
-            cont.resume(Result.failure(t))
+            if (cont.isActive) {
+                cont.resume(Result.failure(t))
+            }
         }
     }
 
@@ -458,36 +473,21 @@ override fun readBatteryLevel() {
             return RecordDataResult.Error(-1)
         }
 
-        val deviceInfo = getDeviceInfo().getOrNull()
-        val deviceState = deviceInfo?.deviceState
+        return retryRecordData(day, attempt = 1)
+    }
 
-        when (deviceState) {
-            null, 0 -> Timber.d("✅ Device ready (state: $deviceState)")
-            2 -> return RecordDataResult.Error(-2)
-            3 -> return RecordDataResult.Error(-2)
-            4, 5 -> return RecordDataResult.Error(-2)
-            6 -> return RecordDataResult.Error(-2)
-        }
+    private suspend fun retryRecordData(day: Int, attempt: Int): RecordDataResult {
+        if (attempt > 3) return RecordDataResult.Error(-99)
 
-        return try {
+        val result = try {
             withTimeout(15000L) {
-                suspendCancellableCoroutine { continuation ->
+                suspendCancellableCoroutine<RecordDataResult> { continuation ->
                     BonlalaOperateManager.getInstance().getRecordByData(
                         day,
                         object : OnRecordDataListener {
                             override fun isNoResponseData(dayStr: String, stateCode: Int) {
-                                val errorMessage = when (stateCode) {
-                                    1 -> "Invalid message"
-                                    2 -> "Battery is low"
-                                    3 -> "Data channel is not open"
-                                    4 -> "Device is requesting a communication interval"
-                                    5 -> "Device busy"
-                                    6 -> "No data available for day $dayStr"
-                                    else -> "Unknown error code: $stateCode"
-                                }
-
-                                Timber.w("⚠️ Record data error for day $dayStr: $errorMessage (code: $stateCode)")
-
+                                Timber.w("⚠️ Sync Error day $dayStr: Code $stateCode")
+                                // Pass the error code back to the result
                                 if (continuation.isActive) {
                                     continuation.resume(RecordDataResult.Error(stateCode))
                                 }
@@ -503,8 +503,6 @@ override fun readBatteryLevel() {
                                 recordHrvBean: RecordHrvBean?,
                                 recordSleepActivityBean: RecordSleepActivityBean?
                             ) {
-                                Timber.i("📥 Ring Record Data Received for day $day")
-
                                 if (continuation.isActive) {
                                     continuation.resume(
                                         RecordDataResult.Success(
@@ -516,20 +514,24 @@ override fun readBatteryLevel() {
                                             hrv = recordHrvBean
                                         )
                                     )
-                                    Timber.i("✅ Record data successfully returned for day $day")
                                 }
                             }
                         }
                     )
                 }
             }
-        } catch (e: TimeoutCancellationException) {
-            Timber.e("⏱️ Timeout getting record data for day $day after 15 seconds")
-            RecordDataResult.Error(-99)
         } catch (e: Exception) {
-            Timber.e(e, "❌ Unexpected error getting record data for day $day")
+            Timber.e("❌ Sync Exception: ${e.message}")
             RecordDataResult.Error(-1)
         }
+
+        if (result is RecordDataResult.Error && (result.code == 4 || result.code == 5)) {
+            Timber.i("⏳ Device busy (Code ${result.code}). Waiting 1.5s before attempt #${attempt + 1}...")
+            delay(1500)
+            return retryRecordData(day, attempt + 1)
+        }
+
+        return result
     }
 
     override fun setUserId(userId: Long) {
@@ -613,7 +615,12 @@ override fun readBatteryLevel() {
     }
 
     private fun initializeDeviceWithPairing() {
-        scope.launch {
+        if (initializationJob?.isActive == true) {
+            Timber.i("🛑 Initialization already in progress, skipping duplicate request")
+            return
+        }
+
+        initializationJob = scope.launch {
             try {
                 Timber.i("🚀 Starting Device Initialization with Pairing Check")
 
@@ -686,4 +693,5 @@ override fun readBatteryLevel() {
             }
         }
     }
+
 }

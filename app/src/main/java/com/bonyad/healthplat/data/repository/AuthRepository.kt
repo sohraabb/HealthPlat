@@ -173,6 +173,11 @@ class AuthRepository @Inject constructor(
      * Save authentication data to preferences
      */
     private suspend fun saveAuthData(authData: LoginResponse, phoneNumber: String) {
+        Timber.i("💾 AUTH: Saving auth data for userId=${authData.userId}")
+        Timber.d("💾 AUTH: accessToken=${authData.accessToken.take(20)}...")
+        Timber.d("💾 AUTH: refreshToken=${authData.refreshToken.take(20)}...")
+        Timber.d("💾 AUTH: expDate=${authData.expDate}")
+
         // Save tokens atomically
         userPreferences.saveTokens(
             authData.accessToken,
@@ -183,7 +188,7 @@ class AuthRepository @Inject constructor(
         userPreferences.saveUserId(authData.userId)
         userPreferences.savePhoneNumber(phoneNumber)
 
-        Timber.d("✅ Auth data saved for user: ${authData.userId}")
+        Timber.i("✅ AUTH: Auth data saved successfully")
     }
 
     suspend fun refreshTokenInternal(): RefreshTokenResponse? {
@@ -234,14 +239,14 @@ class AuthRepository @Inject constructor(
                 apiService.logout()
 
                 // Clear local data regardless of API response
-                userPreferences.clearAll()
+                userPreferences.clearAuthOnly()
 
                 Timber.i("Logout successful")
                 AuthResult.Success(Unit)
             } catch (e: Exception) {
                 Timber.e(e, "Logout exception")
                 // Clear local data anyway
-                userPreferences.clearAll()
+                userPreferences.clearAuthOnly()
                 AuthResult.Success(Unit)
             }
         }

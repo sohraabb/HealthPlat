@@ -7,7 +7,9 @@ import androidx.lifecycle.viewModelScope
 import com.bonyad.healthplat.blesdk.manager.HealthDeviceManager
 import com.bonyad.healthplat.blesdk.model.ConnectionState
 import com.bonyad.healthplat.data.local.UserPreferencesDataStore
+import com.bonyad.healthplat.data.network.AIAnalysisApiService
 import com.bonyad.healthplat.data.network.SignalRManager
+import com.bonyad.healthplat.data.network.TokenManager
 import com.bonyad.healthplat.data.network.TokenRefresher
 import com.bonyad.healthplat.data.repository.AuthResult
 import com.bonyad.healthplat.data.repository.HealthDataRepository
@@ -27,6 +29,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
 data class HealthOverview(
@@ -55,10 +59,11 @@ data class HealthOverview(
 class DashboardViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val deviceManager: HealthDeviceManager,
+    private val aiApiService: AIAnalysisApiService,
     private val healthRepository: HealthDataRepository,
     private val userRepository: UserRepository,
     private val userPreferences: UserPreferencesDataStore,
-    private val tokenRefresher: TokenRefresher,
+    private val tokenManager: TokenManager,
     private val srManager: SignalRManager
 ) : ViewModel() {
 
@@ -74,11 +79,14 @@ class DashboardViewModel @Inject constructor(
     private val _needsBluetoothPermissions = MutableStateFlow(false)
     val needsBluetoothPermissions: StateFlow<Boolean> = _needsBluetoothPermissions.asStateFlow()
 
-    val healthInsights = mutableStateListOf(
-        "امروزت عالی بوده، ادامه بده",
-        "دیشب فقط ۵ ساعت خوابیدی",
-        "ضربان قلبت بالاست، بهتره قدم بزنی"
+    // --- NEW AI STATE ---
+    private val _readinessScore = MutableStateFlow(0)
+    val readinessScore: StateFlow<Int> = _readinessScore.asStateFlow()
+
+    private val _healthInsights = MutableStateFlow<List<String>>(
+        listOf("در حال تحلیل وضعیت شما...")
     )
+    val healthInsights: StateFlow<List<String>> = _healthInsights.asStateFlow()
 
 
     init {
@@ -88,6 +96,7 @@ class DashboardViewModel @Inject constructor(
             startTokenRefreshLoop()
             ensureUserData()
             loadUserData()
+            fetchReadinessData()
             observeDeviceConnection()
             observeInitializationComplete()
             observeRealTimeData()
@@ -98,6 +107,38 @@ class DashboardViewModel @Inject constructor(
 
             // Check permissions and auto-connect if available
             checkPermissionsAndConnect()
+        }
+    }
+
+    private suspend fun fetchReadinessData() {
+        try {
+            val userId = userPreferences.getUserId().first()
+            if (userId.isNullOrEmpty()) return
+
+            // Format: yyyy-MM-dd (e.g., 2025-12-06)
+            val yesterday = LocalDate.now()
+                .minusDays(1)
+                .format(DateTimeFormatter.ISO_DATE)
+
+            val response = aiApiService.getReadinessScore(userId, yesterday)
+
+            if (response.isSuccessful && response.body() != null) {
+                val data = response.body()!!
+                _readinessScore.value = data.absReadiness
+
+                // Convert Map values to List for the UI
+                // Map: {"Sleep": "Note...", "Stress": "Note..."}
+                val insights = data.perAspectNotes.values.toList()
+                if (insights.isNotEmpty()) {
+                    _healthInsights.value = insights.take(3)
+                }
+            } else {
+                Timber.e("AI Readiness API Error: ${response.code()}")
+                _healthInsights.value = listOf("اطلاعات کافی برای تحلیل امروز موجود نیست")
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error fetching readiness score")
+            _healthInsights.value = listOf("عدم دسترسی به سرویس هوش مصنوعی")
         }
     }
 
@@ -139,6 +180,7 @@ class DashboardViewModel @Inject constructor(
                 is AuthResult.Success -> {
                     Timber.i("✅ User data is available")
                 }
+
                 is AuthResult.Error -> {
                     Timber.e("❌ Failed to ensure user data: ${result.message}")
                 }
@@ -165,10 +207,10 @@ class DashboardViewModel @Inject constructor(
             Timber.i("🔄 Syncing history data (UI + Server)...")
 
             deviceManager.closeRealTimeHeartRate()
-            delay(1000)
+            delay(2500)
 
             // 1. Call Repository (It fetches from Ring AND Uploads to Server)
-            val result = healthRepository.syncDashboardData(6)
+            val result = healthRepository.syncDashboardData(0)
 
             // 2. Update UI with the returned result
             if (result is RecordDataResult.Success) {
@@ -261,8 +303,13 @@ class DashboardViewModel @Inject constructor(
 
     private fun autoConnectDevice() {
         viewModelScope.launch {
+            val currentState = deviceManager.connectionState.value
+            if (currentState == ConnectionState.CONNECTED || currentState == ConnectionState.CONNECTING) {
+                Timber.d("🚫 Ignoring auto-connect: Device is already $currentState")
+                return@launch
+            }
+
             try {
-                // Double-check permissions before connecting
                 if (!PermissionUtils.hasBluetoothPermissions(context)) {
                     Timber.w("⚠️ Cannot auto-connect: Missing Bluetooth permissions")
                     _needsBluetoothPermissions.value = true
@@ -361,11 +408,11 @@ class DashboardViewModel @Inject constructor(
 
     fun refreshData() {
         Timber.i("🔄 Manual refresh requested")
+        viewModelScope.launch { fetchReadinessData() }
+
         if (_healthOverview.value.isDeviceConnected) {
             deviceManager.readBatteryLevel()
-            syncDeviceHistory() // <--- ADD THIS
-        } else {
-            Timber.w("⚠️ Cannot refresh - device not connected")
+            syncDeviceHistory()
         }
     }
 
@@ -429,12 +476,41 @@ class DashboardViewModel @Inject constructor(
 
     private fun startTokenRefreshLoop() {
         viewModelScope.launch {
+            var loopCount = 0
             while (isActive) {
-                delay(30_000)
-                tokenRefresher.refreshIfNeeded()
+                delay(30_000) // Check every 30 seconds
+                loopCount++
+
+                Timber.d("🔄 DASHBOARD LOOP #$loopCount: Checking token...")
+
+                try {
+                    val isExpiringSoon = tokenManager.isTokenExpiringSoon()
+                    Timber.d("🔄 DASHBOARD LOOP #$loopCount: isExpiringSoon=$isExpiringSoon")
+
+                    // Proactively refresh if token is expiring soon
+                    val refreshed = tokenManager.ensureValidToken()
+
+                    Timber.d("🔄 DASHBOARD LOOP #$loopCount: ensureValidToken result=$refreshed")
+
+                    if (!refreshed) {
+                        Timber.e("❌ DASHBOARD LOOP #$loopCount: Token refresh failed")
+                        // Optionally: emit event to logout user
+                    } else {
+                        Timber.d("✅ DASHBOARD LOOP #$loopCount: Token is valid")
+
+                        // Reconnect SignalR if token was actually refreshed
+                        if (isExpiringSoon) {
+                            Timber.i("🔄 DASHBOARD LOOP #$loopCount: Reconnecting SignalR...")
+                            srManager.reconnectWithFreshToken()
+                        }
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "❌ DASHBOARD LOOP #$loopCount: Exception in token refresh")
+                }
             }
         }
     }
+
 
     override fun onCleared() {
         super.onCleared()

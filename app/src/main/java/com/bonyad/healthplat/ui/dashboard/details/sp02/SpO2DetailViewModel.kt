@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
 @HiltViewModel
@@ -58,7 +59,8 @@ class SpO2DetailViewModel @Inject constructor(
     val selectedTimeRange: StateFlow<String> = _selectedTimeRange.asStateFlow()
 
     init {
-        loadMockData()
+        loadSpO2ForDay(0)
+//        loadMockData()
 //        loadSpO2Data()
     }
 
@@ -104,7 +106,83 @@ class SpO2DetailViewModel @Inject constructor(
         )
     }
 
+    // ADD new function:
+    fun loadSpO2ForDay(offset: Int) {
+        viewModelScope.launch {
+            try {
+                val result = deviceManager.getRecordData(offset)
+
+                if (result is RecordDataResult.Success) {
+                    result.spo2?.sourceList?.let { spo2Data ->
+                        val validData = spo2Data.filter { it > 0 }
+
+                        if (validData.isEmpty()) {
+                            Timber.w("No SpO2 data for day $offset")
+                            return@let
+                        }
+
+                        _spo2Data.value = validData
+                        _currentSpO2.value = validData.lastOrNull() ?: 0
+                        _minSpO2.value = validData.minOrNull() ?: 0
+                        _maxSpO2.value = validData.maxOrNull() ?: 0
+
+                        // Convert to scatter points
+                        _chartData.value = convertToScatterPoints(validData)
+
+                        // Update stats
+                        val avg = validData.average().toInt()
+                        val lastTime = "23:56" // You can calculate from timestamp if needed
+
+                        _stats.value = SpO2Stats(
+                            high = _maxSpO2.value,
+                            avg = avg,
+                            low = _minSpO2.value,
+                            lastValue = _currentSpO2.value,
+                            lastTime = lastTime
+                        )
+
+                        Timber.i("✅ SpO2 loaded: avg=$avg, min=${_minSpO2.value}, max=${_maxSpO2.value}")
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error loading SpO2 for day $offset")
+            }
+        }
+    }
+
+    // ADD helper:
+    private fun convertToScatterPoints(spo2Data: List<Int>): List<SpO2Point> {
+        val points = mutableListOf<SpO2Point>()
+
+        // SDK records SpO2 every 30 minutes (48 readings per day)
+        // Map to 0.0-1.0 ratio for 24 hours
+
+        spo2Data.forEachIndexed { index, value ->
+            if (value > 0) {
+                val timeRatio = index.toFloat() / spo2Data.size
+
+                // Calculate hour:minute for label
+                val totalMinutes = (timeRatio * 24 * 60).toInt()
+                val hour = totalMinutes / 60
+                val minute = totalMinutes % 60
+                val timeLabel = String.format("%02d:%02d", hour, minute)
+
+                points.add(
+                    SpO2Point(
+                        timeLabel = timeLabel,
+                        timeRatio = timeRatio,
+                        value = value
+                    )
+                )
+            }
+        }
+
+        return points
+    }
+
+    // UPDATE selectDay:
     fun selectDay(offset: Int) {
         _selectedDayOffset.value = offset
+        loadSpO2ForDay(offset)
     }
 }

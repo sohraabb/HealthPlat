@@ -59,7 +59,8 @@ class HeartRateDetailViewModel @Inject constructor(
     val selectedDayOffset = _selectedDayOffset.asStateFlow()
 
     init {
-        loadMockData()
+        loadHeartRateForDayNew(_selectedDayOffset.value)
+//        loadMockData()
 //        loadHeartRateData()
 //        observeRealTimeData()
     }
@@ -109,7 +110,11 @@ class HeartRateDetailViewModel @Inject constructor(
 
     fun setTimeRange(range: String) {
         _selectedTimeRange.value = range
-        // logic to reload data based on range
+
+        val data = _heartRateData.value
+        if (data.isNotEmpty()) {
+            _chartData.value = buildChartData(data, range)
+        }
     }
 
     private fun loadMockData() {
@@ -127,6 +132,81 @@ class HeartRateDetailViewModel @Inject constructor(
 
         // Mock HRV
         _currentHrv.value = 67
+    }
+
+    fun loadHeartRateForDayNew(offset: Int) {
+        viewModelScope.launch {
+            try {
+                val result = deviceManager.getRecordData(offset)
+
+                if (result is RecordDataResult.Success) {
+                    result.heartRate?.heartRateSource?.let { hrData ->
+                        val validData = hrData.filter { it > 0 }
+
+                        if (validData.isNotEmpty()) {
+                            // Update raw data
+                            _heartRateData.value = validData
+
+                            // Calculate stats
+                            _avgHeartRate.value = validData.average().toInt()
+                            _minHeartRate.value = validData.minOrNull() ?: 0
+                            _maxHeartRate.value = validData.maxOrNull() ?: 0
+                            _currentHeartRate.value = validData.lastOrNull() ?: 0
+
+                            // Convert to chart data (hourly ranges)
+                            _chartData.value = buildChartData(
+                                hrData = validData,
+                                range = _selectedTimeRange.value
+                            )
+
+                            Timber.i("✅ HR loaded for day $offset: avg=${_avgHeartRate.value}")
+                        } else {
+                            Timber.w("No valid HR data for day $offset")
+                            clearData()
+                        }
+                    }
+
+                    // Also update HRV if available
+                    result.hrv?.hrvSource?.let { hrvData ->
+                        val lastHrv = hrvData.lastOrNull { it > 0 }
+                        if (lastHrv != null) {
+                            _currentHrv.value = lastHrv
+                        }
+                    }
+                } else {
+                    Timber.w("Failed to load HR data for day $offset")
+                    clearData()
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error loading HR for day $offset")
+                clearData()
+            }
+        }
+    }
+
+    private fun buildChartData(
+        hrData: List<Int>,
+        range: String
+    ): List<HeartRateRangePoint> {
+
+        return when (range) {
+            "روزانه" -> convertToRanges(
+                hrData,
+                bucketSizeMinutes = 60
+            ) { hour -> String.format("%02d:00", hour) }
+
+            "6 ساعت" -> convertToRanges(
+                hrData,
+                bucketSizeMinutes = 60
+            ) { i -> "${i * 6}:00" }
+
+            "3 ساعت" -> convertToRanges(
+                hrData,
+                bucketSizeMinutes = 30
+            ) { i -> "${i * 30}m" }
+
+            else -> emptyList()
+        }
     }
 
     fun loadHeartRateForDay(offset: Int) {
@@ -155,6 +235,48 @@ class HeartRateDetailViewModel @Inject constructor(
 
     fun selectDay(offset: Int) {
         _selectedDayOffset.value = offset
-        loadHeartRateForDay(offset)
+        loadHeartRateForDayNew(offset)
+    }
+
+    private fun convertToRanges(
+        hrData: List<Int>,
+        bucketSizeMinutes: Int,
+        labelFormatter: (Int) -> String
+    ): List<HeartRateRangePoint> {
+
+        val result = mutableListOf<HeartRateRangePoint>()
+        val totalBuckets = hrData.size / bucketSizeMinutes
+
+        for (bucket in 0 until totalBuckets) {
+            val start = bucket * bucketSizeMinutes
+            val end = minOf(start + bucketSizeMinutes, hrData.size)
+
+            val bucketData = hrData.subList(start, end).filter { it > 0 }
+            if (bucketData.isEmpty()) continue
+
+            val min = bucketData.minOrNull()!!
+            val max = bucketData.maxOrNull()!!
+            val isAlert = max > 120 || min < 50
+
+            result.add(
+                HeartRateRangePoint(
+                    timeLabel = labelFormatter(bucket),
+                    min = min,
+                    max = max,
+                    isAlert = isAlert
+                )
+            )
+        }
+
+        return result
+    }
+
+    private fun clearData() {
+        _heartRateData.value = emptyList()
+        _chartData.value = emptyList()
+        _avgHeartRate.value = 0
+        _minHeartRate.value = 0
+        _maxHeartRate.value = 0
+        _currentHeartRate.value = 0
     }
 }

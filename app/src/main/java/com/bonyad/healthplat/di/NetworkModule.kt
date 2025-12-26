@@ -2,8 +2,10 @@ package com.bonyad.healthplat.di
 
 import android.content.Context
 import com.bonyad.healthplat.data.local.UserPreferencesDataStore
+import com.bonyad.healthplat.data.network.AIAnalysisApiService
 import com.bonyad.healthplat.data.network.HealthPlatApiService
 import com.bonyad.healthplat.data.network.TokenAuthenticator
+import com.bonyad.healthplat.data.network.TokenManager
 import com.inuker.bluetooth.library.BuildConfig
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import dagger.Module
@@ -28,13 +30,16 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-    private const val BASE_URL = "http://192.168.18.165:7005/api/"
+    private const val MAIN_BASE_URL = "http://192.168.18.165:7005/api/"
+    private const val AI_BASE_URL = "http://192.168.18.165:8002/" // Removed 'api' based on docs example, adjust if needed
+
+    // =================================================================
+    // 1. Utilities (Json, Logging, Prefs)
+    // =================================================================
 
     @Provides
     @Singleton
-    fun provideUserPreferences(
-        @ApplicationContext context: Context
-    ): UserPreferencesDataStore {
+    fun provideUserPreferences(@ApplicationContext context: Context): UserPreferencesDataStore {
         return UserPreferencesDataStore(context)
     }
 
@@ -60,16 +65,9 @@ object NetworkModule {
         }
     }
 
-
-    @Provides
-    @Singleton
-    @Named("RefreshApiService")
-    fun provideRefreshApiService(
-        @Named("RefreshRetrofit") retrofit: Retrofit
-    ): HealthPlatApiService {
-        return retrofit.create(HealthPlatApiService::class.java)
-    }
-
+    // =================================================================
+    // 2. Authentication Components (Interceptor & Authenticator)
+    // =================================================================
 
     @Provides
     @Singleton
@@ -80,120 +78,84 @@ object NetworkModule {
             val originalRequest = chain.request()
             val path = originalRequest.url.encodedPath
 
-            val isAuthEndpoint =
-                path.contains("/Auth/login", true) ||
-                        path.contains("/Auth/register", true) ||
-                        path.contains("/Auth/requestPhoneVerification", true) ||
-                        path.contains("/Auth/verifyPhone", true) ||
-                        path.contains("/Auth/refresh", true)
+            // Define endpoints that do not need a Token
+            val isPublicEndpoint = path.contains("/Auth/login", true) ||
+                    path.contains("/Auth/register", true) ||
+                    path.contains("/Auth/requestPhoneVerification", true) ||
+                    path.contains("/Auth/verifyPhone", true) ||
+                    path.contains("/Auth/refresh", true)
 
-            if (isAuthEndpoint) {
-                Timber.d("🔓 Auth endpoint: $path")
-                return@Interceptor chain.proceed(
-                    originalRequest.newBuilder()
-                        .header("accept", "*/*")
-                        .build()
-                )
+            if (isPublicEndpoint) {
+                return@Interceptor chain.proceed(originalRequest)
             }
 
-            // ✅ Add detailed logging
+            // Retrieve Token
             val token = runBlocking {
-                val t = userPreferences.getAuthToken().first()
-                Timber.d("🔍 Auth Interceptor checking token for: $path")
-                Timber.d("   Token exists: ${t != null}")
-                Timber.d("   Token value: ${t?.take(30)}...")
-                t
+                userPreferences.getAuthToken().first()
             }
 
             val newRequest = if (!token.isNullOrEmpty()) {
-                Timber.d("🔑 Adding Authorization header for: $path")
                 originalRequest.newBuilder()
                     .header("Authorization", "Bearer $token")
-                    .header("accept", "*/*")
                     .build()
             } else {
-                Timber.w("⚠️ No token available for: $path")
-                originalRequest.newBuilder()
-                    .header("accept", "*/*")
-                    .build()
+                // If no token, proceed (might fail with 401, handled by Authenticator or UI)
+                originalRequest
             }
 
-            val response = chain.proceed(newRequest)
-
-            if (response.code == 401) {
-                Timber.e("🚫 401 Unauthorized for: $path")
-            }
-
-            response
+            chain.proceed(newRequest)
         }
     }
 
     @Provides
     @Singleton
-    @Named("AuthRetrofit")
-    fun provideAuthRetrofit(
-        json: Json,
-        loggingInterceptor: HttpLoggingInterceptor
-    ): Retrofit {
-        val okHttpClient = OkHttpClient.Builder()
-            .addInterceptor(loggingInterceptor)
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
-            .build()
-
-        return Retrofit.Builder()
-            .baseUrl(BASE_URL)
-            .client(okHttpClient)
-            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-            .build()
+    fun provideTokenManager(
+        userPreferences: UserPreferencesDataStore,
+        @Named("RefreshApiService") apiService: HealthPlatApiService
+    ): TokenManager {
+        return TokenManager(userPreferences, apiService)
     }
 
     @Provides
     @Singleton
     fun provideTokenAuthenticator(
-        userPreferences: UserPreferencesDataStore,
-        @Named("RefreshApiService") apiService: HealthPlatApiService
+        tokenManager: TokenManager,
+        userPreferences: UserPreferencesDataStore
     ): TokenAuthenticator {
-        return TokenAuthenticator(userPreferences, apiService)
+        return TokenAuthenticator(tokenManager, userPreferences)
     }
 
+    // =================================================================
+    // 3. HTTP Clients
+    // =================================================================
+
+    /**
+     * Main Client: Used for general API calls.
+     * Includes: Logging, Auth Interceptor (adds token), Token Authenticator (refreshes token).
+     */
     @Provides
     @Singleton
-    fun provideOkHttpClient(
+    @Named("MainOkHttpClient")
+    fun provideMainOkHttpClient(
         loggingInterceptor: HttpLoggingInterceptor,
         authInterceptor: Interceptor,
-        tokenAuthenticator: TokenAuthenticator // Injected here
+        tokenAuthenticator: TokenAuthenticator
     ): OkHttpClient {
         return OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
             .addInterceptor(loggingInterceptor)
-            .authenticator(tokenAuthenticator) // ✅ Attached here
+            .authenticator(tokenAuthenticator)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .build()
     }
 
-    @Provides
-    @Singleton
-    fun provideRetrofit(
-        okHttpClient: OkHttpClient,
-        json: Json
-    ): Retrofit {
-        return Retrofit.Builder()
-            .baseUrl(BASE_URL)
-            .client(okHttpClient)
-            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-            .build()
-    }
-
-    @Provides
-    @Singleton
-    fun provideHealthPlatApiService(retrofit: Retrofit): HealthPlatApiService {
-        return retrofit.create(HealthPlatApiService::class.java)
-    }
-
+    /**
+     * Refresh Client: Used specifically for the Token Refresh API call.
+     * Includes: Logging only.
+     * EXCLUDES: AuthInterceptor (prevents circular loops).
+     */
     @Provides
     @Singleton
     @Named("RefreshOkHttp")
@@ -208,6 +170,37 @@ object NetworkModule {
             .build()
     }
 
+    // =================================================================
+    // 4. Retrofit Instances
+    // =================================================================
+
+    @Provides
+    @Singleton
+    @Named("MainRetrofit")
+    fun provideMainRetrofit(
+        @Named("MainOkHttpClient") okHttpClient: OkHttpClient,
+        json: Json
+    ): Retrofit {
+        return Retrofit.Builder()
+            .baseUrl(MAIN_BASE_URL)
+            .client(okHttpClient)
+            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    @Named("AIRetrofit")
+    fun provideAIRetrofit(
+        @Named("MainOkHttpClient") okHttpClient: OkHttpClient, // Uses main client to support Auth if needed
+        json: Json
+    ): Retrofit {
+        return Retrofit.Builder()
+            .baseUrl(AI_BASE_URL)
+            .client(okHttpClient)
+            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+            .build()
+    }
 
     @Provides
     @Singleton
@@ -217,9 +210,38 @@ object NetworkModule {
         json: Json
     ): Retrofit {
         return Retrofit.Builder()
-            .baseUrl(BASE_URL)
+            .baseUrl(MAIN_BASE_URL)
             .client(okHttpClient)
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
+    }
+
+    // =================================================================
+    // 5. API Services
+    // =================================================================
+
+    @Provides
+    @Singleton
+    fun provideHealthPlatApiService(
+        @Named("MainRetrofit") retrofit: Retrofit
+    ): HealthPlatApiService {
+        return retrofit.create(HealthPlatApiService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    @Named("RefreshApiService")
+    fun provideRefreshApiService(
+        @Named("RefreshRetrofit") retrofit: Retrofit
+    ): HealthPlatApiService {
+        return retrofit.create(HealthPlatApiService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideAIApiService(
+        @Named("AIRetrofit") retrofit: Retrofit
+    ): AIAnalysisApiService {
+        return retrofit.create(AIAnalysisApiService::class.java)
     }
 }

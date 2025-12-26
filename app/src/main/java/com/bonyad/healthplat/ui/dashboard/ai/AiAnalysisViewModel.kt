@@ -4,12 +4,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bonyad.healthplat.R
+import com.bonyad.healthplat.data.local.UserPreferencesDataStore
+import com.bonyad.healthplat.data.network.AIAnalysisApiService
+import com.bonyad.healthplat.domain.model.ReportAspect
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import timber.log.Timber
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
 data class AiAnalysisState(
@@ -30,40 +38,84 @@ data class AiMetric(
 )
 
 @HiltViewModel
-class AiAnalysisViewModel @Inject constructor() : ViewModel() {
+class AiAnalysisViewModel @Inject constructor(
+    private val apiService: AIAnalysisApiService,
+    private val userPreferences: UserPreferencesDataStore
+) : ViewModel() {
+
     private val _uiState = MutableStateFlow(AiAnalysisState())
     val uiState: StateFlow<AiAnalysisState> = _uiState.asStateFlow()
 
     init {
-        loadMockData()
+        fetchAnalysis()
     }
 
-    private fun loadMockData() {
-        _uiState.value = AiAnalysisState(
-            overallScore = 66,
-            summaryText = "سبک زندگی شما نشان‌دهنده شروع بهبود در ثبات خواب و مدیریت استرس است. سطح فعالیت شما خوب است اما می‌تواند منظم‌تر باشد.",
-            lastAnalysisDate = "آخرین تحلیل: امروز ساعت ۱۶:۳۰",
-            metrics = listOf(
-                AiMetric(
-                    title = "کیفیت خواب",
-                    value = "میانگین ۶.۵ ساعت",
-                    status = "نیازمند بهبود",
-                    description = "خواب معمولاً کاملاً پایدار نیست. پیشنهاد می‌شود با زمان‌بندی دقیق‌تر، برنامه خواب شما به حد مطلوب برسد.",
-                    advice = "سعی کنید هر شب ساعت ۱۱:۰۰ بخوابید و ۷:۰۰ صبح بیدار شوید.",
-                    iconRes = R.drawable.hospital, // Replace with your icon
-                    statusColor = Color(0xFFE99C2E)
-                ),
-                AiMetric(
-                    title = "فعالیت بدنی",
-                    value = "۷۳۰۰ قدم در روز - ۳-۴ بار در هفته",
-                    status = "خوب",
-                    description = "سطح فعالیت بدنی شما در حد متوسط است. برای بهبود می‌توانید یک جلسه ورزشی دیگر در هفته اضافه کنید.",
-                    advice = "یک جلسه ورزشی دیگر در هفته اضافه کنید، مثلاً پیاده‌روی ۲۰ دقیقه‌ای.",
-                    iconRes = R.drawable.hospital,
-                    statusColor = Color(0xFF00BFA5)
-                )
-                // Add Heart Health and Stress Management similarly...
-            )
+    fun fetchAnalysis() {
+        viewModelScope.launch {
+            try {
+                val userId = userPreferences.getUserId().first()
+                if (userId.isNullOrEmpty()) return@launch
+
+                // Format: 2025-12-06 00:00:00.0000000
+                // Simple version usually works, but adhering to requested format:
+                val yesterday = LocalDate.now()
+                    .minusDays(1)
+                    .format(DateTimeFormatter.ISO_DATE)
+
+                _uiState.value = _uiState.value.copy(summaryText = "در حال دریافت تحلیل...")
+
+                val response = apiService.getHealthReport(userId, yesterday)
+
+                if (response.isSuccessful && response.body() != null) {
+                    val report = response.body()!!
+
+                    val metrics = listOf(
+                        mapToMetric("خواب", report.sleep, R.drawable.chemistry_flask),
+                        mapToMetric("فعالیت بدنی", report.activity, R.drawable.walk),
+                        mapToMetric("قلب", report.heart, R.drawable.heart_rate),
+                        mapToMetric("مدیریت استرس", report.stress, R.drawable.care)
+                    )
+
+                    _uiState.value = AiAnalysisState(
+                        overallScore = report.absReadinessScore,
+                        summaryText = report.overallSummary,
+                        metrics = metrics,
+                        lastAnalysisDate = "آخرین تحلیل: امروز ساعت ${LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))}"
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(summaryText = "خطا در دریافت اطلاعات. لطفا دوباره تلاش کنید.")
+                }
+
+            } catch (e: Exception) {
+                Timber.e(e, "Error fetching AI report")
+                _uiState.value = _uiState.value.copy(summaryText = "عدم دسترسی به اینترنت یا سرویس.")
+            }
+        }
+    }
+
+    private fun mapToMetric(title: String, aspect: ReportAspect, iconRes: Int): AiMetric {
+        // Create a summary from findings (taking the first one)
+        val description = aspect.notableFindings.firstOrNull() ?: "اطلاعاتی ثبت نشده است"
+
+        // Create advice string (taking the first one)
+        val advice = aspect.lifestyleSuggestions.firstOrNull() ?: "توصیه‌ای موجود نیست"
+
+        // Map textual score to color
+        val (color, statusText) = when {
+            aspect.score.contains("عالی") -> Pair(Color(0xFF00BFA5), "عالی") // Green
+            aspect.score.contains("خوب") -> Pair(Color(0xFF00BFA5), "خوب") // Green
+            aspect.score.contains("توجه") -> Pair(Color(0xFFE99C2E), "نیازمند توجه") // Orange
+            else -> Pair(Color.Gray, aspect.score)
+        }
+
+        return AiMetric(
+            title = title,
+            value = aspect.score, // Or construct a value string if needed
+            status = statusText,
+            description = description,
+            advice = advice,
+            iconRes = iconRes,
+            statusColor = color
         )
     }
 }

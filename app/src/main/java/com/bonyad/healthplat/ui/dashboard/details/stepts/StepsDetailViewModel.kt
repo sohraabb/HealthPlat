@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
 @HiltViewModel
@@ -55,7 +56,8 @@ class StepsDetailViewModel @Inject constructor(
     val selectedDayOffset = _selectedDayOffset.asStateFlow()
 
     init {
-        loadMockData()
+        loadStepsForDay(0)
+//        loadMockData()
 //        observeRealTimeData()
 //        loadWeeklyData()
     }
@@ -87,14 +89,101 @@ class StepsDetailViewModel @Inject constructor(
         )
     }
 
-    fun selectDay(offset: Int) {
-        _selectedDayOffset.value = offset
-//        loadHeartRateForDay(offset)
+    fun loadStepsForDay(offset: Int) {
+        viewModelScope.launch {
+            try {
+                val result = deviceManager.getRecordData(offset)
+
+                if (result is RecordDataResult.Success) {
+                    result.steps?.stepSource?.let { stepsData ->
+                        val validData = stepsData.filter { it >= 0 } // 0 is valid
+
+                        if (validData.isEmpty()) {
+                            Timber.w("No steps data for day $offset")
+                            return@let
+                        }
+
+                        // Total steps for the day
+                        val total = validData.sum()
+                        _totalSteps.value = total
+                        _todaySteps.value = total
+
+                        // Convert to hourly bars
+                        _barChartData.value = convertToHourlyBars(validData)
+
+                        // Load comparison data (requires yesterday's data)
+                        loadComparisonData(offset)
+
+                        Timber.i("✅ Steps loaded for day $offset: $total steps")
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error loading steps for day $offset")
+            }
+        }
     }
 
+    // ADD helper:
+    private fun convertToHourlyBars(stepsData: List<Int>): List<StepBarPoint> {
+        val bars = mutableListOf<StepBarPoint>()
 
+        // Group by hour (60 minutes per hour)
+        for (hour in 0..23) {
+            val startIdx = hour * 60
+            val endIdx = minOf(startIdx + 60, stepsData.size)
 
+            if (startIdx < stepsData.size) {
+                val hourSteps = stepsData.subList(startIdx, endIdx).sum()
 
+                if (hourSteps > 0) {
+                    bars.add(
+                        StepBarPoint(
+                            hourLabel = String.format("%02d:00", hour),
+                            steps = hourSteps,
+                            isSelected = false // You can determine based on current hour
+                        )
+                    )
+                }
+            }
+        }
+
+        return bars
+    }
+
+    // ADD comparison helper:
+    private suspend fun loadComparisonData(currentDayOffset: Int) {
+        try {
+            // Load average from last 7 days (excluding today)
+            val avgData = mutableListOf<Int>()
+
+            for (day in 1..7) {
+                val result = deviceManager.getRecordData(currentDayOffset + day)
+                if (result is RecordDataResult.Success) {
+                    result.steps?.stepSource?.sum()?.let { avgData.add(it) }
+                }
+            }
+
+            val avgTotal = if (avgData.isNotEmpty()) avgData.average().toInt() else 0
+            _averageSteps.value = avgTotal
+
+            // Generate comparison points (simplified)
+            val todayTotal = _todaySteps.value
+            _comparisonData.value = listOf(
+                ComparisonPoint(0f, 0, 0),
+                ComparisonPoint(0.5f, todayTotal / 2, avgTotal / 2),
+                ComparisonPoint(1.0f, todayTotal, avgTotal)
+            )
+
+        } catch (e: Exception) {
+            Timber.e(e, "Error loading comparison data")
+        }
+    }
+
+    // UPDATE selectDay:
+    fun selectDay(offset: Int) {
+        _selectedDayOffset.value = offset
+        loadStepsForDay(offset)
+    }
     private fun observeRealTimeData() {
         viewModelScope.launch {
             deviceManager.realTimeData.collect { data ->

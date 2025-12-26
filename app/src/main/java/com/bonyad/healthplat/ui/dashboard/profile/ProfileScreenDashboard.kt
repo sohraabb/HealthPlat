@@ -24,6 +24,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.navigation.compose.rememberNavController
 import com.bonyad.healthplat.R
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
 
@@ -37,6 +38,8 @@ fun ProfileScreenDashboard(
     val currentGoal by viewModel.currentGoal.collectAsState()
     val goalProgress by viewModel.goalProgress.collectAsState()
     val nightModeEnabled by viewModel.nightModeEnabled.collectAsState()
+    val navController = rememberNavController()
+
 
     Scaffold(
         topBar = {
@@ -44,7 +47,7 @@ fun ProfileScreenDashboard(
                 title = { },
                 navigationIcon = {
                     TextButton(
-                        onClick = { /* TODO: Edit profile */ }
+                        onClick = { navController.navigate("edit_personal_info") }
                     ) {
                         Text(
                             text = "ویرایش اطلاعات",

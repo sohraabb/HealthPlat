@@ -1,7 +1,10 @@
 package com.bonyad.healthplat.data.network
 
+import com.bonyad.healthplat.domain.model.AddCaregiverByUserIdRequest
+import com.bonyad.healthplat.domain.model.AddCaregiverRequest
 import com.bonyad.healthplat.domain.model.AddUserDeviceRequest
 import com.bonyad.healthplat.domain.model.ApiResponse
+import com.bonyad.healthplat.domain.model.CaregiverData
 import com.bonyad.healthplat.domain.model.LoginByPhoneRequest
 import com.bonyad.healthplat.domain.model.LoginResponse
 import com.bonyad.healthplat.domain.model.MetricData
@@ -11,6 +14,7 @@ import com.bonyad.healthplat.domain.model.RefreshTokenRequest
 import com.bonyad.healthplat.domain.model.RefreshTokenResponse
 import com.bonyad.healthplat.domain.model.RegisterByPhoneRequest
 import com.bonyad.healthplat.domain.model.RequestPhoneVerificationRequest
+import com.bonyad.healthplat.domain.model.SleepMetricRequest
 import com.bonyad.healthplat.domain.model.UpdateDeviceRequest
 import com.bonyad.healthplat.domain.model.UpdateUserProfileRequest
 import com.bonyad.healthplat.domain.model.UpdateUserRequest
@@ -160,7 +164,7 @@ interface HealthPlatApiService {
     suspend fun uploadSteps(@Body request: MetricRequest): Response<ApiResponse<MetricData>>
 
     @POST("Metrics/Sleep")
-    suspend fun uploadSleep(@Body request: MetricRequest): Response<ApiResponse<MetricData>>
+    suspend fun uploadSleep(@Body request: SleepMetricRequest): Response<ApiResponse<MetricData>>
 
     @POST("Metrics/Spo2")
     suspend fun uploadSpo2(@Body request: MetricRequest): Response<ApiResponse<MetricData>>
@@ -171,4 +175,76 @@ interface HealthPlatApiService {
     @POST("Metrics/Hrv")
     suspend fun uploadHrv(@Body request: MetricRequest): Response<ApiResponse<MetricData>>
 
+
+// ============ Care/Caregiver APIs ============
+
+    /**
+     * Add a caregiver by phone number
+     * POST /api/Caregiver/Add
+     * Requires Bearer token
+     */
+    @POST("Caregiver/Add")
+    @Headers("Content-Type: application/json; ver=1.0")
+    suspend fun addCaregiver(
+        @Body request: AddCaregiverRequest
+    ): Response<ApiResponse<CaregiverData>>
+
+    /**
+     * Add a caregiver by user ID (from QR code)
+     * POST /api/Caregiver/AddByUserid
+     * Requires Bearer token
+     */
+    @POST("Caregiver/AddByUserid")
+    @Headers("Content-Type: application/json; ver=1.0")
+    suspend fun addCaregiverByUserId(
+        @Body request: AddCaregiverByUserIdRequest
+    ): Response<ApiResponse<CaregiverData>>
+
+    /**
+     * Accept a caregiver request
+     * PUT /api/Caregiver/Accept/{CareId}
+     * Requires Bearer token
+     */
+    @PUT("Caregiver/Accept/{careId}")
+    suspend fun acceptCaregiverRequest(
+        @Path("careId") careId: Int
+    ): Response<ApiResponse<CaregiverData>>
+
+    /**
+     * Get my caregivers (people taking care of me)
+     * GET /api/Caregiver/GetMyCaregivers
+     * Requires Bearer token
+     */
+    @GET("Caregiver/GetMyCaregivers")
+    suspend fun getMyCaregivers(): Response<ApiResponse<List<CaregiverData>>>
+
+    /**
+     * Get users I'm taking care of
+     * GET /api/Caregiver/GetMyUsers
+     * Requires Bearer token
+     */
+    @GET("Caregiver/GetMyUsers")
+    suspend fun getMyUsers(): Response<ApiResponse<List<CaregiverData>>>
+
+    /**
+     * Update caregiver permissions
+     * PUT /api/Caregiver/Update/{CareId}
+     * Requires Bearer token
+     */
+    @PUT("Caregiver/Update/{careId}")
+    @Headers("Content-Type: application/json; ver=1.0")
+    suspend fun updateCaregiverPermissions(
+        @Path("careId") careId: Int,
+        @Body request: AddCaregiverRequest
+    ): Response<ApiResponse<CaregiverData>>
+
+    /**
+     * Delete a caregiver relationship
+     * DELETE /api/Caregiver/Delete/{CareId}
+     * Requires Bearer token
+     */
+    @DELETE("Caregiver/Delete/{careId}")
+    suspend fun deleteCaregiver(
+        @Path("careId") careId: Int
+    ): Response<ApiResponse<Unit>>
 }

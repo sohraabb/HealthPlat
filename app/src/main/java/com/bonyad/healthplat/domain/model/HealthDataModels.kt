@@ -29,6 +29,25 @@ data class MetricRequest(
     @SerialName("Values") val values: List<Int>
 )
 
+@Serializable
+data class SleepSummary(
+    @SerialName("DeepSleepDuration") val deepSleepMinutes: Int,
+    @SerialName("LightSleepDuration") val lightSleepMinutes: Int,
+    @SerialName("REMSleepDuration") val remSleepMinutes: Int,
+    @SerialName("AwakeDuration") val awakeMinutes: Int,
+    @SerialName("TotalSleepDuration") val totalSleepMinutes: Int,
+    @SerialName("SleepQuality") val sleepQuality: Int
+)
+
+@Serializable
+data class SleepMetricRequest(
+    @SerialName("UserId") val userId: String,
+    @SerialName("DeviceId") val deviceId: Int,
+    @SerialName("RecordDate") val recordDate: String,
+    @SerialName("Values") val values: List<Int>,
+    @SerialName("SleepSummary") val sleepSummary: SleepSummary
+)
+
 data class SyncHealthDataRequest(
     val date: String,
     val heartRateData: List<Int>? = null,

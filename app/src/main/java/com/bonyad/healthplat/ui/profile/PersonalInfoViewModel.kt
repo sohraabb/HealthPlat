@@ -55,6 +55,27 @@ class PersonalInfoViewModel @Inject constructor(
     private val _showGenderPicker = MutableStateFlow(false)
     val showGenderPicker: StateFlow<Boolean> = _showGenderPicker.asStateFlow()
 
+    private val _nationalCode = MutableStateFlow("")
+    val nationalCode = _nationalCode.asStateFlow()
+
+    private val _email = MutableStateFlow("")
+    val email = _email.asStateFlow()
+
+    private val _disease = MutableStateFlow("ندارم")
+    val disease = _disease.asStateFlow()
+
+
+    val isEditFormValid: StateFlow<Boolean> = combine(
+        _name, _birthDate, _height, _weight, _gender
+    ) { name, birth, h, w, g ->
+        name.isNotBlank() && birth.isNotBlank() &&
+                h.isNotBlank() && w.isNotBlank() && g.isNotBlank()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    fun updateEmail(value: String) { _email.value = value }
+    fun updateNationalCode(value: String) { _nationalCode.value = value }
+
+
     // Form validation
     val isFormValid: StateFlow<Boolean> = combine(
         _name,

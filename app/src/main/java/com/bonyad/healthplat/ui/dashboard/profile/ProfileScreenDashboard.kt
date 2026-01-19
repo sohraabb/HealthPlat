@@ -26,19 +26,21 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.compose.rememberNavController
 import com.bonyad.healthplat.R
+import com.bonyad.healthplat.ui.navigation.NavRoutes
+import com.bonyad.healthplat.ui.navigation.ProfileRoutes
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreenDashboard(
-    viewModel: ProfileDashboardViewModel = hiltViewModel()
+    viewModel: ProfileDashboardViewModel = hiltViewModel(),
+    onNavigateToProfileRoutes: (String) -> Unit = {}
 ) {
     val userName by viewModel.userName.collectAsState()
     val phoneNumber by viewModel.phoneNumber.collectAsState()
     val currentGoal by viewModel.currentGoal.collectAsState()
     val goalProgress by viewModel.goalProgress.collectAsState()
     val nightModeEnabled by viewModel.nightModeEnabled.collectAsState()
-    val navController = rememberNavController()
 
 
     Scaffold(
@@ -47,7 +49,7 @@ fun ProfileScreenDashboard(
                 title = { },
                 navigationIcon = {
                     TextButton(
-                        onClick = { navController.navigate("edit_personal_info") }
+                        onClick = { onNavigateToProfileRoutes(ProfileRoutes.EditPersonalInfo.route) }
                     ) {
                         Text(
                             text = "ویرایش اطلاعات",
@@ -59,9 +61,9 @@ fun ProfileScreenDashboard(
                 actions = {
                     IconButton(onClick = { /* TODO: Notifications */ }) {
                         Icon(
-                            imageVector = Icons.Default.Notifications,
+                            painter = painterResource(R.drawable.notification),
+                            tint = Color.Black,
                             contentDescription = "اعلان‌ها",
-                            tint = Color(0xFF2C2C2C)
                         )
                     }
                 },
@@ -103,7 +105,7 @@ fun ProfileScreenDashboard(
 
             // User Name
             Text(
-                text = userName ?: "داریوش فقیهی",
+                text = userName ?: "کاربر",
                 style = MaterialTheme.typography.titleLarge.copy(
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp
@@ -115,7 +117,7 @@ fun ProfileScreenDashboard(
 
             // Phone Number
             Text(
-                text = phoneNumber?.toFarsiDigits() ?: "۰۹۱۸۹۵۶۵۰۸",
+                text = phoneNumber?.toFarsiDigits() ?: "",
                 style = MaterialTheme.typography.bodyMedium.copy(
                     fontSize = 14.sp
                 ),
@@ -142,13 +144,13 @@ fun ProfileScreenDashboard(
             ProfileMenuItem(
                 icon = painterResource(R.drawable.notif_setting),
                 title = "تنظیم هشدار شخصی",
-                onClick = { /* TODO */ }
+                onClick = { onNavigateToProfileRoutes(ProfileRoutes.AlarmSettings.route) }
             )
 
             ProfileMenuItem(
                 icon = painterResource(R.drawable.pills),
                 title = "ثبت دارو",
-                onClick = { /* TODO */ }
+                onClick = { onNavigateToProfileRoutes(ProfileRoutes.Medication.route) }
             )
 
             ProfileMenuItem(
@@ -160,7 +162,7 @@ fun ProfileScreenDashboard(
             ProfileMenuItem(
                 icon = painterResource(R.drawable.wallet),
                 title = "شارژ کیف پول",
-                onClick = { /* TODO */ }
+                onClick = { onNavigateToProfileRoutes(ProfileRoutes.Wallet.route) }
             )
 
             // Night Mode Toggle

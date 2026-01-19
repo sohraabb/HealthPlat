@@ -45,87 +45,143 @@ import com.bonyad.healthplat.ui.utils.toFarsiDigits
 @Composable
 fun SpO2DetailScreen(
     viewModel: SpO2DetailViewModel = hiltViewModel(),
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onInfoClick: () -> Unit = {}
 ) {
     val chartData by viewModel.chartData.collectAsState()
     val stats by viewModel.stats.collectAsState()
     val selectedRange by viewModel.selectedTimeRange.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val dateLabel by viewModel.dateLabel.collectAsState()
+    val rangeText by viewModel.rangeText.collectAsState()
 
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-        Scaffold(
-            topBar = {
-                CustomDetailTopBar(
-                    title = "اکسیژن خون", // Blood Oxygen
-                    onBack = onBack,
-                    onSync = { /* TODO: Sync logic */ },
-                    onInfo = { /* TODO: Info logic */ }
-                )
-            },
-            containerColor = Color(0xFFF9F9F9)
-        ) { padding ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(24.dp)
-            ) {
-                // 1. Range Selector
-                TimeRangeSelector(
-                    selected = selectedRange,
-                    onSelect = { viewModel.setTimeRange(it) }
-                )
+    Scaffold(
+        topBar = {
+            CustomDetailTopBar(
+                title = "اکسیژن خون",
+                onBack = onBack,
+                onSync = { viewModel.refreshData() },
+                onInfo = { onInfoClick() },
+            )
+        },
+        containerColor = Color(0xFFF9F9F9)
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            // 1. Range Selector
+            TimeRangeSelector(
+                selected = selectedRange,
+                onSelect = { viewModel.setTimeRange(it) }
+            )
 
-                // 2. Date Strip
+            // 2. Date Strip (only for daily view)
+            if (selectedRange == "روزانه") {
                 val selectedOffset by viewModel.selectedDayOffset.collectAsState()
-
                 DateStrip(
                     selectedOffset = selectedOffset,
                     onDaySelected = { offset ->
                         viewModel.selectDay(offset)
                     }
                 )
-                // 3. Chart Section
-                SpO2ChartSection(chartData)
-
-                // 4. Latest Measurement Card
-                LatestMeasurementCard(
-                    value = stats.lastValue,
-                    time = stats.lastTime
-                )
-
-                // 5. Stats Row (High, Avg, Low)
-                SpO2StatsRow(stats)
-
-                Spacer(modifier = Modifier.height(30.dp))
             }
+
+            // 3. Chart Section
+            SpO2ChartSection(
+                data = chartData,
+                rangeText = rangeText,
+                dateLabel = dateLabel,
+                selectedRange = selectedRange,
+                isLoading = isLoading
+            )
+
+            // 4. Latest Measurement Card
+            LatestMeasurementCard(
+                value = stats.lastValue,
+                time = stats.lastTime.toFarsiDigits()
+            )
+
+            // 5. Stats Row (High, Avg, Low)
+            SpO2StatsRow(stats)
+
+            Spacer(modifier = Modifier.height(30.dp))
         }
     }
 }
 
+
 @Composable
-fun SpO2ChartSection(data: List<SpO2DetailViewModel.SpO2Point>) {
+fun SpO2ChartSection(
+    data: List<SpO2DetailViewModel.SpO2Point>,
+    rangeText: String,
+    dateLabel: String,
+    selectedRange: String,
+    isLoading: Boolean
+) {
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
         // Chart Header
-        Column(horizontalAlignment = Alignment.Start, modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = "بازه اکسیژن", // Oxygen Range
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.Gray
-            )
+        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                Text(
+                    text = when (selectedRange) {
+                        "هفتگی", "ماهانه" -> "میانگین بازه اکسیژن"
+                        else -> "بازه اکسیژن"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+            }
+
             Spacer(modifier = Modifier.height(4.dp))
-            // Range Value
-            Text(
-                text = "۹۲ - ۹۸ ٪",
-                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                color = Color.Black
-            )
+
+            // Value row (range %)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (rangeText.isNotEmpty())
+                        rangeText.toFarsiDigits()
+                    else
+                        "-",
+                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                    color = Color.Black
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "%",
+                    fontSize = 14.sp,
+                    color = Color.Gray
+                )
+
+            }
+
             Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "امروز ۲۲ مهر",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.Gray
-            )
+
+            // Date row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Spacer(modifier = Modifier.weight(1f))
+
+                Text(
+                    text = dateLabel,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -137,87 +193,97 @@ fun SpO2ChartSection(data: List<SpO2DetailViewModel.SpO2Point>) {
                 .height(250.dp)
                 .background(Color.White)
         ) {
-            Canvas(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(start = 30.dp, end = 16.dp, top = 20.dp, bottom = 30.dp)
-            ) {
-                val w = size.width
-                val h = size.height
+            if (data.isNotEmpty()) {
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(start = 30.dp, end = 16.dp, top = 20.dp, bottom = 30.dp)
+                ) {
+                    val w = size.width
+                    val h = size.height
 
-                // Y-Axis Range (85% to 100% based on screenshot)
-                val minVal = 85f
-                val maxVal = 100f
-                val range = maxVal - minVal
+                    val minVal = 85f
+                    val maxVal = 100f
+                    val range = maxVal - minVal
 
-                // 1. Horizontal Grid Lines (85, 90, 95, 100)
-                val pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
-                val steps = 3 // 0(100), 1(95), 2(90), 3(85)
+                    // Horizontal Grid Lines
+                    val pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                    val steps = 3
 
-                for (i in 0..steps) {
-                    val y = h * (i.toFloat() / steps)
-                    drawLine(
-                        color = Color.LightGray.copy(alpha = 0.5f),
-                        start = Offset(0f, y),
-                        end = Offset(w, y),
-                        pathEffect = pathEffect
-                    )
+                    for (i in 0..steps) {
+                        val y = h * (i.toFloat() / steps)
+                        drawLine(
+                            color = Color.LightGray.copy(alpha = 0.5f),
+                            start = Offset(0f, y),
+                            end = Offset(w, y),
+                            pathEffect = pathEffect
+                        )
+                    }
+
+                    // Vertical Grid Lines
+                    listOf(0.33f, 0.66f).forEach { ratio ->
+                        val x = w * ratio
+                        drawLine(
+                            color = Color.LightGray.copy(alpha = 0.5f),
+                            start = Offset(x, 0f),
+                            end = Offset(x, h),
+                            pathEffect = pathEffect
+                        )
+                    }
+
+                    // Draw Scatter Points
+                    val dotColor = Color(0xFF4DD0E1)
+
+                    data.forEach { point ->
+                        val x = w * point.timeRatio
+                        val y = (h - ((point.value - minVal) / range) * h).coerceIn(0f, h)
+
+                        drawCircle(
+                            color = dotColor,
+                            radius = 4.dp.toPx(),
+                            center = Offset(x, y)
+                        )
+                    }
                 }
 
-                // 2. Vertical Grid Lines (Time)
-                listOf(0.33f, 0.66f).forEach { ratio ->
-                    val x = w * ratio
-                    drawLine(
-                        color = Color.LightGray.copy(alpha = 0.5f),
-                        start = Offset(x, 0f),
-                        end = Offset(x, h),
-                        pathEffect = pathEffect
-                    )
+                // Y-Axis Labels
+                Column(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .padding(vertical = 20.dp),
+                    verticalArrangement = Arrangement.SpaceBetween,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("۱۰۰", fontSize = 10.sp, color = Color.Gray)
+                    Text("۹۵", fontSize = 10.sp, color = Color.Gray)
+                    Text("۹۰", fontSize = 10.sp, color = Color.Gray)
+                    Text("۸۵", fontSize = 10.sp, color = Color.Gray)
                 }
 
-                // 3. Draw Scatter Points (Dots)
-                val dotColor = Color(0xFF4DD0E1) // Cyan/Light Blue
-
-                data.forEach { point ->
-                    val x = w * point.timeRatio
-                    // Invert Y because canvas 0 is top
-                    val y = h - ((point.value - minVal) / range) * h
-
-                    drawCircle(
-                        color = dotColor,
-                        radius = 4.dp.toPx(),
-                        center = Offset(x, y)
+                // X-Axis Labels
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .padding(start = 30.dp, end = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("00:00", fontSize = 10.sp, color = Color.Gray)
+                    Text("07:59", fontSize = 10.sp, color = Color.Gray)
+                    Text("15:59", fontSize = 10.sp, color = Color.Gray)
+                    Text("23:59", fontSize = 10.sp, color = Color.Gray)
+                }
+            } else if (!isLoading) {
+                // Empty state
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "داده‌ای موجود نیست",
+                        color = Color.Gray
                     )
                 }
-            }
-
-            // Y-Axis Labels
-            Column(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .padding(vertical = 20.dp),
-                verticalArrangement = Arrangement.SpaceBetween,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text("۱۰۰", fontSize = 10.sp, color = Color.Gray)
-                Text("۹۵", fontSize = 10.sp, color = Color.Gray)
-                Text("۹۰", fontSize = 10.sp, color = Color.Gray)
-                Text("۸۵", fontSize = 10.sp, color = Color.Gray)
-            }
-
-            // X-Axis Labels
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
-                    .padding(start = 30.dp, end = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text("23:59", fontSize = 10.sp, color = Color.Gray)
-                Text("15:59", fontSize = 10.sp, color = Color.Gray)
-                Text("07:59", fontSize = 10.sp, color = Color.Gray)
-                Text("00:00", fontSize = 10.sp, color = Color.Gray)
-
             }
         }
     }
@@ -231,7 +297,7 @@ fun LatestMeasurementCard(value: Int, time: String) {
             .padding(horizontal = 16.dp),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(1.dp, Color(0xFFB2EBF2)) // Cyan border
+        border = BorderStroke(1.dp, Color(0xFF5BA3A3))
     ) {
         Row(
             modifier = Modifier
@@ -241,31 +307,32 @@ fun LatestMeasurementCard(value: Int, time: String) {
             verticalAlignment = Alignment.CenterVertically
         ) {
 
+            // Value
+            Row(verticalAlignment = Alignment.Bottom) {
 
-            // Label (Left/End in RTL)
+                Text(
+                    text = if (value > 0) value.toString().toFarsiDigits() else "-",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = Color.Gray
+                )
+
+                Text(
+                    text = " %",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+            }
+
+
+            // Label
             Text(
-                text = "آخرین اندازه گیری: ${time.toFarsiDigits()}",
+                text = if (time.isNotEmpty()) "آخرین اندازه گیری: $time" else "آخرین اندازه گیری",
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.Gray
             )
 
-            // Value (Right/Start in RTL)
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    text = "٪",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.Gray,
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
 
-                Spacer(modifier = Modifier.width(4.dp))
-
-                Text(
-                    text = value.toString().toFarsiDigits(),
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    color = Color.Gray
-                )
-            }
         }
     }
 }
@@ -290,7 +357,7 @@ fun SpO2StatCard(title: String, value: Int, modifier: Modifier) {
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(1.dp, Color(0xFFB2EBF2)) // Cyan border
+        border = BorderStroke(1.dp, Color(0xFF5BA3A3))
     ) {
         Column(
             modifier = Modifier
@@ -302,19 +369,17 @@ fun SpO2StatCard(title: String, value: Int, modifier: Modifier) {
             Row(verticalAlignment = Alignment.Bottom) {
 
                 Text(
-                    text = " ٪",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray,
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
-
-
-                Text(
-                    text = value.toString().toFarsiDigits(),
+                    text = if (value > 0) value.toString().toFarsiDigits() else "-",
                     style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
                     color = Color.Gray
                 )
 
+                Text(
+                    text = " %",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text(

@@ -477,7 +477,7 @@ override fun readBatteryLevel() {
     }
 
     private suspend fun retryRecordData(day: Int, attempt: Int): RecordDataResult {
-        if (attempt > 3) return RecordDataResult.Error(-99)
+        if (attempt > 5) return RecordDataResult.Error(-99)
 
         val result = try {
             withTimeout(15000L) {
@@ -616,7 +616,7 @@ override fun readBatteryLevel() {
 
     private fun initializeDeviceWithPairing() {
         if (initializationJob?.isActive == true) {
-            Timber.i("🛑 Initialization already in progress, skipping duplicate request")
+            Timber.i("🛑 Initialization already in progress")
             return
         }
 
@@ -624,9 +624,10 @@ override fun readBatteryLevel() {
             try {
                 Timber.i("🚀 Starting Device Initialization with Pairing Check")
 
-                delay(1000) // Settle time
+                // OPTIMIZATION: Reduced from 1000ms to 300ms
+                delay(300)
 
-                // STEP 1: Get device info to check pairing status
+                // Check pairing status
                 val deviceInfo = getDeviceInfo().getOrNull()
 
                 if (deviceInfo != null && deviceInfo.isPair) {
@@ -637,24 +638,16 @@ override fun readBatteryLevel() {
                 } else {
                     Timber.i("⚠️ Device not paired - initiating pairing")
 
-                    // STEP 2: Read MAC and pair
                     manager.readDeviceMac { macBytes ->
                         Timber.i("📱 Device MAC: ${macBytes.contentToString()}")
-
-                        // This triggers Android's pairing dialog
                         manager.toPairDevice(macBytes)
-
-                        Timber.i("📲 Pairing request sent - waiting for user confirmation...")
+                        Timber.i("📲 Pairing request sent")
                         _pairingState.value = PairingState.PairingRequested
-
-                        // Don't continue here - wait for broadcast receiver
-                        // to confirm pairing and call initializeDevice()
                     }
                 }
             } catch (t: Throwable) {
                 Timber.e(t, "❌ Pairing check failed")
                 _pairingState.value = PairingState.PairingFailed(t.message ?: "Unknown error")
-                // Still emit initialization complete to avoid timeout
                 _initializationComplete.emit(Unit)
             }
         }
@@ -664,25 +657,38 @@ override fun readBatteryLevel() {
     private fun initializeDevice() {
         scope.launch {
             try {
-                Timber.i("🚀 Starting Device Initialization")
+                Timber.i("🚀 Starting OPTIMIZED Device Initialization")
 
-                delay(500)
+                // OPTIMIZATION: Reduced from 500ms to 200ms
+                delay(200)
 
-                Timber.i("⚙️ Syncing device time...")
-                syncDeviceTime()
-                delay(500)
+                // OPTIMIZATION: Run these in parallel since they're independent
+                val jobs = listOf(
+                    launch {
+                        Timber.i("⚙️ Syncing device time...")
+                        syncDeviceTime()
+                    },
+                    launch {
+                        Timber.i("⚙️ Reading battery level...")
+                        readBatteryLevel()
+                    },
+                    launch {
+                        Timber.i("⚙️ Getting firmware version...")
+                        getFirmwareVersion()
+                    }
+                )
 
-                Timber.i("⚙️ Reading battery level...")
-                readBatteryLevel()
-                delay(500)
+                // Wait for all parallel operations
+                jobs.forEach { it.join() }
+
+                // OPTIMIZATION: Reduced delay before opening real-time
+                delay(200)
 
                 Timber.i("⚙️ Opening real-time heart rate...")
                 openRealTimeHeartRate()
-                delay(500)
 
-                Timber.i("⚙️ Getting firmware version...")
-                getFirmwareVersion()
-                delay(500)
+                // Small delay to ensure real-time is ready
+                delay(100)
 
                 Timber.i("✅✅✅ Device fully initialized ✅✅✅")
                 _initializationComplete.emit(Unit)

@@ -1,6 +1,7 @@
 package com.bonyad.healthplat.ui.dashboard.details.sleep
 
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -38,73 +39,143 @@ import com.bonyad.healthplat.ui.utils.toFarsiDigits
 @Composable
 fun SleepDetailScreen(
     viewModel: SleepDetailViewModel = hiltViewModel(),
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onInfoClick: () -> Unit = {}
 ) {
     val timelineData by viewModel.sleepTimeline.collectAsState()
     val stats by viewModel.sleepStats.collectAsState()
     val percentages by viewModel.stagePercentages.collectAsState()
     val selectedRange by viewModel.selectedTimeRange.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val dateLabel by viewModel.dateLabel.collectAsState()
 
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-        Scaffold(
-            topBar = {
-                CustomDetailTopBar(title = "پایش خواب",
-                    onBack = onBack,
-                    onSync = { /* TODO: Sync logic */ },
-                    onInfo = { /* TODO: Info logic */ }
-                )
-            },
-            containerColor = Color(0xFFF9F9F9)
-        ) { padding ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(24.dp)
-            ) {
-                // 1. Selector & Dates
-                TimeRangeSelector(selected = selectedRange, onSelect = { viewModel.setTimeRange(it) })
+    Scaffold(
+        topBar = {
+            CustomDetailTopBar(
+                title = "پایش خواب",
+                onBack = onBack,
+                onSync = { viewModel.refreshData() },
+                onInfo = { onInfoClick() },
+            )
+        },
+        containerColor = Color(0xFFF9F9F9)
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            // 1. Selector & Dates
+            TimeRangeSelector(
+                selected = selectedRange,
+                onSelect = { viewModel.setTimeRange(it) }
+            )
 
+            // Date Strip (only for daily view)
+            if (selectedRange == "روزانه") {
                 val selectedOffset by viewModel.selectedDayOffset.collectAsState()
-
                 DateStrip(
                     selectedOffset = selectedOffset,
                     onDaySelected = { offset ->
                         viewModel.selectDay(offset)
                     }
                 )
-                // 2. Main Header (Time)
-                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    Text("زمان خواب", style = MaterialTheme.typography.bodySmall, color = Color.Gray, modifier = Modifier.align(Alignment.End))
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.Bottom
-                    ) {
-                        Text("دقیقه", style = MaterialTheme.typography.bodyMedium, color = Color.Gray, modifier = Modifier.padding(bottom = 6.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(stats.minutes.toString().toFarsiDigits(), style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("ساعت", style = MaterialTheme.typography.bodyMedium, color = Color.Gray, modifier = Modifier.padding(bottom = 6.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(stats.hours.toString().toFarsiDigits(), style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold))
-                    }
-                    Text("امروز ۲۲ مهر", style = MaterialTheme.typography.bodySmall, color = Color.Gray, modifier = Modifier.align(Alignment.End))
-                }
-
-                // 3. Timeline Chart (The rows of bars)
-                SleepTimelineChart(timelineData)
-
-                // 4. Quality Donut Card
-                SleepQualityCard(stats.score, percentages)
-
-                Spacer(modifier = Modifier.height(30.dp))
             }
+
+            // 2. Main Header (Time)
+            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                Text(
+                    text = when (selectedRange) {
+                        "هفتگی" -> "میانگین زمان خواب"
+                        "ماهانه" -> "میانگین زمان خواب"
+                        else -> "زمان خواب"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray,
+                    modifier = Modifier.align(Alignment.End)
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    Text(
+                        "دقیقه",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        stats.minutes.toString().toFarsiDigits(),
+                        color = Color.Black,
+                        style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        "ساعت",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        stats.hours.toString().toFarsiDigits(),
+                        color = Color.Black,
+                        style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
+                // Dynamic date label
+                Text(
+                    text = dateLabel,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray,
+                    modifier = Modifier.align(Alignment.End)
+                )
+            }
+
+            // 3. Timeline Chart (only for daily view with data)
+            if (selectedRange == "روزانه" && timelineData.isNotEmpty()) {
+                SleepTimelineChart(timelineData)
+            } else if (selectedRange == "روزانه" && timelineData.isEmpty() && !isLoading) {
+                // Empty state for daily view
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(150.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "داده خوابی موجود نیست",
+                            color = Color.Gray
+                        )
+                    }
+                }
+            }
+
+            // 4. Quality Donut Card
+            SleepQualityCard(
+                score = stats.score,
+                percentages = percentages,
+                qualityLabel = viewModel.getSleepQualityLabel(),
+                userName = ""
+            )
+
+            Spacer(modifier = Modifier.height(30.dp))
         }
     }
 }
+
 
 @Composable
 fun SleepTimelineChart(data: List<SleepDetailViewModel.SleepSegment>) {
@@ -118,14 +189,22 @@ fun SleepTimelineChart(data: List<SleepDetailViewModel.SleepSegment>) {
         Column(modifier = Modifier.padding(16.dp)) {
             // Label Row
             Text("بیدار", fontSize = 12.sp, color = Color.Gray)
-            HorizontalDivider(thickness = 0.5.dp, color = Color.LightGray.copy(alpha = 0.5f), modifier = Modifier.padding(vertical = 12.dp))
+            HorizontalDivider(
+                thickness = 0.5.dp,
+                color = Color.LightGray.copy(alpha = 0.5f),
+                modifier = Modifier.padding(vertical = 12.dp)
+            )
 
             // Chart Area
-            Box(modifier = Modifier.fillMaxWidth().height(150.dp)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(150.dp)
+            ) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val w = size.width
                     val h = size.height
-                    val rowHeight = h / 3 // Light, Deep, REM rows
+                    val rowHeight = h / 3
 
                     // Grid Lines (Vertical Time)
                     val pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
@@ -141,19 +220,19 @@ fun SleepTimelineChart(data: List<SleepDetailViewModel.SleepSegment>) {
                     // Draw Segments
                     data.forEach { segment ->
                         val x = segment.startRatio * w
-                        val width = segment.widthRatio * w
+                        val width = (segment.widthRatio * w).coerceAtLeast(4f)
 
                         val (color, yTop) = when (segment.stage) {
-                            SleepDetailViewModel.SleepStage.LIGHT -> Color(0xFF66BB6A) to 0f // Green
-                            SleepDetailViewModel.SleepStage.DEEP -> Color(0xFF42A5F5) to rowHeight // Blue
-                            SleepDetailViewModel.SleepStage.REM -> Color(0xFFAB47BC) to rowHeight * 2 // Purple
+                            SleepDetailViewModel.SleepStage.LIGHT -> Color(0xFF66BB6A) to 0f
+                            SleepDetailViewModel.SleepStage.DEEP -> Color(0xFF42A5F5) to rowHeight
+                            SleepDetailViewModel.SleepStage.REM -> Color(0xFFAB47BC) to rowHeight * 2
                             else -> Color.Transparent to 0f
                         }
 
                         if (color != Color.Transparent) {
                             drawRoundRect(
                                 color = color,
-                                topLeft = Offset(x, yTop + 10f), // +10 padding
+                                topLeft = Offset(x, yTop + 10f),
                                 size = Size(width, rowHeight - 20f),
                                 cornerRadius = CornerRadius(8f, 8f)
                             )
@@ -161,7 +240,7 @@ fun SleepTimelineChart(data: List<SleepDetailViewModel.SleepSegment>) {
                     }
                 }
 
-                // Labels Overlay (Right side labels in layout)
+                // Labels Overlay
                 Column(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.SpaceAround
@@ -174,14 +253,16 @@ fun SleepTimelineChart(data: List<SleepDetailViewModel.SleepSegment>) {
 
             // X-Axis
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("21:00", fontSize = 10.sp, color = Color.Gray)
-                Text("00:00", fontSize = 10.sp, color = Color.Gray)
-                Text("03:00", fontSize = 10.sp, color = Color.Gray)
-                Text("06:00", fontSize = 10.sp, color = Color.Gray)
-                Text("09:00", fontSize = 10.sp, color = Color.Gray)
+                Text("۲۱:۰۰", fontSize = 10.sp, color = Color.Gray)
+                Text("۰۰:۰۰", fontSize = 10.sp, color = Color.Gray)
+                Text("۰۳:۰۰", fontSize = 10.sp, color = Color.Gray)
+                Text("۰۶:۰۰", fontSize = 10.sp, color = Color.Gray)
+                Text("۰۹:۰۰", fontSize = 10.sp, color = Color.Gray)
             }
         }
     }
@@ -191,88 +272,151 @@ fun SleepTimelineChart(data: List<SleepDetailViewModel.SleepSegment>) {
 fun LegendItem(label: String, color: Color) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+        horizontalArrangement = Arrangement.End,
+        modifier = Modifier.padding(vertical = 2.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .background(color, CircleShape)
-        )
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,
-            color = TextGray
+            color = Color.Gray,
+            modifier = Modifier.padding(end = 8.dp)
+        )
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .background(color, CircleShape)
         )
     }
 }
 
 @Composable
-fun SleepQualityCard(score: Int, percentages: Triple<Int, Int, Int>) {
+fun SleepQualityCard(
+    score: Int,
+    percentages: Triple<Int, Int, Int>, // first=Deep, second=Light, third=REM
+    qualityLabel: String,
+    userName: String
+) {
     Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(24.dp),
+        // Design fix: Added the subtle border stroke seen in the screenshot
+        border = BorderStroke(1.dp, Color(0xFFEBEBEB)),
+        elevation = CardDefaults.cardElevation(0.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text("کیفیت خواب", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            Spacer(modifier = Modifier.height(16.dp))
-
+        Column(modifier = Modifier.padding(20.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Donut Chart
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(140.dp)) {
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        val strokeWidth = 25f.dp.toPx()
-                        val sizeBox = size.minDimension
+                // 1. PIE CHART (Aligned Start/Left)
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.size(135.dp)
+                ) {
+                    Canvas(modifier = Modifier.fillMaxSize()
+                        .padding(8.dp)) {
+                        val strokeWidth = 16.dp.toPx()
 
-                        // Deep (Yellow in screenshot example, but using standard match)
-                        // Actually screenshot uses: Purple (Large), Green, Yellow?
-                        // Let's match screenshot colors:
-                        // Purple (53%), Green (18%), Yellow (29%)
-
-                        val sweep1 = 360f * (percentages.third / 100f) // Purple
-                        val sweep2 = 360f * (percentages.second / 100f) // Green
-                        val sweep3 = 360f * (percentages.first / 100f)  // Yellow
-
-                        var startAngle = -90f
-
-                        // 1. Purple
-                        drawArc(Color(0xFFAB47BC), startAngle, sweep1, false, style = Stroke(
-                            strokeWidth,
-                            cap = StrokeCap.Round
+                        // Background Track (The gray circle behind the segments)
+                        drawArc(
+                            color = Color(0xFFF2F2F2),
+                            startAngle = 0f,
+                            sweepAngle = 360f,
+                            useCenter = false,
+                            style = Stroke(width = strokeWidth)
                         )
-                        )
-                        startAngle += sweep1
 
-                        // 2. Green
-                        drawArc(Color(0xFF66BB6A), startAngle, sweep2, false, style = Stroke(strokeWidth, cap = StrokeCap.Round))
-                        startAngle += sweep2
+                        val total = percentages.first + percentages.second + percentages.third
+                        if (total > 0) {
+                            // Using standard StrokeCap.Butt for flat edges (SQUARE)
+                            // instead of StrokeCap.Round (PILL)
+                            val capStyle = Stroke(width = strokeWidth, cap = StrokeCap.Square)
 
-                        // 3. Yellow
-                        drawArc(Color(0xFFFFCA28), startAngle, sweep3, false, style = Stroke(strokeWidth, cap = StrokeCap.Round))
+                            var startAngle = -90f
+
+                            // REM - Purple
+                            val sweepREM = 360f * (percentages.third / 100f)
+                            if (sweepREM > 0) {
+                                drawArc(Color(0xFFAB47BC), startAngle, sweepREM, false, style = capStyle)
+                                startAngle += sweepREM
+                            }
+
+                            // Light - Green
+                            val sweepLight = 360f * (percentages.second / 100f)
+                            if (sweepLight > 0) {
+                                drawArc(Color(0xFF66BB6A), startAngle, sweepLight, false, style = capStyle)
+                                startAngle += sweepLight
+                            }
+
+                            // Deep - Yellow/Amber
+                            val sweepDeep = 360f * (percentages.first / 100f)
+                            if (sweepDeep > 0) {
+                                drawArc(Color(0xFFFFCA28), startAngle, sweepDeep, false, style = capStyle)
+                            }
+                        }
                     }
-                    Text(score.toString().toFarsiDigits(), fontSize = 32.sp, fontWeight = FontWeight.Bold)
+                    // Score in center
+                    Text(
+                        text = if (score > 0) score.toString().toFarsiDigits() else "-",
+                        fontSize = 34.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Black
+                    )
                 }
 
-                Spacer(modifier = Modifier.width(24.dp))
+                // 2. STATUS & LEGEND (Aligned End/Right)
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    // Title Aligned to End: "Excellent Darius"
+                    Text(
+                        text = "$qualityLabel $userName",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.Black,
+                        textAlign = TextAlign.End
+                    )
 
-                // Legend
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("عالی داریوش", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.DarkGray)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Legend items also aligned to End
                     LegendItem("REM", Color(0xFFAB47BC))
-                    LegendItem("سبک", Color(0xFF66BB6A))
-                    LegendItem("عمیق", Color(0xFFFFCA28))
+                    LegendItem("خواب سبک", Color(0xFF66BB6A))
+                    LegendItem("خواب عمیق", Color(0xFFFFCA28))
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            // 3. HORIZONTAL SEPARATOR (Like the design)
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 20.dp),
+                thickness = 1.dp,
+                color = Color(0xFFF5F5F5)
+            )
+
+            // 4. SUMMARY TEXT (Aligned End/Right)
+            val feedbackMessage = when {
+                score >= 85 -> "زمان خوابت خیلی خوب بوده و امتیاز خواب دیشب شده ${
+                    score.toString().toFarsiDigits()
+                }، همینطوری ادامه بده"
+
+                score >= 70 -> "خوابت خوب بوده. سعی کن ساعت خواب منظم‌تری داشته باشی."
+                score >= 50 -> "کیفیت خواب متوسط بوده. استراحت بیشتری نیاز داری."
+                score > 0 -> "کیفیت خوابت پایین بوده. سعی کن زودتر بخوابی."
+                else -> "داده‌ای برای نمایش وجود ندارد."
+            }
+
             Text(
-                "زمان خوابت خیلی خوب بوده و امتیاز خواب دیشب شده ۹۵، همینطوری ادامه بده",
-                style = MaterialTheme.typography.bodySmall,
+                text = feedbackMessage,
+                style = MaterialTheme.typography.bodyMedium,
                 color = Color.Gray,
-                lineHeight = 20.sp
+                lineHeight = 22.sp,
+                textAlign = TextAlign.End,
+                modifier = Modifier.fillMaxWidth()
             )
         }
     }

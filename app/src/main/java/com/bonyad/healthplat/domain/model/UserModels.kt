@@ -8,20 +8,30 @@ import kotlinx.serialization.Serializable
 data class UpdateUserRequest(
     @SerialName("UserId")
     val userId: String,
+    @SerialName("password")
+    val password: String? = null,
+    @SerialName("Email")
+    val email: String? = null,
     @SerialName("Name")
     val name: String,
-    @SerialName("BirthDate")
-    val birthDate: String,  // ISO format: "2025-11-12T09:07:22.862Z"
+    @SerialName("LastName")
+    val lastName: String,
     @SerialName("Gender")
     val gender: Int,  // 1 = Male, 2 = Female
-    @SerialName("Height")
-    val height: Int,
     @SerialName("Weight")
     val weight: Int,
+    @SerialName("Height")
+    val height: Int,
+    @SerialName("NationalCode")
+    val nationalCode: String? = null,
+    @SerialName("BirthDate")
+    val birthDate: String,  // ISO format: "2025-11-12T09:07:22.862Z"
     @SerialName("AcceptedTermsAndPolicy")
     val acceptedTermsAndPolicy: Boolean? = null,
     @SerialName("EnabledEmailMarketing")
-    val enabledEmailMarketing: Boolean? = null
+    val enabledEmailMarketing: Boolean? = null,
+    @SerialName("DiseaseIds")
+    val diseaseIds: List<Int>? = null
 )
 
 @Serializable
@@ -46,6 +56,8 @@ data class UserOverviewData(
     val acceptedTermsAndPolicy: Boolean,
     @SerialName("Name")
     val name: String?,
+    @SerialName("LastName")
+    val lastName: String? = null,
     @SerialName("BirthDate")
     val birthDate: String?,
     @SerialName("Gender")
@@ -54,10 +66,14 @@ data class UserOverviewData(
     val height: Int?,
     @SerialName("Weight")
     val weight: Int?,
+    @SerialName("NationalCode")
+    val nationalCode: String? = null,
     @SerialName("CreatedDate")
     val createdDate: String?,
     @SerialName("UserDevices")
-    val userDevices: List<UserDeviceOverview>?
+    val userDevices: List<UserDeviceOverview>?,
+    @SerialName("DiseaseIds")
+    val diseaseIds: List<Int>? = null
 )
 
 @Serializable
@@ -74,6 +90,16 @@ data class UserDeviceOverview(
     val firmwareVersion: String? = null,
     @SerialName("IsActive")
     val isActive: Boolean
+)
+
+
+// Disease Model
+@Serializable
+data class DiseaseData(
+    @SerialName("Id")
+    val id: Int,
+    @SerialName("Name")
+    val name: String
 )
 
 

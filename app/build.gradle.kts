@@ -94,7 +94,18 @@ dependencies {
     implementation("com.microsoft.signalr:signalr:10.0.0")
 
     // QR Code Generation
+    // QR Code Generation
     implementation("com.google.zxing:core:3.5.2")
+
+    // CameraX for QR Scanner
+    val cameraxVersion = "1.3.1"
+    implementation("androidx.camera:camera-core:$cameraxVersion")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-view:$cameraxVersion")
+
+    // ML Kit Barcode Scanning
+    implementation("com.google.mlkit:barcode-scanning:17.2.0")
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 

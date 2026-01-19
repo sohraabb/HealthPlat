@@ -41,7 +41,7 @@ class MainViewModel @Inject constructor(
             val refreshToken = userPreferences.getRefreshToken().first()
             val isOnboardingComplete = userPreferences.isOnboardingComplete().first()
             val termsAccepted = userPreferences.isTermsAccepted().first()
-            val userName = userPreferences.getUserName().first()
+            val phoneNumber = userPreferences.getPhoneNumber().first()
             val deviceMac = userPreferences.getDeviceMac().first()
 
             Timber.d("🚀 APP LAUNCH: userId=$userId, hasToken=${!token.isNullOrEmpty()}, onboarding=$isOnboardingComplete")
@@ -98,15 +98,15 @@ class MainViewModel @Inject constructor(
                             NavRoutes.TermsAndPrivacy.route
                         }
 
-                        userName.isNullOrEmpty() -> {
+                        phoneNumber.isNullOrEmpty() -> {
                             Timber.d("📍 → PersonalInfo (missing)")
                             NavRoutes.PersonalInfo.route
                         }
 
-                        deviceMac.isNullOrEmpty() -> {
-                            Timber.d("📍 → DeviceConnection (missing)")
-                            NavRoutes.DeviceConnection.route
-                        }
+//                        deviceMac.isNullOrEmpty() -> {
+//                            Timber.d("📍 → DeviceConnection (missing)")
+//                            NavRoutes.DeviceConnection.route
+//                        }
 
                         else -> {
                             Timber.d("📍 → Dashboard (complete)")

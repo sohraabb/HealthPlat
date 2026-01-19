@@ -1,6 +1,9 @@
 package com.bonyad.healthplat.ui.device
 
 import android.Manifest
+import android.app.Activity
+import android.bluetooth.BluetoothAdapter
+import android.content.Intent
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -42,14 +45,68 @@ fun DeviceConnectionStartScreen(
 ) {
     val context = LocalContext.current
     var permissionsGranted by remember { mutableStateOf(false) }
+    var showBluetoothDialog by remember { mutableStateOf(false) }
+
+    // Launcher for Bluetooth enable request
+    val bluetoothEnableLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            onStartScan()
+        } else {
+            showBluetoothDialog = true
+        }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         permissionsGranted = permissions.all { it.value }
         if (permissionsGranted) {
-            onStartScan()
+            // Check Bluetooth state after permissions granted
+            if (viewModel.isBluetoothEnabled) {
+                onStartScan()
+            } else {
+                // Request to enable Bluetooth
+                val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
+                bluetoothEnableLauncher.launch(enableBtIntent)
+            }
         }
+    }
+
+    // Dialog when user refuses to enable Bluetooth
+    if (showBluetoothDialog) {
+        AlertDialog(
+            onDismissRequest = { showBluetoothDialog = false },
+            title = {
+                Text(
+                    text = "بلوتوث خاموش است",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            },
+            text = {
+                Text(
+                    text = "برای اتصال به حلقه، لطفا بلوتوث گوشی خود را روشن کنید.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showBluetoothDialog = false
+                        val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
+                        bluetoothEnableLauncher.launch(enableBtIntent)
+                    }
+                ) {
+                    Text("روشن کردن", color = Color(0xFF5BA3A3))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBluetoothDialog = false }) {
+                    Text("بعدا", color = Color(0xFF666666))
+                }
+            }
+        )
     }
 
     BackHandler(enabled = onBack != null) {
@@ -65,20 +122,17 @@ fun DeviceConnectionStartScreen(
                 .padding(paddingValues)
                 .background(Color(0xFFF5F5F5))
         ) {
-            // 1. Back Button (Absolute positioning at Top Left)
+            // Back Button
             if (onBack != null) {
                 IconButton(
                     onClick = { onBack() },
                     modifier = Modifier
                         .align(Alignment.TopStart)
-                        // IMPORTANT: Adds padding for status bar (clock/battery)
                         .statusBarsPadding()
-                        // Fixed padding to match Figma (not too close to edge)
                         .padding(start = 24.dp, top = 16.dp)
                         .size(48.dp)
                 ) {
                     Icon(
-                        // FIX: Using your custom drawable
                         painter = painterResource(id = R.drawable.back_arrow),
                         contentDescription = "بازگشت",
                         tint = Color(0xFF2C2C2C)
@@ -86,23 +140,17 @@ fun DeviceConnectionStartScreen(
                 }
             }
 
-            // 2. Main Content Column
-
             val scrollState = rememberScrollState()
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 24.dp)
                     .verticalScroll(scrollState)
-                    // Ensures content doesn't overlap with system bars at bottom
                     .systemBarsPadding(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-
-                // Push text down slightly so it's not behind the back button
                 Spacer(modifier = Modifier.height(80.dp))
 
-                // --- TEXT SECTION ---
                 Text(
                     text = "حلقه خود را متصل کنید",
                     style = MaterialTheme.typography.headlineSmall.copy(
@@ -124,22 +172,54 @@ fun DeviceConnectionStartScreen(
                     color = Color(0xFF666666)
                 )
 
-                // --- IMAGE SECTION (CENTERED) ---
-                // Using weights to center the image between text and buttons
+                // Bluetooth status indicator (optional but nice UX)
+                if (!viewModel.isBluetoothEnabled) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFFFFF3E0)
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            Text(
+                                text = "بلوتوث خاموش است",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = FontWeight.Medium
+                                ),
+                                color = Color(0xFFE65100)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_bluetooth_disabled), // Add this icon
+                                contentDescription = null,
+                                tint = Color(0xFFE65100),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.weight(1f))
 
                 Image(
                     painter = painterResource(id = R.drawable.ring_img),
                     contentDescription = null,
                     modifier = Modifier
-                        .fillMaxWidth(1f) // Adjust size (60% of screen width)
-                        .aspectRatio(1f),   // Keep it square
+                        .fillMaxWidth(1f)
+                        .aspectRatio(1f),
                     contentScale = ContentScale.Fit
                 )
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                // --- BUTTONS SECTION ---
                 Button(
                     onClick = {
                         val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -201,7 +281,6 @@ fun DeviceConnectionStartScreen(
                     )
                 }
 
-                // Bottom padding
                 Spacer(modifier = Modifier.height(36.dp))
             }
         }

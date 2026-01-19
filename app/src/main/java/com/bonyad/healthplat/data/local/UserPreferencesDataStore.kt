@@ -4,8 +4,6 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
-import com.bonyad.healthplat.data.local.UserPreferencesDataStore.PreferencesKeys.AUTH_TOKEN
-import com.bonyad.healthplat.data.local.UserPreferencesDataStore.PreferencesKeys.REFRESH_TOKEN
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -38,11 +36,15 @@ class UserPreferencesDataStore @Inject constructor(
         val DEVICE_NAME = stringPreferencesKey("device_name")
         val DEVICE_ID = intPreferencesKey("device_id")
         val USER_NAME = stringPreferencesKey("user_name")
+        val USER_LAST_NAME = stringPreferencesKey("user_last_name")
         val USER_BIRTH_DATE = stringPreferencesKey("user_birth_date")
         val USER_HEIGHT = intPreferencesKey("user_height")
         val USER_WEIGHT = intPreferencesKey("user_weight")
         val USER_GENDER = stringPreferencesKey("user_gender")
-
+        val USER_NATIONAL_CODE = stringPreferencesKey("user_national_code")
+        val USER_EMAIL = stringPreferencesKey("user_email")
+        val USER_DISEASE_IDS = stringPreferencesKey("user_disease_ids") // Stored as comma-separated string
+        val LAST_SYNC_DATE = stringPreferencesKey("last_sync_date")
     }
 
     // ============ Auth Token ============
@@ -255,16 +257,32 @@ class UserPreferencesDataStore @Inject constructor(
 
     // ============ Personal Info ============
 
-    suspend fun savePersonalInfo(name: String, birthDate: String, height: Int, weight: Int, gender: String) {
+    suspend fun savePersonalInfo(
+        name: String,
+        lastName: String,
+        birthDate: String,
+        height: Int,
+        weight: Int,
+        gender: String,
+        nationalCode: String? = null,
+        email: String? = null,
+        diseaseIds: List<Int>? = null
+    ) {
         try {
             dataStore.edit { preferences ->
                 preferences[PreferencesKeys.USER_NAME] = name
+                preferences[PreferencesKeys.USER_LAST_NAME] = lastName
                 preferences[PreferencesKeys.USER_BIRTH_DATE] = birthDate
                 preferences[PreferencesKeys.USER_HEIGHT] = height
                 preferences[PreferencesKeys.USER_WEIGHT] = weight
                 preferences[PreferencesKeys.USER_GENDER] = gender
+                nationalCode?.let { preferences[PreferencesKeys.USER_NATIONAL_CODE] = it }
+                email?.let { preferences[PreferencesKeys.USER_EMAIL] = it }
+                diseaseIds?.let {
+                    preferences[PreferencesKeys.USER_DISEASE_IDS] = it.joinToString(",")
+                }
             }
-            Timber.d("💾 Personal info saved: $name")
+            Timber.d("💾 Personal info saved: $name $lastName")
         } catch (e: Exception) {
             Timber.e(e, "❌ Failed to save personal info")
         }
@@ -284,6 +302,20 @@ class UserPreferencesDataStore @Inject constructor(
             }
     }
 
+    fun getUserLastName(): Flow<String?> {
+        return dataStore.data
+            .catch { exception ->
+                if (exception is IOException) {
+                    emit(emptyPreferences())
+                } else {
+                    throw exception
+                }
+            }
+            .map { preferences ->
+                preferences[PreferencesKeys.USER_LAST_NAME]
+            }
+    }
+
     fun getUserBirthDate(): Flow<String?> {
         return dataStore.data.map { preferences ->
             preferences[PreferencesKeys.USER_BIRTH_DATE]
@@ -299,6 +331,78 @@ class UserPreferencesDataStore @Inject constructor(
     fun getUserWeight(): Flow<Int?> {
         return dataStore.data.map { preferences ->
             preferences[PreferencesKeys.USER_WEIGHT]
+        }
+    }
+
+    fun getUserGender(): Flow<String?> {
+        return dataStore.data
+            .catch { exception ->
+                if (exception is IOException) {
+                    emit(emptyPreferences())
+                } else {
+                    throw exception
+                }
+            }
+            .map { preferences ->
+                preferences[PreferencesKeys.USER_GENDER]
+            }
+    }
+
+    fun getUserNationalCode(): Flow<String?> {
+        return dataStore.data
+            .catch { exception ->
+                if (exception is IOException) {
+                    emit(emptyPreferences())
+                } else {
+                    throw exception
+                }
+            }
+            .map { preferences ->
+                preferences[PreferencesKeys.USER_NATIONAL_CODE]
+            }
+    }
+
+    fun getUserEmail(): Flow<String?> {
+        return dataStore.data
+            .catch { exception ->
+                if (exception is IOException) {
+                    emit(emptyPreferences())
+                } else {
+                    throw exception
+                }
+            }
+            .map { preferences ->
+                preferences[PreferencesKeys.USER_EMAIL]
+            }
+    }
+
+    fun getUserDiseaseIds(): Flow<List<Int>> {
+        return dataStore.data
+            .catch { exception ->
+                if (exception is IOException) {
+                    emit(emptyPreferences())
+                } else {
+                    throw exception
+                }
+            }
+            .map { preferences ->
+                val idsString = preferences[PreferencesKeys.USER_DISEASE_IDS]
+                if (idsString.isNullOrEmpty()) {
+                    emptyList()
+                } else {
+                    idsString.split(",").mapNotNull { it.toIntOrNull() }
+                }
+            }
+    }
+
+    suspend fun saveUserDiseaseIds(diseaseIds: List<Int>) {
+        try {
+            dataStore.edit { preferences ->
+                preferences[PreferencesKeys.USER_DISEASE_IDS] = diseaseIds.joinToString(",")
+            }
+            Timber.d("💾 Disease IDs saved: $diseaseIds")
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Failed to save disease IDs")
         }
     }
 
@@ -351,6 +455,42 @@ class UserPreferencesDataStore @Inject constructor(
             }
         }
         .map { it[PreferencesKeys.DEVICE_ID] }
+
+    // ============ Last Sync Date ============
+
+    /**
+     * Save the last successful sync date
+     * @param date Format: yyyy-MM-dd (e.g., "2025-06-05")
+     */
+    suspend fun saveLastSyncDate(date: String) {
+        try {
+            dataStore.edit { preferences ->
+                preferences[PreferencesKeys.LAST_SYNC_DATE] = date
+            }
+            Timber.d("💾 Last sync date saved: $date")
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Failed to save last sync date")
+        }
+    }
+
+    /**
+     * Get the last successful sync date
+     * @return Flow of date string (yyyy-MM-dd) or null if never synced
+     */
+    fun getLastSyncDate(): Flow<String?> {
+        return dataStore.data
+            .catch { exception ->
+                if (exception is IOException) {
+                    Timber.e(exception, "Error reading last sync date")
+                    emit(emptyPreferences())
+                } else {
+                    throw exception
+                }
+            }
+            .map { preferences ->
+                preferences[PreferencesKeys.LAST_SYNC_DATE]
+            }
+    }
 
     // ============ Clear All ============
 

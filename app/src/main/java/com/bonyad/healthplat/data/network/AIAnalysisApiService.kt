@@ -1,7 +1,8 @@
 package com.bonyad.healthplat.data.network
 
+import com.bonyad.healthplat.domain.model.AiApiResponse
 import com.bonyad.healthplat.domain.model.HealthReportResponse
-import com.bonyad.healthplat.domain.model.ReadinessResponse
+import com.bonyad.healthplat.domain.model.ReadinessDto
 import retrofit2.Response
 import retrofit2.http.GET
 import retrofit2.http.Path
@@ -20,7 +21,7 @@ interface AIAnalysisApiService {
     suspend fun getHealthReport(
         @Path("user_id") userId: String,
         @Path("record_date") recordDate: String
-    ): Response<HealthReportResponse>
+    ): Response<AiApiResponse<HealthReportResponse>>
 
     /**
      * Gets the simple readiness score.
@@ -34,6 +35,6 @@ interface AIAnalysisApiService {
     suspend fun getReadinessScore(
         @Path("user_id") userId: String,
         @Path("record_date") recordDate: String
-    ): Response<ReadinessResponse>
+    ): Response<AiApiResponse<ReadinessDto>>
 
 }

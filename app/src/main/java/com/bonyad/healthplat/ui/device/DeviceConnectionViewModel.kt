@@ -1,6 +1,9 @@
 package com.bonyad.healthplat.ui.device
 
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bonlala.bonlalable.bean.ScanDeviceInfo
@@ -11,6 +14,7 @@ import com.bonyad.healthplat.data.local.UserPreferencesDataStore
 import com.bonyad.healthplat.data.repository.AuthResult
 import com.bonyad.healthplat.data.repository.DeviceRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import jakarta.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
@@ -36,6 +40,7 @@ sealed class DeviceConnectionUiState {
 
 @HiltViewModel
 class DeviceConnectionViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val deviceManager: HealthDeviceManager,
     private val deviceRepository: DeviceRepository,
     private val userPreferences: UserPreferencesDataStore,
@@ -50,8 +55,20 @@ class DeviceConnectionViewModel @Inject constructor(
     private val _scanDuration = MutableStateFlow(0)
     val scanDuration: StateFlow<Int> = _scanDuration.asStateFlow()
 
+    private val bluetoothAdapter: BluetoothAdapter? by lazy {
+        val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+        bluetoothManager?.adapter
+    }
+
+    val isBluetoothEnabled: Boolean
+        get() = bluetoothAdapter?.isEnabled == true
+
+    val isBluetoothSupported: Boolean
+        get() = bluetoothAdapter != null
+
     private var scanTimerJob: Job? = null
     private var connectionJob: Job? = null
+
 
     init {
 

@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -45,70 +46,132 @@ import com.bonyad.healthplat.ui.utils.toFarsiDigits
 @Composable
 fun StressDetailScreen(
     viewModel: StressDetailViewModel = hiltViewModel(),
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onInfoClick: () -> Unit = {}
+
 ) {
     val points by viewModel.chartPoints.collectAsState()
     val stats by viewModel.stats.collectAsState()
     val selectedRange by viewModel.selectedTimeRange.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val dateLabel by viewModel.dateLabel.collectAsState()
 
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-        Scaffold(
-            topBar = {
-                CustomDetailTopBar(title = "میزان استرس",
-                    onBack = onBack,
-                    onSync = { /* TODO: Sync logic */ },
-                    onInfo = { /* TODO: Info logic */ }
-                )
-            },
-            containerColor = Color(0xFFF9F9F9)
-        ) { padding ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(24.dp)
-            ) {
-                // 1. Top Section
-                TimeRangeSelector(selected = selectedRange, onSelect = { viewModel.setTimeRange(it) })
+    Scaffold(
+        topBar = {
+            CustomDetailTopBar(
+                title = "میزان استرس",
+                onBack = onBack,
+                onSync = { viewModel.refreshData() },
+                onInfo = { onInfoClick() },
+            )
+        },
+        containerColor = Color(0xFFF9F9F9)
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            // 1. Top Section
+            TimeRangeSelector(
+                selected = selectedRange,
+                onSelect = { viewModel.setTimeRange(it) }
+            )
+
+            // Date Strip (only for daily view)
+            if (selectedRange == "روزانه") {
                 val selectedOffset by viewModel.selectedDayOffset.collectAsState()
-
                 DateStrip(
                     selectedOffset = selectedOffset,
                     onDaySelected = { offset ->
                         viewModel.selectDay(offset)
                     }
                 )
-
-                // 2. Chart Header
-                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    Text("بازه استرس", style = MaterialTheme.typography.bodySmall, color = Color.Gray, modifier = Modifier.align(
-                        Alignment.End))
-                    Text("${stats.rangeMin} - ${stats.rangeMax}", fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.End))
-                    Text("امروز ۲۲ مهر", style = MaterialTheme.typography.bodySmall, color = Color.Gray, modifier = Modifier.align(Alignment.End))
-                }
-
-                // 3. Stress Chart (Bezier Curve)
-                StressChart(points)
-
-                // 4. Last Measurement
-                LatestMeasurementCard(value = stats.currentVal, time = stats.currentTime)
-
-                // 5. Stats Row
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    StatBox("بالا ترین", Integer.valueOf(stats.high.toString().toFarsiDigits()), Modifier.weight(1f))
-                    StatBox("میانگین", Integer.valueOf(stats.avg.toString().toFarsiDigits()), Modifier.weight(1f))
-                    StatBox("پایین ترین", Integer.valueOf(stats.low.toString().toFarsiDigits()), Modifier.weight(1f))
-                }
-
-                Spacer(modifier = Modifier.height(30.dp))
             }
+
+            // 2. Chart Header
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalAlignment = Alignment.End
+            ) {
+                Text(
+                    text = when (selectedRange) {
+                        "هفتگی", "ماهانه" -> "میانگین بازه استرس"
+                        else -> "بازه استرس"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray,
+                    textAlign = TextAlign.End
+                )
+
+                val rangeText = if (stats.rangeMin > 0 || stats.rangeMax > 0) {
+                    "${stats.rangeMax.toString().toFarsiDigits()} - ${
+                        stats.rangeMin.toString().toFarsiDigits()
+                    }"
+                } else {
+                    "-"
+                }
+
+                Text(
+                    text = rangeText,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Black,
+                    textAlign = TextAlign.End
+                )
+
+                Text(
+                    text = dateLabel,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray,
+                    textAlign = TextAlign.End
+                )
+            }
+
+            // 3. Stress Chart (Bezier Curve)
+            if (points.isNotEmpty()) {
+                StressChart(points)
+            } else if (!isLoading) {
+                // Empty state
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(250.dp)
+                        .background(Color.White),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "داده‌ای موجود نیست",
+                        color = Color.Gray
+                    )
+                }
+            }
+
+            // 4. Last Measurement
+            LatestMeasurementCard(
+                value = stats.currentVal,
+                time = stats.currentTime.toFarsiDigits()
+            )
+
+            // 5. Stats Row
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                StatBox("بالا ترین", stats.high, Modifier.weight(1f))
+                StatBox("میانگین", stats.avg, Modifier.weight(1f))
+                StatBox("پایین ترین", stats.low, Modifier.weight(1f))
+            }
+
+            Spacer(modifier = Modifier.height(30.dp))
         }
     }
 }
+
 
 @Composable
 fun StressChart(points: List<StressDetailViewModel.StressPoint>) {
@@ -118,7 +181,11 @@ fun StressChart(points: List<StressDetailViewModel.StressPoint>) {
             .height(250.dp)
             .background(Color.White)
     ) {
-        Canvas(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 24.dp)) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp, vertical = 24.dp)
+        ) {
             val w = size.width
             val h = size.height
             val maxVal = 100f
@@ -147,7 +214,7 @@ fun StressChart(points: List<StressDetailViewModel.StressPoint>) {
                 val path = Path()
                 points.forEachIndexed { i, p ->
                     val x = p.xRatio * w
-                    val y = h - (p.value / maxVal * h)
+                    val y = (h - (p.value / maxVal * h)).coerceIn(0f, h)
 
                     if (i == 0) {
                         path.moveTo(x, y)
@@ -155,7 +222,7 @@ fun StressChart(points: List<StressDetailViewModel.StressPoint>) {
                         // Smooth cubic bezier
                         val prev = points[i - 1]
                         val prevX = prev.xRatio * w
-                        val prevY = h - (prev.value / maxVal * h)
+                        val prevY = (h - (prev.value / maxVal * h)).coerceIn(0f, h)
 
                         // Control points for smoothness
                         val cx1 = (prevX + x) / 2
@@ -172,19 +239,44 @@ fun StressChart(points: List<StressDetailViewModel.StressPoint>) {
                 // Draw Dots at start and end
                 val start = points.first()
                 val end = points.last()
-                drawCircle(Color(0xFFFFD54F), 6.dp.toPx(), Offset(start.xRatio * w, h - (start.value / maxVal * h)))
-                drawCircle(Color(0xFFFFD54F), 6.dp.toPx(), Offset(end.xRatio * w, h - (end.value / maxVal * h)))
+                val startY = (h - (start.value / maxVal * h)).coerceIn(0f, h)
+                val endY = (h - (end.value / maxVal * h)).coerceIn(0f, h)
+
+                drawCircle(
+                    Color(0xFFFFD54F),
+                    6.dp.toPx(),
+                    Offset(start.xRatio * w, startY)
+                )
+                drawCircle(
+                    Color(0xFFFFD54F),
+                    6.dp.toPx(),
+                    Offset(end.xRatio * w, endY)
+                )
             }
         }
 
         // Axis Labels
-        Box(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
-            Column(modifier = Modifier.fillMaxHeight().padding(vertical = 24.dp), verticalArrangement = Arrangement.SpaceBetween) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 8.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .padding(vertical = 24.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
                 Text("۱۰۰", fontSize = 10.sp, color = Color.Gray)
                 Text("۵۰", fontSize = 10.sp, color = Color.Gray)
                 Text("۰", fontSize = 10.sp, color = Color.Gray)
             }
-            Row(modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter), horizontalArrangement = Arrangement.SpaceBetween) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
                 Text("00:00", fontSize = 10.sp, color = Color.Gray)
                 Text("07:59", fontSize = 10.sp, color = Color.Gray)
                 Text("15:59", fontSize = 10.sp, color = Color.Gray)

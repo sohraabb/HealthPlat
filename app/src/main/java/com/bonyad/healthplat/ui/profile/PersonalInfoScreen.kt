@@ -5,18 +5,57 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -31,8 +70,16 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-
 import com.bonyad.healthplat.R
+import kotlinx.coroutines.launch
+
+// Colors
+private val TealPrimary = Color(0xFF5BA3A3)
+private val TextDark = Color(0xFF2C2C2C)
+private val TextGray = Color(0xFF666666)
+private val PlaceholderColor = Color(0xFFCCCCCC)
+private val InputBorder = Color(0xFFE0E0E0)
+private val BackgroundColor = Color(0xFFF5F5F5)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,6 +89,7 @@ fun PersonalInfoScreen(
     onBack: (() -> Unit)? = null
 ) {
     val name by viewModel.name.collectAsState()
+    val lastName by viewModel.lastName.collectAsState()
     val birthDate by viewModel.birthDate.collectAsState()
     val height by viewModel.height.collectAsState()
     val weight by viewModel.weight.collectAsState()
@@ -73,7 +121,7 @@ fun PersonalInfoScreen(
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Scaffold(
             snackbarHost = { SnackbarHost(snackbarHostState) },
-            containerColor = Color(0xFFF5F5F5)
+            containerColor = BackgroundColor
         ) { paddingValues ->
             Box(
                 modifier = Modifier
@@ -104,9 +152,9 @@ fun PersonalInfoScreen(
                                     Brush.verticalGradient(
                                         colors = listOf(
                                             Color.Transparent,
-                                            Color(0xFFF5F5F5).copy(alpha = 0.3f),
-                                            Color(0xFFF5F5F5).copy(alpha = 0.9f),
-                                            Color(0xFFF5F5F5)
+                                            BackgroundColor.copy(alpha = 0.3f),
+                                            BackgroundColor.copy(alpha = 0.9f),
+                                            BackgroundColor
                                         )
                                     )
                                 )
@@ -125,7 +173,7 @@ fun PersonalInfoScreen(
                                 Icon(
                                     painter = painterResource(id = R.drawable.back_arrow),
                                     contentDescription = "بازگشت",
-                                    tint = Color(0xFF2C2C2C)
+                                    tint = TextDark
                                 )
                             }
                         }
@@ -150,35 +198,88 @@ fun PersonalInfoScreen(
                                     fontSize = 20.sp,
                                     textAlign = TextAlign.Center
                                 ),
-                                color = Color(0xFF2C2C2C),
+                                color = TextDark,
                                 modifier = Modifier.padding(bottom = 32.dp)
                             )
 
-                            // Name and Birth Date Row
+                            // Name Row (First Name and Last Name)
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
-                                // Birth Date (right)
-
-
-                                // Name (left)
+                                // First Name
                                 OutlinedTextField(
                                     value = name,
                                     onValueChange = { viewModel.updateName(it) },
                                     modifier = Modifier.weight(1f),
                                     label = { Text("نام") },
-                                    placeholder = { Text("علی کمالی", color = Color(0xFFCCCCCC)) },
+                                    placeholder = { Text("علی", color = PlaceholderColor) },
                                     singleLine = true,
                                     shape = RoundedCornerShape(12.dp),
                                     colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = Color(0xFF5BA3A3),
-                                        unfocusedBorderColor = Color(0xFFE0E0E0),
+                                        focusedBorderColor = TealPrimary,
+                                        unfocusedBorderColor = InputBorder,
                                         focusedContainerColor = Color.White,
                                         unfocusedContainerColor = Color.White
                                     ),
-                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Start, color = Color.Black)
+                                    textStyle = LocalTextStyle.current.copy(
+                                        textAlign = TextAlign.Start,
+                                        color = Color.Black
+                                    )
                                 )
+
+                                // Last Name
+                                OutlinedTextField(
+                                    value = lastName,
+                                    onValueChange = { viewModel.updateLastName(it) },
+                                    modifier = Modifier.weight(1f),
+                                    label = { Text("نام خانوادگی") },
+                                    placeholder = { Text("محمدی", color = PlaceholderColor) },
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = TealPrimary,
+                                        unfocusedBorderColor = InputBorder,
+                                        focusedContainerColor = Color.White,
+                                        unfocusedContainerColor = Color.White
+                                    ),
+                                    textStyle = LocalTextStyle.current.copy(
+                                        textAlign = TextAlign.Start,
+                                        color = Color.Black
+                                    )
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // Birth Date and Height Row
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                // Height
+                                OutlinedTextField(
+                                    value = height,
+                                    onValueChange = { viewModel.updateHeight(it) },
+                                    modifier = Modifier.weight(1f),
+                                    label = { Text("قد") },
+                                    placeholder = { Text("سانتی‌متر", color = PlaceholderColor) },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = TealPrimary,
+                                        unfocusedBorderColor = InputBorder,
+                                        focusedContainerColor = Color.White,
+                                        unfocusedContainerColor = Color.White
+                                    ),
+                                    textStyle = LocalTextStyle.current.copy(
+                                        textAlign = TextAlign.Start,
+                                        color = Color.Black
+                                    )
+                                )
+
+                                // Birth Date
                                 OutlinedTextField(
                                     value = birthDate,
                                     onValueChange = { },
@@ -186,77 +287,34 @@ fun PersonalInfoScreen(
                                         .weight(1f)
                                         .clickable { viewModel.onDatePickerClick() },
                                     label = { Text("تاریخ تولد") },
-                                    placeholder = { Text("۱۳۷۹/۰۹/۰۵", color = Color(0xFFCCCCCC)) },
+                                    placeholder = { Text("۱۳۷۹/۰۹/۰۵", color = PlaceholderColor) },
                                     trailingIcon = {
                                         Icon(
                                             imageVector = Icons.Default.DateRange,
                                             contentDescription = null,
-                                            tint = Color(0xFF5BA3A3)
+                                            tint = TealPrimary
                                         )
                                     },
                                     readOnly = true,
                                     enabled = false,
                                     colors = OutlinedTextFieldDefaults.colors(
-                                        disabledBorderColor = Color(0xFFE0E0E0),
+                                        disabledBorderColor = InputBorder,
                                         disabledContainerColor = Color.White,
-                                        disabledLabelColor = Color(0xFF666666),
-                                        disabledTextColor = Color(0xFF2C2C2C),
-                                        disabledTrailingIconColor = Color(0xFF5BA3A3)
+                                        disabledLabelColor = TextGray,
+                                        disabledTextColor = TextDark,
+                                        disabledTrailingIconColor = TealPrimary
                                     ),
                                     shape = RoundedCornerShape(12.dp),
-                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Start, color = Color.Black)
+                                    textStyle = LocalTextStyle.current.copy(
+                                        textAlign = TextAlign.Start,
+                                        color = Color.Black
+                                    )
                                 )
                             }
 
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            // Height and Weight Row
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-
-                                // Height (right in RTL)
-                                OutlinedTextField(
-                                    value = height,
-                                    onValueChange = { viewModel.updateHeight(it) },
-                                    modifier = Modifier.weight(1f),
-                                    label = { Text("قد") },
-                                    placeholder = { Text("سانتی‌متر", color = Color(0xFFCCCCCC)) },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                    singleLine = true,
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = Color(0xFF5BA3A3),
-                                        unfocusedBorderColor = Color(0xFFE0E0E0),
-                                        focusedContainerColor = Color.White,
-                                        unfocusedContainerColor = Color.White
-                                    ),
-                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Start, color = Color.Black)
-                                )
-
-                                // Weight (left in RTL)
-                                OutlinedTextField(
-                                    value = weight,
-                                    onValueChange = { viewModel.updateWeight(it) },
-                                    modifier = Modifier.weight(1f),
-                                    label = { Text("وزن") },
-                                    placeholder = { Text("کیلوگرم", color = Color(0xFFCCCCCC)) },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                    singleLine = true,
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = Color(0xFF5BA3A3),
-                                        unfocusedBorderColor = Color(0xFFE0E0E0),
-                                        focusedContainerColor = Color.White,
-                                        unfocusedContainerColor = Color.White
-                                    ),
-                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Start, color = Color.Black)
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(16.dp))
-
+                            // Weight and Gender Row
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -272,24 +330,24 @@ fun PersonalInfoScreen(
                                     placeholder = {
                                         Text(
                                             "انتخاب کنید",
-                                            color = Color(0xFFCCCCCC)
+                                            color = PlaceholderColor
                                         )
                                     },
                                     trailingIcon = {
                                         Icon(
                                             imageVector = Icons.Default.KeyboardArrowDown,
                                             contentDescription = null,
-                                            tint = Color(0xFF5BA3A3)
+                                            tint = TealPrimary
                                         )
                                     },
                                     readOnly = true,
                                     enabled = false,
                                     colors = OutlinedTextFieldDefaults.colors(
-                                        disabledBorderColor = Color(0xFFE0E0E0),
+                                        disabledBorderColor = InputBorder,
                                         disabledContainerColor = Color.White,
-                                        disabledLabelColor = Color(0xFF666666),
-                                        disabledTextColor = Color(0xFF2C2C2C),
-                                        disabledTrailingIconColor = Color(0xFF5BA3A3)
+                                        disabledLabelColor = TextGray,
+                                        disabledTextColor = TextDark,
+                                        disabledTrailingIconColor = TealPrimary
                                     ),
                                     shape = RoundedCornerShape(12.dp),
                                     textStyle = LocalTextStyle.current.copy(
@@ -298,12 +356,34 @@ fun PersonalInfoScreen(
                                     )
                                 )
 
-                                Spacer(modifier = Modifier.weight(1f))
+                                // Weight
+                                OutlinedTextField(
+                                    value = weight,
+                                    onValueChange = { viewModel.updateWeight(it) },
+                                    modifier = Modifier.weight(1f),
+                                    label = { Text("وزن") },
+                                    placeholder = { Text("کیلوگرم", color = PlaceholderColor) },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = TealPrimary,
+                                        unfocusedBorderColor = InputBorder,
+                                        focusedContainerColor = Color.White,
+                                        unfocusedContainerColor = Color.White
+                                    ),
+                                    textStyle = LocalTextStyle.current.copy(
+                                        textAlign = TextAlign.Start,
+                                        color = Color.Black
+                                    )
+                                )
                             }
                         }
 
                         // Submit Button - At bottom
                         Column {
+                            Spacer(modifier = Modifier.height(32.dp))
+
                             Button(
                                 onClick = { viewModel.savePersonalInfo() },
                                 modifier = Modifier
@@ -311,8 +391,8 @@ fun PersonalInfoScreen(
                                     .height(56.dp),
                                 shape = RoundedCornerShape(16.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isFormValid) Color(0xFF5BA3A3) else Color(0xFFE0E0E0),
-                                    disabledContainerColor = Color(0xFFE0E0E0)
+                                    containerColor = if (isFormValid) TealPrimary else InputBorder,
+                                    disabledContainerColor = InputBorder
                                 ),
                                 enabled = isFormValid && uiState !is PersonalInfoUiState.Loading
                             ) {
@@ -342,7 +422,11 @@ fun PersonalInfoScreen(
         }
 
         if (showDatePicker) {
+            val dateParts = viewModel.getSelectedDateParts()
             PersianDatePickerBottomSheet(
+                initialYear = dateParts.first,
+                initialMonth = dateParts.second,
+                initialDay = dateParts.third,
                 onDismiss = { viewModel.onDatePickerDismiss() },
                 onDateSelected = { year, month, day ->
                     viewModel.onDateSelected(year, month, day)
@@ -386,7 +470,7 @@ fun GenderPickerBottomSheet(
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp
                 ),
-                color = Color(0xFF2C2C2C),
+                color = TextDark,
                 modifier = Modifier.padding(bottom = 24.dp)
             )
 
@@ -410,7 +494,7 @@ fun GenderPickerBottomSheet(
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Medium
                     ),
-                    color = Color(0xFF2C2C2C),
+                    color = TextDark,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(20.dp),
@@ -440,7 +524,7 @@ fun GenderPickerBottomSheet(
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Medium
                     ),
-                    color = Color(0xFF2C2C2C),
+                    color = TextDark,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(20.dp),
@@ -456,20 +540,32 @@ fun GenderPickerBottomSheet(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PersianDatePickerBottomSheet(
+    initialYear: Int = 1370,
+    initialMonth: Int = 1,
+    initialDay: Int = 1,
     onDismiss: () -> Unit,
     onDateSelected: (Int, Int, Int) -> Unit
 ) {
-    val sheetState = rememberModalBottomSheetState()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
 
-    // Start from 1370 instead of 1320
-    var selectedYear by remember { mutableStateOf(1370) }
-    var selectedMonth by remember { mutableStateOf(1) }
-    var selectedDay by remember { mutableStateOf(1) }
+    var selectedYear by remember { mutableStateOf(initialYear) }
+    var selectedMonth by remember { mutableStateOf(initialMonth) }
+    var selectedDay by remember { mutableStateOf(initialDay) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = Color.White
+        containerColor = Color.White,
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .padding(vertical = 12.dp)
+                    .width(40.dp)
+                    .height(4.dp)
+                    .background(Color.LightGray, RoundedCornerShape(2.dp))
+            )
+        }
     ) {
         Column(
             modifier = Modifier
@@ -483,7 +579,7 @@ fun PersianDatePickerBottomSheet(
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp
                 ),
-                color = Color(0xFF2C2C2C),
+                color = TextDark,
                 modifier = Modifier.padding(bottom = 24.dp)
             )
 
@@ -491,28 +587,28 @@ fun PersianDatePickerBottomSheet(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Year Picker (1320-1404)
-                PersianDateColumn(
+                // Year Picker
+                ImprovedDateColumn(
                     label = "سال",
-                    range = 1320..1404,
+                    range = (1320..1404).toList(),
                     selectedValue = selectedYear,
                     onValueChange = { selectedYear = it },
                     modifier = Modifier.weight(1f)
                 )
 
                 // Month Picker
-                PersianDateColumn(
+                ImprovedDateColumn(
                     label = "ماه",
-                    range = 1..12,
+                    range = (1..12).toList(),
                     selectedValue = selectedMonth,
                     onValueChange = { selectedMonth = it },
                     modifier = Modifier.weight(1f)
                 )
 
                 // Day Picker
-                PersianDateColumn(
+                ImprovedDateColumn(
                     label = "روز",
-                    range = 1..31,
+                    range = (1..31).toList(),
                     selectedValue = selectedDay,
                     onValueChange = { selectedDay = it },
                     modifier = Modifier.weight(1f)
@@ -531,7 +627,7 @@ fun PersianDatePickerBottomSheet(
                     .height(56.dp),
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF5BA3A3)
+                    containerColor = TealPrimary
                 )
             ) {
                 Text(
@@ -549,15 +645,35 @@ fun PersianDatePickerBottomSheet(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PersianDateColumn(
+fun ImprovedDateColumn(
     label: String,
-    range: IntRange,
+    range: List<Int>,
     selectedValue: Int,
     onValueChange: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+
+    // Find the index of the selected value
+    val selectedIndex = range.indexOf(selectedValue).coerceAtLeast(0)
+
+    // Scroll to selected item on first composition
+    LaunchedEffect(selectedValue) {
+        listState.scrollToItem(maxOf(0, selectedIndex))
+    }
+
+    // Update selection when scrolling stops
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (!listState.isScrollInProgress) {
+            val centerIndex = listState.firstVisibleItemIndex
+            if (centerIndex in range.indices) {
+                onValueChange(range[centerIndex])
+            }
+        }
+    }
+
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally
@@ -568,39 +684,91 @@ fun PersianDateColumn(
                 fontWeight = FontWeight.Medium,
                 fontSize = 14.sp
             ),
-            color = Color(0xFF666666),
+            color = TextGray,
             modifier = Modifier.padding(bottom = 8.dp)
         )
 
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(150.dp)
-                .background(Color(0xFFF5F5F5), RoundedCornerShape(12.dp))
+                .height(180.dp)
+                .background(BackgroundColor, RoundedCornerShape(12.dp))
         ) {
-            Column(
+            // Selection indicator in the center
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(40.dp)
+                    .align(Alignment.Center)
+                    .padding(horizontal = 8.dp)
+                    .background(TealPrimary.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+            )
+
+            LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
                     .padding(vertical = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
+                contentPadding = PaddingValues(vertical = 60.dp) // Add padding for center alignment
             ) {
-                range.forEach { value ->
+                items(range) { value ->
+                    val isSelected = value == selectedValue
                     Text(
                         text = convertToPersianNumber(value),
                         style = MaterialTheme.typography.bodyLarge.copy(
-                            fontWeight = if (value == selectedValue) FontWeight.Bold else FontWeight.Normal,
-                            fontSize = if (value == selectedValue) 18.sp else 16.sp
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            fontSize = if (isSelected) 18.sp else 16.sp
                         ),
-                        color = if (value == selectedValue) Color(0xFF5BA3A3) else Color(0xFF2C2C2C),
+                        color = if (isSelected) TealPrimary else TextDark.copy(alpha = 0.6f),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onValueChange(value) }
-                            .padding(vertical = 8.dp),
+                            .height(40.dp)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                onValueChange(value)
+                                scope.launch {
+                                    val index = range.indexOf(value)
+                                    listState.animateScrollToItem(maxOf(0, index - 2))
+                                }
+                            }
+                            .wrapContentHeight(Alignment.CenterVertically),
                         textAlign = TextAlign.Center
                     )
                 }
             }
+
+            // Fade edges
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(40.dp)
+                    .align(Alignment.TopCenter)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                BackgroundColor,
+                                Color.Transparent
+                            )
+                        )
+                    )
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(40.dp)
+                    .align(Alignment.BottomCenter)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                BackgroundColor
+                            )
+                        )
+                    )
+            )
         }
     }
 }

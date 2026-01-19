@@ -3,6 +3,7 @@ package com.bonyad.healthplat.data.repository
 import com.bonyad.healthplat.blesdk.manager.HealthDeviceManager
 import com.bonyad.healthplat.data.local.UserPreferencesDataStore
 import com.bonyad.healthplat.data.network.HealthPlatApiService
+import com.bonyad.healthplat.domain.model.MetricData
 import com.bonyad.healthplat.domain.model.MetricRequest
 import com.bonyad.healthplat.domain.model.RecordDataResult
 import com.bonyad.healthplat.domain.model.SleepMetricRequest
@@ -13,6 +14,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import timber.log.Timber
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
@@ -24,6 +30,107 @@ class HealthDataRepository @Inject constructor(
     private val userPreferences: UserPreferencesDataStore
 ) {
 
+    companion object {
+        private const val MAX_HISTORY_DAYS = 7 // Ring stores up to 7 days
+    }
+
+    /**
+     * Syncs all missing days since last successful sync.
+     *
+     * Logic:
+     * - First-time user (null lastSyncDate) → sync day 0 only
+     * - Gap > 7 days → sync day 0 only (ring doesn't have older data)
+     * - Gap 1-7 days → sync from oldest to today
+     * - Same day (gap = 0) → sync day 0 (refresh today's data)
+     *
+     * @return RecordDataResult of day 0 (today) for UI display
+     */
+    suspend fun syncAllMissingDays(): RecordDataResult {
+        val today = LocalDate.now()
+        val todayString = today.format(DateTimeFormatter.ISO_DATE)
+
+        val lastSyncDate = userPreferences.getLastSyncDate().first()
+
+        Timber.i("📅 Sync check - Today: $todayString, Last sync: ${lastSyncDate ?: "never"}")
+
+        // Calculate days to sync
+        val daysToSync = calculateDaysToSync(lastSyncDate, today)
+
+        Timber.i("📅 Days to sync: $daysToSync")
+
+        var todayResult: RecordDataResult = RecordDataResult.Error(-1)
+
+        // Sync from oldest to newest (so if interrupted, older data is saved)
+        for (day in daysToSync.sortedDescending()) {
+            Timber.i("🔄 Syncing day $day (${today.minusDays(day.toLong())})")
+
+            val result = syncDashboardData(day)
+
+            if (day == 0) {
+                todayResult = result
+            }
+
+            when (result) {
+                is RecordDataResult.Success -> {
+                    Timber.i("✅ Day $day synced successfully")
+                }
+                is RecordDataResult.Error -> {
+                    Timber.w("⚠️ Day $day sync failed: ${result.message} (code: ${result.code})")
+                    // Continue with other days, don't stop on failure
+                }
+            }
+        }
+
+        // Update last sync date only if today (day 0) synced successfully
+        if (todayResult is RecordDataResult.Success) {
+            userPreferences.saveLastSyncDate(todayString)
+            Timber.i("💾 Last sync date updated to: $todayString")
+        }
+
+        return todayResult
+    }
+
+    /**
+     * Calculate which days need to be synced
+     */
+    private fun calculateDaysToSync(lastSyncDate: String?, today: LocalDate): List<Int> {
+        // First-time user
+        if (lastSyncDate == null) {
+            Timber.i("📅 First-time user - syncing today only")
+            return listOf(0)
+        }
+
+        return try {
+            val lastSync = LocalDate.parse(lastSyncDate, DateTimeFormatter.ISO_DATE)
+            val daysMissing = ChronoUnit.DAYS.between(lastSync, today).toInt()
+
+            when {
+                // User gone too long - ring doesn't have data that old
+                daysMissing > MAX_HISTORY_DAYS -> {
+                    Timber.i("📅 Gap too large ($daysMissing days) - syncing today only")
+                    listOf(0)
+                }
+
+                // Same day - just refresh today
+                daysMissing <= 0 -> {
+                    Timber.i("📅 Same day resync")
+                    listOf(0)
+                }
+
+                // Normal catch-up: sync all missing days
+                else -> {
+                    Timber.i("📅 Catching up $daysMissing days")
+                    // daysMissing = 1 means yesterday + today = [1, 0]
+                    // daysMissing = 3 means [3, 2, 1, 0]
+                    (daysMissing downTo 0).toList()
+                }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Error parsing last sync date: $lastSyncDate")
+            listOf(0) // Fallback to today only
+        }
+    }
+
     suspend fun syncDashboardData(day: Int): RecordDataResult {
         val recordResult = deviceManager.getRecordData(day)
 
@@ -32,6 +139,31 @@ class HealthDataRepository @Inject constructor(
         }
 
         return recordResult
+    }
+
+    suspend fun getMetricData(
+        metricType: MetricType,
+        dateFrom: String,
+        dateTo: String
+    ): Result<List<MetricData>> {
+        return try {
+            val response = when (metricType) {
+                MetricType.HEART_RATE -> apiService.getHeartRateMetrics(dateFrom, dateTo)
+                MetricType.STEPS -> apiService.getStepsMetrics(dateFrom, dateTo)
+                MetricType.SLEEP -> apiService.getSleepMetrics(dateFrom, dateTo)
+                MetricType.SPO2 -> apiService.getSpo2Metrics(dateFrom, dateTo)
+                MetricType.STRESS -> apiService.getStressMetrics(dateFrom, dateTo)
+                MetricType.HRV -> apiService.getHrvMetrics(dateFrom, dateTo)
+            }
+
+            if (response.isSuccessful && response.body()?.isSuccess == true) {
+                Result.success(response.body()?.data ?: emptyList())
+            } else {
+                Result.failure(Exception(response.body()?.message ?: "API error"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     private suspend fun uploadHealthData(data: RecordDataResult.Success) = coroutineScope {
@@ -43,14 +175,16 @@ class HealthDataRepository @Inject constructor(
             return@coroutineScope
         }
 
-        // Get date from SDK beans [cite: 211, 217, 224]
+        // Get date from SDK beans
         val sdkDateString = data.heartRate?.recordDay
             ?: data.steps?.recordDay
             ?: data.sleep?.recordDay
             ?: getCurrentDateString() // Fallback
 
-        // Format to ISO 8601 as required by typical backends
-        val finalRecordDate = "${sdkDateString}T00:00:00Z"
+        val time = LocalTime.now(ZoneOffset.UTC)
+            .format(DateTimeFormatter.ofPattern("HH:mm:ss"))
+
+        val finalRecordDate = "${sdkDateString}T${time}Z"
 
         Timber.i("🔄 Preparing upload for $finalRecordDate")
 
@@ -58,8 +192,7 @@ class HealthDataRepository @Inject constructor(
         // Parallel Uploads
         // ---------------------------------------------------------
 
-        // 1. Heart Rate [cite: 212]
-        // Checks if there is at least one non-zero reading
+        // 1. Heart Rate
         if (data.heartRate?.heartRateSource?.any { it > 0 } == true) {
             launch {
                 uploadMetric(
@@ -69,7 +202,7 @@ class HealthDataRepository @Inject constructor(
             }
         }
 
-        // 2. Steps [cite: 218]
+        // 2. Steps
         if (data.steps?.stepSource?.any { it > 0 } == true) {
             launch {
                 uploadMetric(
@@ -79,8 +212,7 @@ class HealthDataRepository @Inject constructor(
             }
         }
 
-        // 3. Sleep [cite: 234]
-        // Filter > 0 keeps Deep(1), Light(2), Awake(3), REM(4)
+        // 3. Sleep
         if (data.sleep?.sourceList?.any { it > 0 } == true) {
             launch {
                 uploadMetric(
@@ -90,7 +222,7 @@ class HealthDataRepository @Inject constructor(
             }
         }
 
-        // 4. SpO2 [cite: 260]
+        // 4. SpO2
         if (data.spo2?.sourceList?.any { it > 0 } == true) {
             launch {
                 uploadMetric(
@@ -100,7 +232,7 @@ class HealthDataRepository @Inject constructor(
             }
         }
 
-        // 5. Stress [cite: 252]
+        // 5. Stress
         if (data.stress?.stressSource?.any { it > 0 } == true) {
             launch {
                 uploadMetric(
@@ -110,7 +242,7 @@ class HealthDataRepository @Inject constructor(
             }
         }
 
-        // 6. HRV [cite: 266]
+        // 6. HRV
         if (data.hrv?.hrvSource?.any { it > 0 } == true) {
             launch {
                 uploadMetric(
@@ -179,6 +311,7 @@ class HealthDataRepository @Inject constructor(
             calendar.get(java.util.Calendar.DAY_OF_MONTH)
         )
     }
+
 }
 
 private fun calculateSleepSummary(values: List<Int>): SleepSummary {

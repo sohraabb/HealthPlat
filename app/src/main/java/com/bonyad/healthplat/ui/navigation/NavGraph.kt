@@ -12,15 +12,21 @@ import androidx.navigation.navArgument
 import com.bonyad.healthplat.ui.access.TermsAndPrivacyScreen
 import com.bonyad.healthplat.ui.dashboard.DashboardScreen
 import com.bonyad.healthplat.ui.dashboard.ai.AiAnalysisScreen
+import com.bonyad.healthplat.ui.dashboard.details.HealthInfoScreen
+import com.bonyad.healthplat.ui.dashboard.details.HealthInfoType
 import com.bonyad.healthplat.ui.dashboard.details.heart_rate.HeartRateDetailScreen
 import com.bonyad.healthplat.ui.dashboard.details.sleep.SleepDetailScreen
 import com.bonyad.healthplat.ui.dashboard.details.sp02.SpO2DetailScreen
 import com.bonyad.healthplat.ui.dashboard.details.stepts.StepsDetailScreen
 import com.bonyad.healthplat.ui.dashboard.details.stress.StressDetailScreen
+import com.bonyad.healthplat.ui.dashboard.profile.alarm.AlarmScreen
+import com.bonyad.healthplat.ui.dashboard.profile.medication.MedicationScreen
+import com.bonyad.healthplat.ui.dashboard.profile.wallet.WalletScreen
 import com.bonyad.healthplat.ui.device.DeviceConnectionScreen
 import com.bonyad.healthplat.ui.login.OtpVerificationScreen
 import com.bonyad.healthplat.ui.login.PhoneAuthScreen
 import com.bonyad.healthplat.ui.onboarding.OnboardingScreen
+import com.bonyad.healthplat.ui.profile.EditPersonalInfoScreen
 import com.bonyad.healthplat.ui.profile.PersonalInfoScreen
 import com.yourpackage.healthplat.ui.auth.AuthViewModel
 
@@ -140,7 +146,35 @@ fun HealthPlatNavGraph(
 
         // 8. AI
         composable(NavRoutes.AiScreen.route) {
-            AiAnalysisScreen (
+            AiAnalysisScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+
+        // NavRoutes From Profile
+
+        // 9. Alarm Settings - NEW
+        composable(ProfileRoutes.AlarmSettings.route) {
+            AlarmScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        // 10. Edit Personal Info - NEW
+        composable(ProfileRoutes.EditPersonalInfo.route) {
+            EditPersonalInfoScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(ProfileRoutes.Wallet.route) {
+            WalletScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(ProfileRoutes.Medication.route) {
+            MedicationScreen(
                 onBack = { navController.popBackStack() }
             )
         }
@@ -148,30 +182,85 @@ fun HealthPlatNavGraph(
         // Health Details Routes :
         composable(HealthDetailRoutes.HeartRateDetail.route) {
             HeartRateDetailScreen(
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onInfoClick = {
+                    navController.navigate(HealthDetailRoutes.HeartRateInfo.route)
+                }
             )
         }
 
         composable(HealthDetailRoutes.SleepDetail.route) {
             SleepDetailScreen(
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onInfoClick = {
+                    navController.navigate(HealthDetailRoutes.SleepInfo.route)
+                }
             )
         }
 
         composable(HealthDetailRoutes.StepsDetail.route) {
             StepsDetailScreen(
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onInfoClick = {
+                    navController.navigate(HealthDetailRoutes.StepsInfo.route)
+                }
             )
         }
 
         composable(HealthDetailRoutes.SpO2Detail.route) {
             SpO2DetailScreen(
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onInfoClick = {
+                    navController.navigate(HealthDetailRoutes.SpO2Info.route)
+                }
             )
         }
 
         composable(HealthDetailRoutes.StressDetail.route) {
             StressDetailScreen(
+                onBack = { navController.popBackStack() },
+                onInfoClick = {
+                    navController.navigate(HealthDetailRoutes.StressInfo.route)
+                }
+            )
+        }
+
+        // Heart Rate Detail Screen
+        composable(HealthDetailRoutes.HeartRateInfo.route) {
+            HealthInfoScreen(
+                infoType = HealthInfoType.HeartRate,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+// Sleep Info Screen
+        composable(HealthDetailRoutes.SleepInfo.route) {
+            HealthInfoScreen(
+                infoType = HealthInfoType.Sleep,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+// SpO2 Info Screen
+        composable(HealthDetailRoutes.SpO2Info.route) {
+            HealthInfoScreen(
+                infoType = HealthInfoType.SpO2,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+// Steps Info Screen
+        composable(HealthDetailRoutes.StepsInfo.route) {
+            HealthInfoScreen(
+                infoType = HealthInfoType.Steps,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+// Stress Info Screen
+        composable(HealthDetailRoutes.StressInfo.route) {
+            HealthInfoScreen(
+                infoType = HealthInfoType.Stress,
                 onBack = { navController.popBackStack() }
             )
         }

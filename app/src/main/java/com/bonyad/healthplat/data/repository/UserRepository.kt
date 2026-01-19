@@ -2,6 +2,7 @@ package com.bonyad.healthplat.data.repository
 
 import com.bonyad.healthplat.data.local.UserPreferencesDataStore
 import com.bonyad.healthplat.data.network.HealthPlatApiService
+import com.bonyad.healthplat.domain.model.DiseaseData
 import com.bonyad.healthplat.domain.model.UpdateUserRequest
 import com.bonyad.healthplat.domain.model.UserData
 import com.bonyad.healthplat.domain.model.UserOverviewData
@@ -75,17 +76,22 @@ class UserRepository @Inject constructor(
                 !overview.birthDate.isNullOrEmpty() &&
                 overview.height != null &&
                 overview.weight != null &&
-                overview.gender != null) {
+                overview.gender != null
+            ) {
 
                 userPreferences.savePersonalInfo(
                     name = overview.name,
+                    lastName = overview.lastName ?: "",
                     birthDate = overview.birthDate,
                     height = overview.height,
                     weight = overview.weight,
-                    gender = if (overview.gender == 1) "مرد" else "زن"
+                    gender = if (overview.gender == 1) "مرد" else "زن",
+                    nationalCode = overview.nationalCode,
+                    email = overview.email,
+                    diseaseIds = overview.diseaseIds
                 )
 
-                Timber.d("💾 Saved personal info: ${overview.name}")
+                Timber.d("💾 Saved personal info: ${overview.name} ${overview.lastName}")
             }
 
             // Save terms acceptance status
@@ -129,6 +135,7 @@ class UserRepository @Inject constructor(
                             Timber.i("✅ User data fetched and synced")
                             AuthResult.Success(Unit)
                         }
+
                         is AuthResult.Error -> {
                             Timber.e("❌ Failed to fetch user data: ${result.message}")
                             AuthResult.Error(result.message)
@@ -146,15 +153,19 @@ class UserRepository @Inject constructor(
     }
 
     /**
-     * Add user personal information after registration
-     * This is called from PersonalInfoScreen
+     * Update user personal information
+     * This is called from PersonalInfoScreen and EditPersonalInfoScreen
      */
     suspend fun updateUserInfo(
         name: String,
+        lastName: String,
         birthDate: String,  // Format: "2025-11-12T00:00:00Z"
         gender: Int,        // 1 = Male, 2 = Female
         height: Int,
-        weight: Int
+        weight: Int,
+        nationalCode: String? = null,
+        email: String? = null,
+        diseaseIds: List<Int>? = null
     ): AuthResult<UserData> {
         return withContext(Dispatchers.IO) {
             try {
@@ -162,15 +173,18 @@ class UserRepository @Inject constructor(
                 val userId = userPreferences.getUserId().first()
                 val acceptedTerms = userPreferences.isTermsAccepted().first()
                 val enabledMarketing = userPreferences.isMarketingAccepted().first()
-                val token = userPreferences.getAuthToken().first() // ✅ Get token for debugging
+                val token = userPreferences.getAuthToken().first()
 
                 Timber.d("=== Update User Info ===")
                 Timber.d("UserId: $userId")
                 Timber.d("Token: ${token?.take(20)}...")
-                Timber.d("Name: $name")
+                Timber.d("Name: $name, LastName: $lastName")
                 Timber.d("Gender: $gender")
                 Timber.d("Height: $height")
                 Timber.d("Weight: $weight")
+                Timber.d("NationalCode: $nationalCode")
+                Timber.d("Email: $email")
+                Timber.d("DiseaseIds: $diseaseIds")
                 Timber.d("Terms: $acceptedTerms")
                 Timber.d("Marketing: $enabledMarketing")
 
@@ -178,20 +192,19 @@ class UserRepository @Inject constructor(
                     return@withContext AuthResult.Error("کاربر وارد نشده است")
                 }
 
-                // Convert userId Long to String (reverse the hashCode operation)
-                // Note: We stored userId.hashCode().toLong() in preferences
-                // For now, we'll use the userId as string directly
-                val userIdString = userId.toString()
-
                 val request = UpdateUserRequest(
-                    userId = userIdString,
+                    userId = userId,
                     name = name,
+                    lastName = lastName,
                     birthDate = birthDate,
                     gender = gender,
                     height = height,
                     weight = weight,
+                    nationalCode = nationalCode,
+                    email = email,
                     acceptedTermsAndPolicy = acceptedTerms,
-                    enabledEmailMarketing = enabledMarketing
+                    enabledEmailMarketing = enabledMarketing,
+                    diseaseIds = diseaseIds
                 )
 
                 val response = apiService.updateUserInfo(request)
@@ -202,13 +215,17 @@ class UserRepository @Inject constructor(
                         // Save personal info locally as well
                         userPreferences.savePersonalInfo(
                             name = name,
+                            lastName = lastName,
                             birthDate = birthDate,
                             height = height,
                             weight = weight,
-                            gender = if (gender == 1) "مرد" else "زن"
+                            gender = if (gender == 1) "مرد" else "زن",
+                            nationalCode = nationalCode,
+                            email = email,
+                            diseaseIds = diseaseIds
                         )
 
-                        Timber.i("User info added successfully")
+                        Timber.i("User info updated successfully")
                         AuthResult.Success(userData)
                     } else {
                         AuthResult.Error("خطا در ذخیره اطلاعات")
@@ -217,11 +234,11 @@ class UserRepository @Inject constructor(
                     val errorMessage = response.body()?.errors?.firstOrNull()
                         ?: response.body()?.message
                         ?: "خطا در ذخیره اطلاعات"
-                    Timber.w("Add user info failed: $errorMessage")
+                    Timber.w("Update user info failed: $errorMessage")
                     AuthResult.Error(errorMessage)
                 }
             } catch (e: Exception) {
-                Timber.e(e, "Add user info exception")
+                Timber.e(e, "Update user info exception")
                 AuthResult.Error("خطا در ارتباط با سرور")
             }
         }
@@ -249,6 +266,34 @@ class UserRepository @Inject constructor(
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Get user profile exception")
+                AuthResult.Error("خطا در ارتباط با سرور")
+            }
+        }
+    }
+
+    /**
+     * Get all available diseases from API
+     */
+    suspend fun getDiseases(): AuthResult<List<DiseaseData>> {
+        return withContext(Dispatchers.IO) {
+            try {
+                Timber.d("📥 Fetching diseases from API...")
+
+                val response = apiService.getDiseases()
+
+                if (response.isSuccessful && response.body()?.isSuccess == true) {
+                    val diseases = response.body()?.data ?: emptyList()
+                    Timber.i("✅ Fetched ${diseases.size} diseases")
+                    AuthResult.Success(diseases)
+                } else {
+                    val errorMessage = response.body()?.errors?.firstOrNull()
+                        ?: response.body()?.message
+                        ?: "خطا در دریافت لیست بیماری‌ها"
+                    Timber.w("❌ Get diseases failed: $errorMessage")
+                    AuthResult.Error(errorMessage)
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "❌ Get diseases exception")
                 AuthResult.Error("خطا در ارتباط با سرور")
             }
         }

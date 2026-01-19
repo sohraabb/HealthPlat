@@ -106,6 +106,8 @@ data class UserData(
 data class UserInfoData(
     @SerialName("Name")
     val name: String,
+    @SerialName("LastName")
+    val lastName: String? = null,
     @SerialName("BirthDate")
     val birthDate: String,
     @SerialName("Gender")
@@ -114,8 +116,12 @@ data class UserInfoData(
     val height: Int,
     @SerialName("Weight")
     val weight: Int,
+    @SerialName("NationalCode")
+    val nationalCode: String? = null,
     @SerialName("CreatedDate")
-    val createdDate: String
+    val createdDate: String,
+    @SerialName("DiseaseIds")
+    val diseaseIds: List<Int>? = null
 )
 
 // ============ Device Response Models ============

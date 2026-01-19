@@ -5,6 +5,7 @@ import com.bonyad.healthplat.domain.model.AddCaregiverRequest
 import com.bonyad.healthplat.domain.model.AddUserDeviceRequest
 import com.bonyad.healthplat.domain.model.ApiResponse
 import com.bonyad.healthplat.domain.model.CaregiverData
+import com.bonyad.healthplat.domain.model.DiseaseData
 import com.bonyad.healthplat.domain.model.LoginByPhoneRequest
 import com.bonyad.healthplat.domain.model.LoginResponse
 import com.bonyad.healthplat.domain.model.MetricData
@@ -122,6 +123,13 @@ interface HealthPlatApiService {
     @GET("User/GetUserOverview")
     suspend fun getUserOverview(): Response<ApiResponse<UserOverviewData>>
 
+    /**
+     * Get all available diseases
+     * GET /api/User/GetDiseases
+     */
+    @GET("User/GetDiseases")
+    suspend fun getDiseases(): Response<ApiResponse<List<DiseaseData>>>
+
 
     // ============ Device Management APIs ============
 
@@ -174,6 +182,67 @@ interface HealthPlatApiService {
 
     @POST("Metrics/Hrv")
     suspend fun uploadHrv(@Body request: MetricRequest): Response<ApiResponse<MetricData>>
+
+    /**
+     * Get Heart Rate metrics for a date range
+     * GET /api/Metrics/HeartRate?dateFrom=2025-12-26&dateTo=2025-12-26
+     * Requires Bearer token
+     */
+    @GET("Metrics/HeartRate")
+    suspend fun getHeartRateMetrics(
+        @Query("dateFrom") dateFrom: String,  // Format: yyyy-MM-dd
+        @Query("dateTo") dateTo: String       // Format: yyyy-MM-dd
+    ): Response<ApiResponse<List<MetricData>>>
+
+    /**
+     * Get Steps metrics for a date range
+     * GET /api/Metrics/Steps?dateFrom=2025-12-26&dateTo=2025-12-26
+     */
+    @GET("Metrics/Steps")
+    suspend fun getStepsMetrics(
+        @Query("dateFrom") dateFrom: String,
+        @Query("dateTo") dateTo: String
+    ): Response<ApiResponse<List<MetricData>>>
+
+    /**
+     * Get Sleep metrics for a date range
+     * GET /api/Metrics/Sleep?dateFrom=2025-12-26&dateTo=2025-12-26
+     */
+    @GET("Metrics/Sleep")
+    suspend fun getSleepMetrics(
+        @Query("dateFrom") dateFrom: String,
+        @Query("dateTo") dateTo: String
+    ): Response<ApiResponse<List<MetricData>>>
+
+    /**
+     * Get SpO2 metrics for a date range
+     * GET /api/Metrics/Spo2?dateFrom=2025-12-26&dateTo=2025-12-26
+     */
+    @GET("Metrics/Spo2")
+    suspend fun getSpo2Metrics(
+        @Query("dateFrom") dateFrom: String,
+        @Query("dateTo") dateTo: String
+    ): Response<ApiResponse<List<MetricData>>>
+
+    /**
+     * Get Stress metrics for a date range
+     * GET /api/Metrics/Stress?dateFrom=2025-12-26&dateTo=2025-12-26
+     */
+    @GET("Metrics/Stress")
+    suspend fun getStressMetrics(
+        @Query("dateFrom") dateFrom: String,
+        @Query("dateTo") dateTo: String
+    ): Response<ApiResponse<List<MetricData>>>
+
+    /**
+     * Get HRV metrics for a date range
+     * GET /api/Metrics/Hrv?dateFrom=2025-12-26&dateTo=2025-12-26
+     */
+    @GET("Metrics/Hrv")
+    suspend fun getHrvMetrics(
+        @Query("dateFrom") dateFrom: String,
+        @Query("dateTo") dateTo: String
+    ): Response<ApiResponse<List<MetricData>>>
 
 
 // ============ Care/Caregiver APIs ============

@@ -1,12 +1,12 @@
 package com.bonyad.healthplat.ui.dashboard
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,13 +21,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.painter.Painter
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -35,9 +36,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.navigation.NavController
-import androidx.navigation.compose.rememberNavController
 import com.bonyad.healthplat.R
+import com.bonyad.healthplat.ui.components.ConnectionIndicatorButton
+import com.bonyad.healthplat.ui.components.ConnectivityBottomSheet
+import com.bonyad.healthplat.ui.components.DeviceConnectionState
+import com.bonyad.healthplat.ui.components.InfoBottomSheet
 import com.bonyad.healthplat.ui.navigation.HealthDetailRoutes
 import com.bonyad.healthplat.ui.navigation.NavRoutes
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
@@ -82,6 +85,25 @@ fun HomeScreen(
 
     val readinessScore by viewModel.readinessScore.collectAsState()
     val insights by viewModel.healthInsights.collectAsState()
+
+    // ==================== CONNECTIVITY STATE ====================
+    var showConnectivitySheet by remember { mutableStateOf(false) }
+    val connectivitySheetState = rememberModalBottomSheetState()
+
+    // Determine connection state for indicator
+    val connectionState = remember(healthOverview.isDeviceConnected, healthOverview.batteryLevel) {
+        if (healthOverview.isDeviceConnected) {
+            DeviceConnectionState.Connected(batteryLevel = healthOverview.batteryLevel ?: 50)
+        } else {
+            DeviceConnectionState.Disconnected
+        }
+    }
+    // ============================================================
+
+    // ==================== INFO BOTTOM SHEET STATE ====================
+    var showInfoSheet by remember { mutableStateOf(false) }
+    val infoSheetState = rememberModalBottomSheetState()
+    // =================================================================
 
     val healthCards = remember(healthOverview) {
         listOf(
@@ -176,6 +198,41 @@ fun HomeScreen(
         )
     }
 
+    // ==================== CONNECTIVITY BOTTOM SHEET ====================
+    if (showConnectivitySheet) {
+        ConnectivityBottomSheet(
+            connectionState = connectionState,
+            onDismiss = { showConnectivitySheet = false },
+            onConnectClick = {
+                showConnectivitySheet = false
+                viewModel.connectDevice()
+            },
+            sheetState = connectivitySheetState
+        )
+    }
+    // ===================================================================
+
+    // ==================== INFO BOTTOM SHEET ====================
+    if (showInfoSheet) {
+        InfoBottomSheet(
+            onDismiss = { showInfoSheet = false },
+            onFaqClick = {
+                // TODO: Navigate to FAQ screen
+                // onNavigateToDetail("faq")
+            },
+            onContactClick = {
+                // TODO: Navigate to Contact screen or open contact dialog
+                // onNavigateToDetail("contact")
+            },
+            onAppGuideClick = {
+                // TODO: Navigate to App Guide screen
+                // onNavigateToDetail("app_guide")
+            },
+            sheetState = infoSheetState
+        )
+    }
+    // ===========================================================
+
     Scaffold(
         topBar = {
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -199,13 +256,22 @@ fun HomeScreen(
                         }
                     },
                     actions = {
-                        IconButton(onClick = { viewModel.syncDeviceHistory()}) {
+                        // ==================== CONNECTION INDICATOR BUTTON ====================
+                        ConnectionIndicatorButton(
+                            connectionState = connectionState,
+                            onClick = { showConnectivitySheet = true }
+                        )
+                        // =====================================================================
+
+                        // ==================== INFO/HELP BUTTON ====================
+                        IconButton(onClick = { showInfoSheet = true }) {
                             Icon(
                                 painter = painterResource(R.drawable.information),
                                 contentDescription = "Help",
                                 tint = TextGray
                             )
                         }
+                        // ==========================================================
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = Color(0xFFF5F5F5)
@@ -226,7 +292,6 @@ fun HomeScreen(
             NewHealthStatusCard(
                 score = readinessScore,
                 insights = insights,
-                viewModel = viewModel,
                 navigateToAi = { onNavigateToAi(NavRoutes.AiScreen.route) }
             )
 
@@ -291,7 +356,6 @@ fun HomeScreen(
 fun NewHealthStatusCard(
     score: Int,
     insights: List<String>,
-    viewModel: DashboardViewModel,
     navigateToAi: () -> Unit
 ) {
     Card(
@@ -305,9 +369,7 @@ fun NewHealthStatusCard(
             )
             .border(1.dp, TealPrimary.copy(alpha = 0.1f), RoundedCornerShape(24.dp)),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        )
+        colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
         Column(
             modifier = Modifier
@@ -328,32 +390,17 @@ fun NewHealthStatusCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(100.dp)
-                        .border(4.dp, TealPrimary.copy(alpha = 0.2f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = score.toString().toFarsiDigits(),
-                            style = MaterialTheme.typography.headlineLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = TextDark
-                            )
-                        )
-                        Text(
-                            text = "/۱۰۰",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextGray
-                        )
-                    }
-                }
+                // --- MODIFIED CIRCLE SECTION ---
+                HealthScoreCircle(
+                    score = score,
+                    modifier = Modifier.size(120.dp) // Increased size slightly to fit dots
+                )
+                // -------------------------------
 
                 Spacer(modifier = Modifier.width(16.dp))
 
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                     horizontalAlignment = Alignment.End,
                     modifier = Modifier.weight(1f)
                 ) {
@@ -371,18 +418,92 @@ fun NewHealthStatusCard(
                     .fillMaxWidth()
                     .height(50.dp),
                 shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White
-                ),
-                border = androidx.compose.foundation.BorderStroke(1.dp, TealPrimary)
+                colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                border = BorderStroke(1.dp, TealPrimary)
             ) {
                 Text(
                     text = "تحلیل هوش مصنوعی",
-                    color = TealPrimary,
+                    color = Color.Black,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp
                 )
             }
+        }
+    }
+}
+
+/**
+ * Custom Component to draw the dotted ring and thinner progress bar
+ */
+@Composable
+fun HealthScoreCircle(
+    score: Int,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        // 1. The Dotted Ring (Canvas)
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val center = this.center
+            // Radius is half the size, minus a little padding so dots aren't cut off
+            val radius = (size.minDimension / 2) - 2.dp.toPx()
+            val dotRadius = 1.5.dp.toPx() // Size of the dots
+            val step = 10 // Degrees between dots (360 / 10 = 36 dots)
+
+            for (angle in 0 until 360 step step) {
+                val rad = Math.toRadians(angle.toDouble())
+                val x = center.x + (radius * Math.cos(rad)).toFloat()
+                val y = center.y + (radius * Math.sin(rad)).toFloat()
+
+                drawCircle(
+                    color = TealPrimary.copy(alpha = 0.2f), // Faint dots
+                    radius = dotRadius,
+                    center = Offset(x, y)
+                )
+            }
+        }
+
+        // 2. The Progress Bar (with padding to sit inside the dots)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp), // Push the circle inside the dots
+            contentAlignment = Alignment.Center
+        ) {
+            // Background Track
+            CircularProgressIndicator(
+                progress = { 1f },
+                modifier = Modifier.fillMaxSize(),
+                color = TealPrimary.copy(alpha = 0.1f),
+                strokeWidth = 5.dp, // Thinner
+            )
+            // Actual Progress
+            CircularProgressIndicator(
+                progress = { score / 100f },
+                modifier = Modifier.fillMaxSize(),
+                color = TealPrimary,
+                strokeWidth = 5.dp, // Thinner
+                strokeCap = StrokeCap.Round,
+            )
+        }
+
+        // 3. The Text
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = score.toString().toFarsiDigits(),
+                style = MaterialTheme.typography.headlineLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = TextDark,
+                    fontSize = 32.sp
+                )
+            )
+            Text(
+                text = "/۱۰۰",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextGray
+            )
         }
     }
 }
@@ -537,26 +658,47 @@ fun ChartContent(chartType: ChartType, color: Color) {
 
 @Composable
 fun HeartRateChart(color: Color) {
-    Canvas(
+    Row(
         modifier = Modifier
             .fillMaxSize()
-            .padding(vertical = 8.dp)
+            .padding(vertical = 4.dp, horizontal = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween, // Evenly space the 5 bars
+        verticalAlignment = Alignment.Bottom
     ) {
-        val path = Path()
-        val width = size.width
-        val height = size.height
-        path.moveTo(0f, height * 0.7f)
-        path.lineTo(width * 0.2f, height * 0.6f)
-        path.lineTo(width * 0.4f, height * 0.8f)
-        path.lineTo(width * 0.5f, height * 0.2f)
-        path.lineTo(width * 0.6f, height * 0.7f)
-        path.lineTo(width * 0.8f, height * 0.5f)
-        path.lineTo(width, height * 0.65f)
-
-        drawPath(
-            path = path,
+        // Bar 1: Split (Light Top / Dark Bottom)
+        SplitBar(
             color = color,
-            style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+            totalHeightFraction = 0.65f,
+            topFraction = 0.3f,
+            bottomFraction = 0.6f
+        )
+
+        // Bar 2: Solid Tall Bar
+        SolidBar(
+            color = color,
+            heightFraction = 0.95f
+        )
+
+        // Bar 3: Split (Larger Top / Smaller Bottom)
+        SplitBar(
+            color = color,
+            totalHeightFraction = 0.6f,
+            topFraction = 0.5f,
+            bottomFraction = 0.4f
+        )
+
+        // Bar 4: Split (Small Top / Large Bottom)
+        SplitBar(
+            color = color,
+            totalHeightFraction = 0.8f,
+            topFraction = 0.2f,
+            bottomFraction = 0.7f
+        )
+
+        // Bar 5: Solid Tall Bar
+        SolidBar(
+            color = color,
+            heightFraction = 0.95f
         )
     }
 }
@@ -586,69 +728,203 @@ fun SpO2Chart(color: Color) {
     Canvas(
         modifier = Modifier
             .fillMaxSize()
-            .padding(vertical = 12.dp)
+            .padding(vertical = 8.dp)
     ) {
-        val path = Path()
         val w = size.width
         val h = size.height
-        path.moveTo(0f, h * 0.5f)
-        path.lineTo(w * 0.2f, h * 0.5f)
-        path.lineTo(w * 0.2f, h * 0.3f)
-        path.lineTo(w * 0.5f, h * 0.3f)
-        path.lineTo(w * 0.5f, h * 0.6f)
-        path.lineTo(w * 0.8f, h * 0.6f)
-        path.lineTo(w * 0.8f, h * 0.4f)
-        path.lineTo(w, h * 0.4f)
 
+        // Step line path
+        val linePath = Path().apply {
+            moveTo(0f, h * 0.6f)
+            lineTo(w * 0.25f, h * 0.6f)
+            lineTo(w * 0.25f, h * 0.3f)
+            lineTo(w * 0.5f, h * 0.3f)
+            lineTo(w * 0.5f, h * 0.5f)
+            lineTo(w * 0.75f, h * 0.5f)
+            lineTo(w * 0.75f, h * 0.4f)
+            lineTo(w, h * 0.4f)
+        }
+
+        // Filled area path (same as line but closed at bottom)
+        val fillPath = Path().apply {
+            moveTo(0f, h * 0.6f)
+            lineTo(w * 0.25f, h * 0.6f)
+            lineTo(w * 0.25f, h * 0.3f)
+            lineTo(w * 0.5f, h * 0.3f)
+            lineTo(w * 0.5f, h * 0.5f)
+            lineTo(w * 0.75f, h * 0.5f)
+            lineTo(w * 0.75f, h * 0.4f)
+            lineTo(w, h * 0.4f)
+            // Close the path at the bottom
+            lineTo(w, h)
+            lineTo(0f, h)
+            close()
+        }
+
+        // Draw gradient fill
         drawPath(
-            path = path,
+            path = fillPath,
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    color.copy(alpha = 0.3f),
+                    color.copy(alpha = 0.05f)
+                ),
+                startY = 0f,
+                endY = h
+            )
+        )
+
+        // Draw the step line on top
+        drawPath(
+            path = linePath,
             color = color,
-            style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Square)
+            style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Square)
         )
     }
 }
 
 @Composable
 fun SleepChart(color: Color) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        // Moon icon representation using canvas
-        Canvas(modifier = Modifier.size(40.dp)) {
-            drawCircle(
-                color = color.copy(alpha = 0.3f),
-                radius = size.minDimension / 2
-            )
-            drawCircle(
-                color = Color.White,
-                radius = size.minDimension / 2.5f,
-                center = center.copy(x = center.x + size.minDimension / 6)
-            )
+    // Colors based on the purple palette in the image
+    val awakeColor = Color(0xFFE1D5FF)
+    val remColor = Color(0xFFC4B5FD)
+    val deepColor = Color(0xFF8B5CF6) // Darkest purple
+    val lightColor = Color(0xFFDDD6FE)
+
+    val segments = listOf(
+        Pair("بیدار", awakeColor),
+        Pair("REM", remColor),
+        Pair("عمیق", deepColor),
+        Pair("سبک", lightColor)
+    )
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(40.dp) // Taller bar like the image
+                .clip(RoundedCornerShape(4.dp))
+        ) {
+            segments.forEach { (label, color) ->
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .background(color),
+                    contentAlignment = Alignment.BottomCenter
+                ) {
+                    Text(
+                        text = label,
+                        color = Color.White.copy(alpha = 0.8f),
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-fun StressChart(color: Color) {
-    Canvas(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(vertical = 8.dp)
+private fun LegendDot(color: Color, label: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        val path = Path()
-        val w = size.width
-        val h = size.height
-
-        // Wavy stress line
-        path.moveTo(0f, h * 0.5f)
-        path.quadraticBezierTo(w * 0.25f, h * 0.2f, w * 0.5f, h * 0.5f)
-        path.quadraticBezierTo(w * 0.75f, h * 0.8f, w, h * 0.5f)
-
-        drawPath(
-            path = path,
-            color = color,
-            style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(color)
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.Gray,
+            fontSize = 8.sp
         )
     }
 }
+
+@Composable
+fun StressChart(color: Color, stressLevel: Int = 90) {
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(60.dp)
+            .padding(horizontal = 8.dp)
+    ) {
+        val width = size.width
+        val height = size.height
+
+        // The image shows a filled semi-circle/arc
+        val arcPath = Path().apply {
+            moveTo(0f, height)
+            // Create the "hump" shape
+            cubicTo(
+                width * 0.1f, height * 0.1f,
+                width * 0.9f, height * 0.1f,
+                width, height
+            )
+            close()
+        }
+
+        drawPath(
+            path = arcPath,
+            color = Color(0xFFDBAB33) // The golden/yellow color from the screenshot
+        )
+    }
+}
+
+// --- Helper Composables for the specific Figma style ---
+
+@Composable
+private fun SolidBar(color: Color, heightFraction: Float) {
+    Box(
+        modifier = Modifier
+            .width(8.dp) // Match thickness from design
+            .fillMaxHeight(heightFraction)
+            .clip(RoundedCornerShape(50)) // Fully rounded "Pill" shape
+            .background(color)
+    )
+}
+
+@Composable
+private fun SplitBar(
+    color: Color,
+    totalHeightFraction: Float,
+    topFraction: Float,
+    bottomFraction: Float
+) {
+    Column(
+        modifier = Modifier
+            .width(8.dp)
+            .fillMaxHeight(totalHeightFraction),
+        verticalArrangement = Arrangement.SpaceBetween // Pushes top up and bottom down
+    ) {
+        // Top Segment (Lighter/Faded)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(topFraction)
+                .clip(RoundedCornerShape(50))
+                .background(color.copy(alpha = 0.3f)) // Lighter shade for top part
+        )
+
+        Spacer(modifier = Modifier.height(3.dp)) // The gap between segments
+
+        // Bottom Segment (Solid)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(bottomFraction)
+                .clip(RoundedCornerShape(50))
+                .background(color)
+        )
+    }
+}
+
+
 
 // --------------------------------LEGACY------------------------------------
 
@@ -713,7 +989,6 @@ fun HomeScreenLegacy(
             NewHealthStatusCard(
                 score = readinessScore, // Mock score
                 insights = insights,
-                viewModel = viewModel
             ) { onNavigateToDetail("") }
             Column(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -858,7 +1133,7 @@ fun NewHealthStatusCardLegacy(
             ) {
                 Text(
                     text = "تحلیل هوش مصنوعی",
-                    color = TealPrimary,
+                    color = Color.Black,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp
                 )

@@ -20,6 +20,7 @@ import saman.zamani.persiandate.PersianDate
 import timber.log.Timber
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.util.GregorianCalendar
 import javax.inject.Inject
 
 
@@ -84,11 +85,19 @@ class HeartRateDetailViewModel @Inject constructor(
     val hrvChartData: StateFlow<List<Int>> = _hrvChartData.asStateFlow()
 
     // Add this function
-    private fun updateCurrentPersianDate() {
-        val pDate = PersianDate()
+    private fun updateCurrentPersianDate(offset: Int = 0) {
+        val today = LocalDate.now()
+        val targetDate = today.plusDays(offset.toLong())
+        val calendar = GregorianCalendar(targetDate.year, targetDate.monthValue - 1, targetDate.dayOfMonth)
+        val pDate = PersianDate(calendar.time)
         val dayOfMonth = pDate.shDay.toString().toFarsiDigits()
         val monthName = pDate.monthName
-        _currentPersianDate.value = "امروز $dayOfMonth $monthName"
+
+        _currentPersianDate.value = when (offset) {
+            0 -> "امروز $dayOfMonth $monthName"
+            -1 -> "دیروز $dayOfMonth $monthName"
+            else -> "$monthName $dayOfMonth"
+        }
     }
 
     // Loading state
@@ -180,16 +189,19 @@ class HeartRateDetailViewModel @Inject constructor(
             "روزانه" -> {
                 val targetDate = today.plusDays(_selectedDayOffset.value.toLong())
                 val dateStr = targetDate.format(formatter)
+                updateCurrentPersianDate(_selectedDayOffset.value)
                 Pair(dateStr, dateStr)
             }
             "هفتگی" -> {
                 val dateFrom = today.minusDays(6).format(formatter)
                 val dateTo = today.format(formatter)
+                _currentPersianDate.value = "هفته گذشته"
                 Pair(dateFrom, dateTo)
             }
             "ماهانه" -> {
                 val dateFrom = today.minusDays(29).format(formatter)
                 val dateTo = today.format(formatter)
+                _currentPersianDate.value = "ماه گذشته"
                 Pair(dateFrom, dateTo)
             }
             else -> {
@@ -426,6 +438,7 @@ class HeartRateDetailViewModel @Inject constructor(
 
     fun selectDay(offset: Int) {
         _selectedDayOffset.value = offset
+        updateCurrentPersianDate(offset)
         if (_selectedTimeRange.value == "روزانه") {
             loadDataFromApi()
         }

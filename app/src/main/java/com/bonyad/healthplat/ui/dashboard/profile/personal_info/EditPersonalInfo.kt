@@ -149,8 +149,9 @@ fun EditPersonalInfoScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .systemBarsPadding()
                         .background(BackgroundColor)
-                        .padding(horizontal = 24.dp, vertical = 16.dp)
+                        .padding(horizontal = 24.dp, vertical = 24.dp)
                 ) {
                     Button(
                         onClick = { viewModel.savePersonalInfo() },
@@ -173,6 +174,7 @@ fun EditPersonalInfoScreen(
                         } else {
                             Text(
                                 text = "ذخیره",
+                                color = Color.White,
                                 style = MaterialTheme.typography.bodyLarge.copy(
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold

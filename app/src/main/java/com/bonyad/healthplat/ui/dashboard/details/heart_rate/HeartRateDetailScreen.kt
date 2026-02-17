@@ -95,15 +95,17 @@ fun HeartRateDetailScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 2. Date Strip (The horizontal list of days)
-            val selectedOffset by viewModel.selectedDayOffset.collectAsState()
+            // 2. Date Strip (only for daily view)
+            if (selectedRange == "روزانه") {
+                val selectedOffset by viewModel.selectedDayOffset.collectAsState()
 
-            DateStrip(
-                selectedOffset = selectedOffset,
-                onDaySelected = { offset ->
-                    viewModel.selectDay(offset)
-                }
-            )
+                DateStrip(
+                    selectedOffset = selectedOffset,
+                    onDaySelected = { offset ->
+                        viewModel.selectDay(offset)
+                    }
+                )
+            }
             Spacer(modifier = Modifier.height(24.dp))
 
             Column(modifier = Modifier.padding(horizontal = 16.dp)) {
@@ -112,7 +114,10 @@ fun HeartRateDetailScreen(
                     horizontalArrangement = Arrangement.End
                 ) {
                     Text(
-                        text = "ضربان قلب شما",
+                        text = when (selectedRange) {
+                            "هفتگی", "ماهانه" -> "میانگین ضربان قلب شما"
+                            else -> "ضربان قلب شما"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.Gray
                     )
@@ -124,18 +129,20 @@ fun HeartRateDetailScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "bpm",
-                        fontSize = 14.sp,
-                        color = Color.Gray
+                        text = currentHeartRate.toString().toFarsiDigits(),
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = 20.sp,
+                            color = Color.Black
+                        )
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = currentHeartRate.toString().toFarsiDigits(),
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.DarkGray
+                        text = "bpm",
+                        fontSize = 14.sp,
+                        color = Color(0xFF6B6B6B)
                     )
                 }
+
 
                 Spacer(modifier = Modifier.height(8.dp))
 
@@ -705,7 +712,10 @@ fun DateStrip(
  * - Proper clipping
  */
 @Composable
-fun HeartRateRangeChart(data: List<HeartRateRangePoint>) {
+fun HeartRateRangeChart(
+    data: List<HeartRateRangePoint>,
+    showEmptyState: Boolean = data.filter { it.min > 1 && it.max > 1 }.isEmpty()
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -716,18 +726,16 @@ fun HeartRateRangeChart(data: List<HeartRateRangePoint>) {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(240.dp)
-                .padding(top = 16.dp, bottom = 24.dp)
+                .padding(16.dp)
         ) {
-            // Filter valid data (exclude 0, 1 values)
             val validData = data.filter { it.min > 1 && it.max > 1 }
 
             Row(modifier = Modifier.fillMaxSize()) {
-                // Y-Axis Labels
+                // Y-Axis Labels (Left side)
                 Column(
                     modifier = Modifier
-                        .width(32.dp)
                         .fillMaxHeight()
-                        .padding(end = 4.dp, top = 8.dp, bottom = 16.dp),
+                        .padding(end = 8.dp, bottom = 20.dp), // Adjust bottom padding to align with chart area
                     verticalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text("۱۵۰", fontSize = 10.sp, color = Color.Gray)
@@ -735,100 +743,103 @@ fun HeartRateRangeChart(data: List<HeartRateRangePoint>) {
                     Text("۵۰", fontSize = 10.sp, color = Color.Gray)
                 }
 
-                // Chart Area
-                Box(modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()) {
+                // Chart Content
+                Box(modifier = Modifier.weight(1f)) {
                     Canvas(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(top = 8.dp, bottom = 16.dp, end = 8.dp)
+                            .padding(bottom = 20.dp) // Space for X-axis labels
                     ) {
                         val width = size.width
                         val height = size.height
 
+                        // Fixed Range for stability (matching the 50-150 labels)
                         val yMin = 50f
                         val yMax = 150f
                         val yRange = yMax - yMin
 
-                        // Draw horizontal grid lines
-                        val gridLines = listOf(50f, 100f, 150f)
-                        gridLines.forEach { value ->
-                            val y = height - ((value - yMin) / yRange) * height
+                        // 1. Draw Grid Lines (Dashed)
+                        val gridLines = listOf(0f, 0.5f, 1f) // Top, Middle, Bottom relative positions
+                        val dashEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+
+                        gridLines.forEach { fraction ->
+                            val y = height * fraction
                             drawLine(
-                                color = Color.LightGray.copy(alpha = 0.5f),
+                                color = Color(0xFFEEEEEE),
                                 start = Offset(0f, y),
                                 end = Offset(width, y),
                                 strokeWidth = 1.dp.toPx(),
-                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f)
+                                pathEffect = dashEffect
                             )
                         }
 
-                        // Draw vertical grid lines (every 6 hours)
-                        val verticalLines = listOf(0f, 0.25f, 0.5f, 0.75f, 1f)
-                        verticalLines.forEach { fraction ->
-                            val x = width * fraction
+                        // Vertical Grid Lines (every 6 hours approx)
+                        val verticalDivisions = 4
+                        for (i in 0..verticalDivisions) {
+                            val x = (width / verticalDivisions) * i
                             drawLine(
-                                color = Color.LightGray.copy(alpha = 0.3f),
+                                color = Color(0xFFEEEEEE),
                                 start = Offset(x, 0f),
                                 end = Offset(x, height),
                                 strokeWidth = 1.dp.toPx(),
-                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f)
+                                pathEffect = dashEffect
                             )
                         }
 
                         if (validData.isEmpty()) return@Canvas
 
-                        val barWidth = 3.dp.toPx()
+                        // 2. Draw Bars
+                        val barWidth = 6.dp.toPx()
+                        val cornerRadius = CornerRadius(barWidth / 2, barWidth / 2)
+                        val barColor = Color(0xFFFF6B6B) // Salmon/Red color from Figma
 
-                        // Map data points to their hour positions (0-23)
                         validData.forEach { point ->
-                            // Extract hour from timeLabel (e.g., "08:00" -> 8)
+                            // Calculate X position based on time (00:00 - 23:59)
                             val hour = point.timeLabel.split(":").firstOrNull()?.toIntOrNull() ?: 0
-
-                            // X position based on hour (00:00 to 23:59)
                             val x = (hour / 24f) * width
 
-                            // Clamp values to visible range
-                            val clampedMin = point.min.coerceIn(yMin.toInt(), yMax.toInt())
-                            val clampedMax = point.max.coerceIn(yMin.toInt(), yMax.toInt())
+                            // Calculate Y positions
+                            // Clamp values to the visual range so bars don't fly off screen
+                            val rawMin = point.min.toFloat()
+                            val rawMax = point.max.toFloat()
 
-                            val topY = height - ((clampedMax - yMin) / yRange) * height
-                            val bottomY = height - ((clampedMin - yMin) / yRange) * height
-                            val barHeight = (bottomY - topY).coerceAtLeast(4.dp.toPx())
+                            val safeMin = rawMin.coerceIn(yMin, yMax)
+                            val safeMax = rawMax.coerceIn(yMin, yMax)
 
-                            // Draw the vertical bar
-                            drawRoundRect(
-                                color = Color(0xFFFF8A80),
-                                topLeft = Offset(x - barWidth / 2, topY),
-                                size = Size(barWidth, barHeight),
-                                cornerRadius = CornerRadius(barWidth / 2, barWidth / 2)
-                            )
+                            val yTop = height - ((safeMax - yMin) / yRange) * height
+                            val yBottom = height - ((safeMin - yMin) / yRange) * height
 
-                            // Draw dots
-                            drawCircle(
-                                color = Color(0xFFE53935),
-                                radius = 3.dp.toPx(),
-                                center = Offset(x, topY)
-                            )
-                            drawCircle(
-                                color = Color(0xFFE53935),
-                                radius = 3.dp.toPx(),
-                                center = Offset(x, bottomY)
-                            )
+                            // Visual correction: ensure min height for visibility
+                            val calculatedHeight = yBottom - yTop
+
+                            if (calculatedHeight < barWidth) {
+                                // Draw as a Dot (Circle) if range is very small
+                                drawCircle(
+                                    color = barColor,
+                                    radius = barWidth / 2,
+                                    center = Offset(x, yTop + calculatedHeight / 2)
+                                )
+                            } else {
+                                // Draw as a Capsule (Rounded Rect)
+                                drawRoundRect(
+                                    color = barColor,
+                                    topLeft = Offset(x - barWidth / 2, yTop),
+                                    size = Size(barWidth, calculatedHeight),
+                                    cornerRadius = cornerRadius
+                                )
+                            }
                         }
                     }
 
-                    // Time Labels at bottom - LTR for correct ordering
+                    // X-Axis Labels (Bottom)
                     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .align(Alignment.BottomCenter)
-                                .padding(end = 8.dp),
+                                .align(Alignment.BottomCenter),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            listOf("۰۰:۰۰", "۰۷:۵۹", "۱۵:۵۹", "۲۳:۵۹").forEach { label ->
+                            listOf("00:00", "07:59", "15:59", "23:59").forEach { label ->
                                 Text(
                                     text = label,
                                     style = MaterialTheme.typography.bodySmall,
@@ -838,6 +849,19 @@ fun HeartRateRangeChart(data: List<HeartRateRangePoint>) {
                             }
                         }
                     }
+                }
+            }
+
+            // Empty State
+            if (showEmptyState) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.White.copy(alpha = 0.8f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("داده‌ای موجود نیست", color = Color(0xFF6B6B6B)
+                    )
                 }
             }
         }
@@ -859,7 +883,7 @@ fun StatsRow(min: Int, avg: Int, max: Int) {
 }
 
 @Composable
-fun StatBox(title: String, value: Int, modifier: Modifier) {
+fun StatBox(title: String, value: Int, modifier: Modifier, unit: String = "bpm") {
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally
@@ -868,7 +892,7 @@ fun StatBox(title: String, value: Int, modifier: Modifier) {
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = Color.White),
-            border = BorderStroke(1.dp, Color(0xFF4CAF50)), // Green border
+            border = BorderStroke(1.dp, Color(0xFF5BA3A3)), // Green border
             shape = RoundedCornerShape(16.dp)
         ) {
             Box(
@@ -880,16 +904,17 @@ fun StatBox(title: String, value: Int, modifier: Modifier) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         value.toString().toFarsiDigits(),
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.DarkGray
+                        fontSize = 20.sp,
+                        color = Color(0xFF6B6B6B)
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        "bpm",
-                        fontSize = 14.sp,
-                        color = Color.Gray
-                    )
+                    if (unit.isNotEmpty()) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            unit,
+                            fontSize = 14.sp,
+                            color = Color.Gray
+                        )
+                    }
                 }
             }
         }
@@ -915,7 +940,7 @@ fun HrvSection(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.End
         ) {
-            Text("HRV", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+            Text("HRV", color = Color.Black, fontSize = 20.sp)
         }
 
         // Value and status row
@@ -1016,16 +1041,9 @@ fun HrvAreaChart(data: List<Int>) {
             val path = Path()
             val fillPath = Path()
 
-            // Find first valid point
-            val firstValue = validData.first().coerceIn(yMin.toInt(), yMax.toInt())
-            val firstY = height - ((firstValue - yMin) / yRange) * height
-
-            path.moveTo(0f, firstY)
-            fillPath.moveTo(0f, height)
-            fillPath.lineTo(0f, firstY)
-
             val pointSpacing = width / (validData.size - 1).coerceAtLeast(1)
 
+            // Build smooth bezier paths
             validData.forEachIndexed { index, value ->
                 val clampedValue = value.coerceIn(yMin.toInt(), yMax.toInt())
                 val x = index * pointSpacing
@@ -1033,15 +1051,23 @@ fun HrvAreaChart(data: List<Int>) {
 
                 if (index == 0) {
                     path.moveTo(x, y)
+                    fillPath.moveTo(0f, height)
                     fillPath.lineTo(x, y)
                 } else {
-                    path.lineTo(x, y)
-                    fillPath.lineTo(x, y)
+                    // Smooth cubic bezier between points
+                    val prevValue = validData[index - 1].coerceIn(yMin.toInt(), yMax.toInt())
+                    val prevX = (index - 1) * pointSpacing
+                    val prevY = height - ((prevValue - yMin) / yRange) * height
+
+                    val cx = (prevX + x) / 2f
+                    path.cubicTo(cx, prevY, cx, y, x, y)
+                    fillPath.cubicTo(cx, prevY, cx, y, x, y)
                 }
             }
 
             // Complete fill path
-            fillPath.lineTo(width, height)
+            val lastX = (validData.size - 1) * pointSpacing
+            fillPath.lineTo(lastX, height)
             fillPath.close()
 
             // Draw gradient fill
@@ -1049,8 +1075,8 @@ fun HrvAreaChart(data: List<Int>) {
                 path = fillPath,
                 brush = Brush.verticalGradient(
                     colors = listOf(
-                        Color(0xFFE53935).copy(alpha = 0.6f),
-                        Color(0xFFE53935).copy(alpha = 0.1f)
+                        Color(0xFFE53935).copy(alpha = 0.4f),
+                        Color(0xFFE53935).copy(alpha = 0.05f)
                     )
                 )
             )
@@ -1059,7 +1085,7 @@ fun HrvAreaChart(data: List<Int>) {
             drawPath(
                 path = path,
                 color = Color(0xFFE53935),
-                style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+                style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
             )
         }
 

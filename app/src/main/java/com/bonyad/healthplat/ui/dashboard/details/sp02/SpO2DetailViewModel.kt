@@ -7,15 +7,18 @@ import com.bonyad.healthplat.data.repository.HealthDataRepository
 import com.bonyad.healthplat.data.repository.MetricType
 import com.bonyad.healthplat.domain.model.MetricData
 import com.bonyad.healthplat.domain.model.RecordDataResult
+import com.bonyad.healthplat.ui.utils.toFarsiDigits
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import saman.zamani.persiandate.PersianDate
 import timber.log.Timber
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import java.util.GregorianCalendar
 import javax.inject.Inject
 
 @HiltViewModel
@@ -86,6 +89,7 @@ class SpO2DetailViewModel @Inject constructor(
 
     fun selectDay(offset: Int) {
         _selectedDayOffset.value = offset
+        updateDateLabel(offset)
         loadSpO2Data(offset)
     }
 
@@ -94,7 +98,13 @@ class SpO2DetailViewModel @Inject constructor(
     private fun loadSpO2Data(offset: Int) {
         viewModelScope.launch {
             _isLoading.value = true
-            updateDateLabel(offset)
+
+            // Update date label based on time range
+            when (_selectedTimeRange.value) {
+                "هفتگی" -> _dateLabel.value = "هفته گذشته"
+                "ماهانه" -> _dateLabel.value = "ماه گذشته"
+                else -> updateDateLabel(offset)
+            }
 
             try {
                 // PRIMARY: Try ring first
@@ -240,20 +250,16 @@ class SpO2DetailViewModel @Inject constructor(
     private fun updateDateLabel(offset: Int) {
         val today = LocalDate.now()
         val targetDate = today.plusDays(offset.toLong())
+        val calendar =
+            GregorianCalendar(targetDate.year, targetDate.monthValue - 1, targetDate.dayOfMonth)
+        val pDate = PersianDate(calendar.time)
+        val dayOfMonth = pDate.shDay.toString().toFarsiDigits()
+        val monthName = pDate.monthName
 
         _dateLabel.value = when (offset) {
-            0 -> "امروز"
-            -1 -> "دیروز"
-            else -> "${targetDate.dayOfMonth} ${getPersianMonth(targetDate.monthValue)}"
-        }
-    }
-
-    private fun getPersianMonth(month: Int): String {
-        return when (month) {
-            1 -> "ژانویه"; 2 -> "فوریه"; 3 -> "مارس"; 4 -> "آوریل"
-            5 -> "مه"; 6 -> "ژوئن"; 7 -> "جولای"; 8 -> "اوت"
-            9 -> "سپتامبر"; 10 -> "اکتبر"; 11 -> "نوامبر"; 12 -> "دسامبر"
-            else -> ""
+            0 -> "امروز $dayOfMonth $monthName"
+            -1 -> "دیروز $dayOfMonth $monthName"
+            else -> "$dayOfMonth $monthName"
         }
     }
 

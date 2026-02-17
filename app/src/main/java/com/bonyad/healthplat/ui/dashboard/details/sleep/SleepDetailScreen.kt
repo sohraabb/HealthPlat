@@ -93,7 +93,7 @@ fun SleepDetailScreen(
                         else -> "زمان خواب"
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray,
+                    color = Color(0xFF6B6B6B),
                     modifier = Modifier.align(Alignment.End)
                 )
                 Spacer(modifier = Modifier.height(4.dp))
@@ -105,27 +105,32 @@ fun SleepDetailScreen(
                     Text(
                         "دقیقه",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color.Gray,
+                        color = Color(0xFF6B6B6B),
                         modifier = Modifier.padding(bottom = 6.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         stats.minutes.toString().toFarsiDigits(),
                         color = Color.Black,
-                        style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold)
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = 20.sp,
+                            color = Color.Black
+                        )
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         "ساعت",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color.Gray,
+                        color = Color(0xFF6B6B6B),
                         modifier = Modifier.padding(bottom = 6.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         stats.hours.toString().toFarsiDigits(),
-                        color = Color.Black,
-                        style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold)
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = 20.sp,
+                            color = Color.Black
+                        )
                     )
                 }
                 // Dynamic date label
@@ -137,30 +142,12 @@ fun SleepDetailScreen(
                 )
             }
 
-            // 3. Timeline Chart (only for daily view with data)
-            if (selectedRange == "روزانه" && timelineData.isNotEmpty()) {
-                SleepTimelineChart(timelineData)
-            } else if (selectedRange == "روزانه" && timelineData.isEmpty() && !isLoading) {
-                // Empty state for daily view
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(150.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "داده خوابی موجود نیست",
-                            color = Color.Gray
-                        )
-                    }
-                }
+            // 3. Timeline Chart (only for daily view) - Always show structure
+            if (selectedRange == "روزانه") {
+                SleepTimelineChart(
+                    data = timelineData,
+                    showEmptyState = timelineData.isEmpty() && !isLoading
+                )
             }
 
             // 4. Quality Donut Card
@@ -176,9 +163,11 @@ fun SleepDetailScreen(
     }
 }
 
-
 @Composable
-fun SleepTimelineChart(data: List<SleepDetailViewModel.SleepSegment>) {
+fun SleepTimelineChart(
+    data: List<SleepDetailViewModel.SleepSegment>,
+    showEmptyState: Boolean = false
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -201,12 +190,13 @@ fun SleepTimelineChart(data: List<SleepDetailViewModel.SleepSegment>) {
                     .fillMaxWidth()
                     .height(150.dp)
             ) {
+                // Always draw the chart canvas with grid
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val w = size.width
                     val h = size.height
                     val rowHeight = h / 3
 
-                    // Grid Lines (Vertical Time)
+                    // Grid Lines (Vertical Time) - Always drawn
                     val pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
                     listOf(0.25f, 0.5f, 0.75f).forEach { r ->
                         drawLine(
@@ -217,30 +207,32 @@ fun SleepTimelineChart(data: List<SleepDetailViewModel.SleepSegment>) {
                         )
                     }
 
-                    // Draw Segments
-                    data.forEach { segment ->
-                        val x = segment.startRatio * w
-                        val width = (segment.widthRatio * w).coerceAtLeast(4f)
+                    // Draw Segments - Only if we have data
+                    if (data.isNotEmpty()) {
+                        data.forEach { segment ->
+                            val x = segment.startRatio * w
+                            val width = (segment.widthRatio * w).coerceAtLeast(4f)
 
-                        val (color, yTop) = when (segment.stage) {
-                            SleepDetailViewModel.SleepStage.LIGHT -> Color(0xFF66BB6A) to 0f
-                            SleepDetailViewModel.SleepStage.DEEP -> Color(0xFF42A5F5) to rowHeight
-                            SleepDetailViewModel.SleepStage.REM -> Color(0xFFAB47BC) to rowHeight * 2
-                            else -> Color.Transparent to 0f
-                        }
+                            val (color, yTop) = when (segment.stage) {
+                                SleepDetailViewModel.SleepStage.LIGHT -> Color(0xFF66BB6A) to 0f
+                                SleepDetailViewModel.SleepStage.DEEP -> Color(0xFF42A5F5) to rowHeight
+                                SleepDetailViewModel.SleepStage.REM -> Color(0xFFAB47BC) to rowHeight * 2
+                                else -> Color.Transparent to 0f
+                            }
 
-                        if (color != Color.Transparent) {
-                            drawRoundRect(
-                                color = color,
-                                topLeft = Offset(x, yTop + 10f),
-                                size = Size(width, rowHeight - 20f),
-                                cornerRadius = CornerRadius(8f, 8f)
-                            )
+                            if (color != Color.Transparent) {
+                                drawRoundRect(
+                                    color = color,
+                                    topLeft = Offset(x, yTop + 10f),
+                                    size = Size(width, rowHeight - 20f),
+                                    cornerRadius = CornerRadius(8f, 8f)
+                                )
+                            }
                         }
                     }
                 }
 
-                // Labels Overlay
+                // Labels Overlay - Always shown
                 Column(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.SpaceAround
@@ -249,9 +241,25 @@ fun SleepTimelineChart(data: List<SleepDetailViewModel.SleepSegment>) {
                     Text("عمیق", fontSize = 12.sp, color = Color.Gray)
                     Text("REM", fontSize = 12.sp, color = Color.Gray)
                 }
+
+                // Empty State Overlay - Only shown when there's no data
+                if (showEmptyState) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.White.copy(alpha = 0.7f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "داده خوابی موجود نیست",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.Gray
+                        )
+                    }
+                }
             }
 
-            // X-Axis
+            // X-Axis - Always shown
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -302,7 +310,6 @@ fun SleepQualityCard(
             .padding(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         shape = RoundedCornerShape(24.dp),
-        // Design fix: Added the subtle border stroke seen in the screenshot
         border = BorderStroke(1.dp, Color(0xFFEBEBEB)),
         elevation = CardDefaults.cardElevation(0.dp)
     ) {
@@ -317,7 +324,8 @@ fun SleepQualityCard(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier.size(135.dp)
                 ) {
-                    Canvas(modifier = Modifier.fillMaxSize()
+                    Canvas(modifier = Modifier
+                        .fillMaxSize()
                         .padding(8.dp)) {
                         val strokeWidth = 16.dp.toPx()
 
@@ -332,8 +340,6 @@ fun SleepQualityCard(
 
                         val total = percentages.first + percentages.second + percentages.third
                         if (total > 0) {
-                            // Using standard StrokeCap.Butt for flat edges (SQUARE)
-                            // instead of StrokeCap.Round (PILL)
                             val capStyle = Stroke(width = strokeWidth, cap = StrokeCap.Square)
 
                             var startAngle = -90f
@@ -362,9 +368,10 @@ fun SleepQualityCard(
                     // Score in center
                     Text(
                         text = if (score > 0) score.toString().toFarsiDigits() else "-",
-                        fontSize = 34.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.Black
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontSize = 24.sp,
+                            color = Color.Black
+                        )
                     )
                 }
 
@@ -373,25 +380,24 @@ fun SleepQualityCard(
                     horizontalAlignment = Alignment.End,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    // Title Aligned to End: "Excellent Darius"
+                    // Title Aligned to End
                     Text(
                         text = "$qualityLabel $userName",
                         fontSize = 20.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = Color.Black,
+                        color = Color(0xFF6B6B6B),
                         textAlign = TextAlign.End
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Legend items also aligned to End
+                    // Legend items
                     LegendItem("REM", Color(0xFFAB47BC))
                     LegendItem("خواب سبک", Color(0xFF66BB6A))
                     LegendItem("خواب عمیق", Color(0xFFFFCA28))
                 }
             }
 
-            // 3. HORIZONTAL SEPARATOR (Like the design)
+            // 3. HORIZONTAL SEPARATOR
             HorizontalDivider(
                 modifier = Modifier.padding(vertical = 20.dp),
                 thickness = 1.dp,

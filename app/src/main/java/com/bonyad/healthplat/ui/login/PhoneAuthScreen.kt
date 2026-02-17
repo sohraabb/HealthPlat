@@ -4,6 +4,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -21,12 +22,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.bonyad.healthplat.domain.model.AuthState
-import com.yourpackage.healthplat.ui.auth.AuthViewModel
 import com.bonyad.healthplat.R
 import kotlinx.coroutines.delay
 
@@ -77,6 +78,7 @@ fun PhoneAuthScreen(
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Scaffold(
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
             snackbarHost = { SnackbarHost(snackbarHostState) }
         ) { padding ->
             Box(
@@ -99,8 +101,7 @@ fun PhoneAuthScreen(
                         .padding(horizontal = 24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Spacer(modifier = Modifier.height(60.dp))
-
+                    Spacer(modifier = Modifier.height(32.dp))
                     // Logo/Icon
                     Image(
                         painter = painterResource(id = R.drawable.logo_tan),
@@ -117,7 +118,7 @@ fun PhoneAuthScreen(
                             fontWeight = FontWeight.Bold,
                             fontSize = 28.sp
                         ),
-                        color = Color(0xFF2C2C2C)
+                        color = Color(0xFF5BA3A3)
                     )
 
                     Spacer(modifier = Modifier.height(48.dp))
@@ -130,7 +131,7 @@ fun PhoneAuthScreen(
                             fontSize = 20.sp,
                             textAlign = TextAlign.Center
                         ),
-                        color = Color(0xFF2C2C2C),
+                        color = Color(0xFF383838),
                         modifier = Modifier.fillMaxWidth(),
                         textAlign = TextAlign.Center
                     )
@@ -146,11 +147,11 @@ fun PhoneAuthScreen(
                             placeholder = {
                                 Text(
                                     text = "شماره همراه خود را وارد کنید",
-                                    color = Color(0xFF999999),
+                                    color = Color(0xFF868686),
                                 )
                             },
                             label = {
-                                Text(text = "شماره همراه")
+                                Text(text = "شماره همراه", color = Color(0xFF383838))
                             },
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Phone,
@@ -168,15 +169,16 @@ fun PhoneAuthScreen(
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = if (shouldShowError) Color(0xFFE53935) else Color(0xFF5BA3A3),
-                                unfocusedBorderColor = if (shouldShowError) Color(0xFFE53935) else Color(0xFFE0E0E0),
+                                focusedBorderColor = if (shouldShowError) Color(0xFFFF3B30) else Color(0xFF5BA3A3),
+                                unfocusedBorderColor = if (shouldShowError) Color(0xFFFF3B30) else Color(0xFFE0E0E0),
                                 errorBorderColor = Color(0xFFE53935),
                                 focusedContainerColor = Color.White,
                                 unfocusedContainerColor = Color.White
                             ),
                             textStyle = LocalTextStyle.current.copy(
-                                textAlign = TextAlign.End,
-                                color = Color.Black
+                                textAlign = TextAlign.Start,
+                                color = Color.Black,
+                                textDirection = TextDirection.Ltr
                             ),
                             isError = shouldShowError
                         )
@@ -185,8 +187,8 @@ fun PhoneAuthScreen(
                         if (shouldShowError) {
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "شماره همراه وارد شده معتبر نیست",
-                                color = Color(0xFFE53935),
+                                text = "شماره وارد شده نادرست است",
+                                color = Color(0xFFFF3B30),
                                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                                 modifier = Modifier.fillMaxWidth(),
                                 textAlign = TextAlign.End
@@ -196,7 +198,6 @@ fun PhoneAuthScreen(
 
                     Spacer(modifier = Modifier.weight(1f))
 
-                    // Submit button
                     Button(
                         onClick = {
                             focusManager.clearFocus()

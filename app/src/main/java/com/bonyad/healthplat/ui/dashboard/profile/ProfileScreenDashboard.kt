@@ -15,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -34,7 +35,8 @@ import com.bonyad.healthplat.ui.utils.toFarsiDigits
 @Composable
 fun ProfileScreenDashboard(
     viewModel: ProfileDashboardViewModel = hiltViewModel(),
-    onNavigateToProfileRoutes: (String) -> Unit = {}
+    onNavigateToProfileRoutes: (String) -> Unit = {},
+    onNavigateToLogin: () -> Unit = {}
 ) {
     val userName by viewModel.userName.collectAsState()
     val phoneNumber by viewModel.phoneNumber.collectAsState()
@@ -42,6 +44,13 @@ fun ProfileScreenDashboard(
     val goalProgress by viewModel.goalProgress.collectAsState()
     val nightModeEnabled by viewModel.nightModeEnabled.collectAsState()
 
+    LaunchedEffect(Unit) {
+        viewModel.navigationEvent.collect { event ->
+            when (event) {
+                is ProfileNavigationEvent.NavigateToLogin -> onNavigateToLogin()
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -140,50 +149,76 @@ fun ProfileScreenDashboard(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Menu Items
-            ProfileMenuItem(
-                icon = painterResource(R.drawable.notif_setting),
-                title = "تنظیم هشدار شخصی",
-                onClick = { onNavigateToProfileRoutes(ProfileRoutes.AlarmSettings.route) }
-            )
+            // Section 1: Main menu items
+            MenuSection {
+                MenuItemRow(
+                    icon = painterResource(R.drawable.notif_setting),
+                    title = "تنظیم هشدار شخصی",
+                    onClick = { onNavigateToProfileRoutes(ProfileRoutes.AlarmSettings.route) }
+                )
 
-            ProfileMenuItem(
-                icon = painterResource(R.drawable.pills),
-                title = "ثبت دارو",
-                onClick = { onNavigateToProfileRoutes(ProfileRoutes.Medication.route) }
-            )
+                HorizontalDivider(color = Color(0xFFE8E8E8), thickness = 1.dp)
 
-            ProfileMenuItem(
-                icon = painterResource(R.drawable.ring),
-                title = "حلقه",
-                onClick = { /* TODO */ }
-            )
+                MenuItemRow(
+                    icon = painterResource(R.drawable.pills),
+                    title = "ثبت دارو",
+                    onClick = { onNavigateToProfileRoutes(ProfileRoutes.Medication.route) }
+                )
 
-            ProfileMenuItem(
-                icon = painterResource(R.drawable.wallet),
-                title = "شارژ کیف پول",
-                onClick = { onNavigateToProfileRoutes(ProfileRoutes.Wallet.route) }
-            )
+                HorizontalDivider(color = Color(0xFFE8E8E8), thickness = 1.dp)
 
-            // Night Mode Toggle
-            NightModeToggle(
-                enabled = nightModeEnabled,
-                onToggle = { viewModel.onNightModeToggle(it) }
-            )
+                MenuItemRow(
+                    icon = painterResource(R.drawable.wallet),
+                    title = "شارژ کیف پول",
+                    onClick = { onNavigateToProfileRoutes(ProfileRoutes.Wallet.route) }
+                )
 
-            ProfileMenuItem(
-                icon = painterResource(R.drawable.calling),
-                title = "پشتیبانی و پیگیری",
-                onClick = { /* TODO */ }
-            )
+                HorizontalDivider(color = Color(0xFFE8E8E8), thickness = 1.dp)
 
-            ProfileMenuItem(
-                icon = painterResource(R.drawable.information),
-                title = "راهنما و قوانین",
-                onClick = { /* TODO */ }
-            )
+                MenuItemRow(
+                    icon = painterResource(R.drawable.ring),
+                    title = "حلقه",
+                    onClick = { onNavigateToProfileRoutes(ProfileRoutes.DeviceSetup.route) }
+                )
+            }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Section 2: Settings and logout
+            MenuSection {
+                NightModeToggleRow(
+                    enabled = nightModeEnabled,
+                    onToggle = { viewModel.onNightModeToggle(it) }
+                )
+
+                HorizontalDivider(color = Color(0xFFE8E8E8), thickness = 1.dp)
+
+                MenuItemRow(
+                    icon = painterResource(R.drawable.calling),
+                    title = "پشتیبانی و پیگیری",
+                    onClick = { /* TODO */ }
+                )
+
+                HorizontalDivider(color = Color(0xFFE8E8E8), thickness = 1.dp)
+
+                MenuItemRow(
+                    icon = painterResource(R.drawable.information),
+                    title = "راهنما و قوانین",
+                    onClick = { /* TODO */ }
+                )
+
+                HorizontalDivider(color = Color(0xFFE8E8E8), thickness = 1.dp)
+
+                MenuItemRow(
+                    icon = painterResource(R.drawable.logout),
+                    title = "خروج",
+                    onClick = { viewModel.logout() },
+                    iconTint = Color(0xFF6B6B6B)
+                )
+            }
+
+            // Bottom padding for navigation bar
+            Spacer(modifier = Modifier.height(100.dp))
         }
     }
 }
@@ -479,9 +514,10 @@ fun ProfileMenuItem(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Image(
+            Icon(
                 painter = painterResource(R.drawable.back_arrow),
                 contentDescription = null,
+                tint = Color(0xFF6B6B6B),
                 modifier = Modifier.size(20.dp)
             )
 
@@ -494,7 +530,7 @@ fun ProfileMenuItem(
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontSize = 15.sp
                     ),
-                    color = Color(0xFF2C2C2C)
+                    color = Color(0xFF6B6B6B)
                 )
 
                 Image(
@@ -549,7 +585,7 @@ fun NightModeToggle(
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontSize = 15.sp
                     ),
-                    color = Color(0xFF2C2C2C)
+                    color = Color(0xFF6B6B6B)
                 )
 
                 Image(
@@ -558,6 +594,119 @@ fun NightModeToggle(
                     modifier = Modifier.size(24.dp)
                 )
             }
+        }
+    }
+}
+
+@Composable
+fun MenuSection(
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+fun MenuItemRow(
+    icon: Painter,
+    title: String,
+    onClick: () -> Unit,
+    iconTint: Color = Color.Unspecified
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.back_arrow),
+            contentDescription = null,
+            tint = Color(0xFF6B6B6B),
+            modifier = Modifier.size(20.dp)
+        )
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = 15.sp
+                ),
+                color = Color(0xFF6B6B6B)
+            )
+
+            Image(
+                painter = icon,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                colorFilter = if (iconTint != Color.Unspecified) {
+                    androidx.compose.ui.graphics.ColorFilter.tint(iconTint)
+                } else null
+            )
+        }
+    }
+}
+
+@Composable
+fun NightModeToggleRow(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Switch(
+            checked = enabled,
+            onCheckedChange = onToggle,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = Color(0xFF5BA3A3),
+                checkedBorderColor = Color.Transparent,
+                uncheckedThumbColor = Color.White,
+                uncheckedTrackColor = Color(0xFFBBBBBB),
+                uncheckedBorderColor = Color.Transparent
+            ),
+            modifier = Modifier.scale(0.9f)
+        )
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "حالت شب",
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = 15.sp
+                ),
+                color = Color(0xFF6B6B6B)
+            )
+
+            Image(
+                painter = painterResource(R.drawable.dark_mode),
+                contentDescription = null,
+                modifier = Modifier.size(24.dp)
+            )
         }
     }
 }

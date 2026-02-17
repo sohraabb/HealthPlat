@@ -20,9 +20,21 @@ data class AddCaregiverRequest(
 )
 
 @Serializable
-data class AddCaregiverByUserIdRequest(
+data class AddCaregiverByScanRequest(
     @SerialName("UserId")
     val userId: String,
+    @SerialName("HeartRate")
+    val heartRate: Boolean,
+    @SerialName("BloodPressure")
+    val bloodPressure: Boolean,
+    @SerialName("StressLevel")
+    val stressLevel: Boolean,
+    @SerialName("SleepQuality")
+    val sleepQuality: Boolean
+)
+
+@Serializable
+data class UpdateCaregiverPermissionsRequest(
     @SerialName("HeartRate")
     val heartRate: Boolean,
     @SerialName("BloodPressure")
@@ -39,14 +51,20 @@ data class AddCaregiverByUserIdRequest(
 data class CaregiverData(
     @SerialName("Id")
     val id: Int,
-    @SerialName("UserId")
-    val userId: String,
+    @SerialName("PatientId")
+    val patientId: String?,
     @SerialName("IsAccepted")
     val isAccepted: Boolean,
-    @SerialName("PhoneNumber")
-    val phoneNumber: String,
+    @SerialName("PatientPhoneNumber")
+    val patientPhoneNumber: String?,
+    @SerialName("PatientName")
+    val patientName: String?,
     @SerialName("CaregiverId")
-    val caregiverId: String,
+    val caregiverId: String?,
+    @SerialName("CaregiverName")
+    val caregiverName: String?,
+    @SerialName("CaregiverPhoneNumber")
+    val caregiverPhoneNumber: String?,
     @SerialName("HeartRate")
     val heartRate: Boolean,
     @SerialName("BloodPressure")
@@ -61,18 +79,20 @@ data class CaregiverData(
 
 // ============ UI Models ============
 
+
 data class CaregiverUiModel(
     val id: Int,
     val name: String?,
     val phoneNumber: String,
     val userId: String?,
+    val patientId: String?,
     val isPending: Boolean,
     val permissions: CarePermissions
 )
 
 data class CarePermissions(
-    val heartRate: Boolean = false,
-    val bloodPressure: Boolean = false,
+    val heartRate: Boolean = true,
+    val bloodPressure: Boolean = true,
     val stressLevel: Boolean = false,
     val sleepQuality: Boolean = false
 )

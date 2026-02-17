@@ -6,11 +6,11 @@ import androidx.lifecycle.viewModelScope
 import com.bonyad.healthplat.R
 import com.bonyad.healthplat.data.local.UserPreferencesDataStore
 import com.bonyad.healthplat.data.network.AIAnalysisApiService
-import com.bonyad.healthplat.domain.model.ApiErrorType
 import com.bonyad.healthplat.domain.model.HealthReportResponse
 import com.bonyad.healthplat.domain.model.ReportAspect
+import com.bonyad.healthplat.ui.components.PersianDate
+import com.bonyad.healthplat.ui.utils.PersianDateUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.serialization.MissingFieldException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,7 +33,7 @@ data class AiAnalysisData(
     val summaryText: String,
     val metrics: List<AiMetric>,
     val lastAnalysisDate: String,
-    val disclaimerText: String = "این گزارش بر اساس داده‌های دستگاه پوشیدنی تهیه شده است و جنبه آموزشی و راهنمایی عمومی دارد و به هیچ عنوان جایگزین تشخیص پزشکی نیست."
+    val disclaimerText: String = "این گزارش بر اساس داده\u200Cهای دستگاه پوشیدنی تهیه شده است و جنبه آموزشی و راهنمایی عمومی دارد و به هیچ عنوان جایگزین تشخیص پزشکی نیست."
 )
 
 data class AiMetric(
@@ -55,11 +55,35 @@ class AiAnalysisViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<AiAnalysisUiState>(AiAnalysisUiState.Loading)
     val uiState: StateFlow<AiAnalysisUiState> = _uiState.asStateFlow()
 
+    /**
+     * The currently selected Persian date for the report.
+     * Defaults to yesterday.
+     */
+    private val _selectedPersianDate = MutableStateFlow<PersianDate>(getYesterdayPersianDate())
+    val selectedPersianDate: StateFlow<PersianDate> = _selectedPersianDate.asStateFlow()
+
     init {
         fetchAnalysis()
     }
 
+    /**
+     * Fetch analysis for a specific Persian date (called from date picker).
+     */
+    fun fetchAnalysisForDate(persianDate: PersianDate) {
+        _selectedPersianDate.value = persianDate
+        val gregorianDate = persianDate.toGregorianIsoDate()
+        fetchAnalysisInternal(specificDate = gregorianDate)
+    }
+
+    /**
+     * Retry / initial fetch — uses the currently selected date.
+     */
     fun fetchAnalysis() {
+        val gregorianDate = _selectedPersianDate.value.toGregorianIsoDate()
+        fetchAnalysisInternal(specificDate = gregorianDate)
+    }
+
+    private fun fetchAnalysisInternal(specificDate: String? = null) {
         viewModelScope.launch {
             _uiState.value = AiAnalysisUiState.Loading
 
@@ -71,78 +95,111 @@ class AiAnalysisViewModel @Inject constructor(
                     return@launch
                 }
 
-                // Try yesterday first, then fallback to day before
+                if (specificDate != null) {
+                    // Fetch for a specific date (from date picker)
+                    val response = apiService.getHealthReport(userId, specificDate)
+
+                    if (!response.isSuccessful) {
+                        if (response.code() == 404) {
+                            _uiState.value = AiAnalysisUiState.Error(
+                                message =
+                                    "داده\u200Cای کافی برای تحلیل یافت نشد.\n\n" +
+                                            "• دستگاه متصل نیست\n" +
+                                            "• داده\u200Cها همگام\u200Cسازی نشده\u200Cاند\n" +
+                                            "• هنوز یک روز کامل ثبت نشده است"
+                            )
+                        } else {
+                            _uiState.value =
+                                AiAnalysisUiState.Error("خطا در ارتباط با سرور")
+                        }
+                        return@launch
+                    }
+
+                    val body = response.body()
+                    if (body == null) {
+                        _uiState.value = AiAnalysisUiState.Error("پاسخ نامعتبر از سرور")
+                        return@launch
+                    }
+
+                    if (!body.ok) {
+                        _uiState.value = AiAnalysisUiState.Error(
+                            body.error?.message ?: "داده کافی برای تحلیل موجود نیست"
+                        )
+                        return@launch
+                    }
+
+                    val report = body.data
+                    if (report == null) {
+                        _uiState.value = AiAnalysisUiState.Error("داده\u200Cای برای نمایش وجود ندارد")
+                        return@launch
+                    }
+
+                    _uiState.value = AiAnalysisUiState.Success(mapReportToUiData(report))
+                    return@launch
+                }
+
+                // Fallback: try yesterday, then day before, then 3 days ago
                 val datesToTry = listOf(
                     LocalDate.now().minusDays(1),
                     LocalDate.now().minusDays(2),
                     LocalDate.now().minusDays(3)
-
                 )
 
                 for ((index, date) in datesToTry.withIndex()) {
                     val recordDate = date.format(DateTimeFormatter.ISO_DATE)
                     val response = apiService.getHealthReport(userId, recordDate)
 
-                    // 🔹 404 → try fallback date
                     if (!response.isSuccessful) {
-                        if (response.code() == 404 || response.code() == 500 && index < datesToTry.lastIndex) {
+                        if ((response.code() == 404 || response.code() == 500) && index < datesToTry.lastIndex) {
                             continue
                         }
 
                         if (response.code() == 404) {
                             _uiState.value = AiAnalysisUiState.Error(
                                 message =
-                                    "داده‌ای کافی برای تحلیل یافت نشد.\n\n" +
+                                    "داده\u200Cای کافی برای تحلیل یافت نشد.\n\n" +
                                             "• دستگاه متصل نیست\n" +
-                                            "• داده‌ها همگام‌سازی نشده‌اند\n" +
+                                            "• داده\u200Cها همگام\u200Cسازی نشده\u200Cاند\n" +
                                             "• هنوز یک روز کامل ثبت نشده است"
                             )
                             return@launch
                         }
 
-                        _uiState.value =
-                            AiAnalysisUiState.Error("خطا در ارتباط با سرور")
+                        _uiState.value = AiAnalysisUiState.Error("خطا در ارتباط با سرور")
                         return@launch
                     }
 
                     val body = response.body()
                     if (body == null) {
-                        _uiState.value =
-                            AiAnalysisUiState.Error("پاسخ نامعتبر از سرور")
+                        _uiState.value = AiAnalysisUiState.Error("پاسخ نامعتبر از سرور")
                         return@launch
                     }
 
                     if (!body.ok) {
                         if (body.data != null) {
-                            _uiState.value =
-                                AiAnalysisUiState.Error(body.error?.message ?: "خطای ناشناخته")
+                            _uiState.value = AiAnalysisUiState.Error(
+                                body.error?.message ?: "خطای ناشناخته"
+                            )
                             return@launch
                         } else {
-                            _uiState.value =
-                                AiAnalysisUiState.Error("داده کافی برای تحلیل موجود نیست")
+                            _uiState.value = AiAnalysisUiState.Error("داده کافی برای تحلیل موجود نیست")
                             return@launch
                         }
-
-
                     }
 
                     val report = body.data
                     if (report == null) {
-                        _uiState.value =
-                            AiAnalysisUiState.Error("داده‌ای برای نمایش وجود ندارد")
+                        _uiState.value = AiAnalysisUiState.Error("داده\u200Cای برای نمایش وجود ندارد")
                         return@launch
                     }
 
-                    // ✅ SUCCESS
-                    _uiState.value =
-                        AiAnalysisUiState.Success(mapReportToUiData(report))
+                    _uiState.value = AiAnalysisUiState.Success(mapReportToUiData(report))
                     return@launch
                 }
 
             } catch (e: Exception) {
                 Timber.e(e, "Error fetching AI analysis")
-                _uiState.value =
-                    AiAnalysisUiState.Error("عدم دسترسی به سرویس")
+                _uiState.value = AiAnalysisUiState.Error("عدم دسترسی به سرویس")
             }
         }
     }
@@ -173,24 +230,25 @@ class AiAnalysisViewModel @Inject constructor(
             )
         )
 
+        // Show the selected Persian date in the last analysis text
+        val selectedDate = _selectedPersianDate.value
+        val dateLabel = selectedDate.toFormattedPersian()
+
         return AiAnalysisData(
             overallScore = report.absReadinessScore,
             summaryText = report.overallSummary,
             metrics = metrics,
-            lastAnalysisDate = "آخرین تحلیل: امروز ساعت $currentTime"
+            lastAnalysisDate = "تحلیل: $dateLabel — ساعت $currentTime"
         )
     }
 
     private fun mapToMetric(title: String, aspect: ReportAspect, iconRes: Int): AiMetric {
-        // Combine notable findings for description
         val description = aspect.notableFindings.joinToString(" ").ifEmpty {
             "اطلاعاتی ثبت نشده است"
         }
 
-        // Combine lifestyle suggestions for advice
-        val advice = aspect.lifestyleSuggestions.firstOrNull() ?: "توصیه‌ای موجود نیست"
+        val advice = aspect.lifestyleSuggestions.firstOrNull() ?: "توصیه\u200Cای موجود نیست"
 
-        // Parse score string to determine color and status
         val (statusColor, statusText) = parseScoreStatus(aspect.score)
 
         return AiMetric(
@@ -207,13 +265,29 @@ class AiAnalysisViewModel @Inject constructor(
     private fun parseScoreStatus(scoreText: String): Pair<Color, String> {
         return when {
             scoreText.contains("عالی") || scoreText.contains("خوب") ->
-                Pair(Color(0xFF00BFA5), "خوب") // Teal/Green
+                Pair(Color(0xFF00BFA5), "خوب")
+
             scoreText.contains("متوسط") ->
-                Pair(Color(0xFFE99C2E), "متوسط") // Orange/Amber
+                Pair(Color(0xFFE99C2E), "متوسط")
+
             scoreText.contains("توجه") || scoreText.contains("ضعیف") || scoreText.contains("بالا") ->
-                Pair(Color(0xFFE99C2E), "متوسط-بالا") // Orange for attention needed
+                Pair(Color(0xFFE99C2E), "متوسط-بالا")
+
             else ->
-                Pair(Color(0xFF4A90A4), "متوسط") // Default teal-ish
+                Pair(Color(0xFF4A90A4), "متوسط")
+        }
+    }
+
+    companion object {
+        /**
+         * Returns yesterday's date as a PersianDate.
+         */
+        private fun getYesterdayPersianDate(): PersianDate {
+            val yesterday = LocalDate.now().minusDays(1)
+            val (jy, jm, jd) = PersianDateUtils.georgianToJalali(
+                yesterday.year, yesterday.monthValue, yesterday.dayOfMonth
+            )
+            return PersianDate(jy, jm, jd)
         }
     }
 }

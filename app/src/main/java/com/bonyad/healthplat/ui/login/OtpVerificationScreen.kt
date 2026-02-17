@@ -13,17 +13,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -61,7 +56,6 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.bonyad.healthplat.R
 import com.bonyad.healthplat.domain.model.AuthState
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
-import com.yourpackage.healthplat.ui.auth.AuthViewModel
 import kotlinx.coroutines.delay
 import timber.log.Timber
 
@@ -144,11 +138,10 @@ fun OtpVerificationScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .systemBarsPadding()
-                    .imePadding()
                     .padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Spacer(modifier = Modifier.height(60.dp))
+                Spacer(modifier = Modifier.height(32.dp))
 
                 Image(
                     painter = painterResource(id = R.drawable.logo_tan),
@@ -211,12 +204,15 @@ fun OtpVerificationScreen(
 
                 TextButton(
                     onClick = { viewModel.resendOtp() },
-                    enabled = authState !is AuthState.Loading
+                    enabled = authState !is AuthState.Loading && resendTimer <= 0
                 ) {
                     Text(
-                        text = "ارسال مجدد کد",
+                        text = if (resendTimer > 0)
+                            "ارسال مجدد کد (${resendTimer.toString().toFarsiDigits()})"
+                        else
+                            "ارسال مجدد کد",
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                        color = Color(0xFF5BA3A3)
+                        color = if (resendTimer > 0) Color(0xFF999999) else Color(0xFF5BA3A3)
                     )
                 }
 

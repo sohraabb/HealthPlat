@@ -54,7 +54,6 @@ fun ConnectionIndicatorButton(
 ) {
     Box(
         modifier = modifier
-            .size(24.dp)
             .clip(CircleShape)
             .clickable { onClick() },
         contentAlignment = Alignment.Center
@@ -70,11 +69,7 @@ fun ConnectionIndicatorButton(
                 }
             }
             is DeviceConnectionState.Connected -> {
-                if (connectionState.isLowBattery) {
-                    LowBatteryIndicator(batteryLevel = connectionState.batteryLevel)
-                } else {
-                    ConnectedIndicator()
-                }
+                ConnectedIndicator(batteryLevel = connectionState.batteryLevel)
             }
         }
     }
@@ -83,39 +78,93 @@ fun ConnectionIndicatorButton(
 // ======================= INDICATOR VARIANTS =======================
 
 @Composable
-private fun ConnectedIndicator() {
+private fun ConnectedIndicator(batteryLevel: Int) {
+    val isLowBattery = batteryLevel <= 20
+
+    // Animate the sweep angle based on battery (full circle = 360°)
+    val targetSweep = (batteryLevel / 100f) * 360f
+    val animatedSweep by animateFloatAsState(
+        targetValue = targetSweep,
+        animationSpec = tween(durationMillis = 600),
+        label = "battery_sweep"
+    )
+
+    // Color transitions: teal when healthy, red when low
+    val arcColor by animateColorAsState(
+        targetValue = if (isLowBattery) RedAccent else TealPrimary,
+        animationSpec = tween(durationMillis = 400),
+        label = "arc_color"
+    )
+
+    val trackColor = if (isLowBattery) RedAccent.copy(alpha = 0.15f) else TealPrimary.copy(alpha = 0.15f)
+
+    // Slightly larger when low battery to accommodate badge
+    val indicatorSize = if (isLowBattery) 40.dp else 32.dp
+    val canvasSize = if (isLowBattery) 28.dp else 32.dp
+
     Box(
-        modifier = Modifier.size(32.dp),
+        modifier = Modifier.size(indicatorSize),
         contentAlignment = Alignment.Center
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
+        Canvas(modifier = Modifier.size(canvasSize)) {
             val strokeWidth = 3.dp.toPx()
-            val radius = (size.minDimension - strokeWidth) / 2
+            val arcSize = Size(size.width - strokeWidth, size.height - strokeWidth)
+            val arcOffset = Offset(strokeWidth / 2, strokeWidth / 2)
 
-            // Outer arc (partial circle - ~270 degrees)
+            // Background track (full circle)
             drawArc(
-                color = TealPrimary,
+                color = trackColor,
                 startAngle = -90f,
-                sweepAngle = 300f,
+                sweepAngle = 360f,
                 useCenter = false,
                 style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
-                topLeft = Offset(strokeWidth / 2, strokeWidth / 2),
-                size = Size(size.width - strokeWidth, size.height - strokeWidth)
+                topLeft = arcOffset,
+                size = arcSize
+            )
+
+            // Battery progress arc
+            drawArc(
+                color = arcColor,
+                startAngle = -90f,
+                sweepAngle = animatedSweep,
+                useCenter = false,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                topLeft = arcOffset,
+                size = arcSize
             )
 
             // Inner filled circle
+            val radius = (size.minDimension - strokeWidth) / 2
             drawCircle(
-                color = TealPrimary.copy(alpha = 0.3f),
+                color = arcColor.copy(alpha = 0.2f),
                 radius = radius * 0.5f,
                 center = center
             )
 
             // Center dot
             drawCircle(
-                color = TealPrimary,
+                color = arcColor,
                 radius = radius * 0.25f,
                 center = center
             )
+        }
+
+        // Battery badge for low battery
+        if (isLowBattery) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 4.dp, y = 4.dp)
+                    .background(RedAccent, RoundedCornerShape(6.dp))
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
+            ) {
+                Text(
+                    text = "${batteryLevel}%".toFarsiDigits(),
+                    color = Color.White,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }
@@ -163,64 +212,6 @@ private fun DisconnectedIndicator() {
     }
 }
 
-@Composable
-private fun LowBatteryIndicator(batteryLevel: Int) {
-    Box(
-        modifier = Modifier.size(40.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        // Base circle indicator (similar to connected but lighter)
-        Canvas(modifier = Modifier.size(28.dp)) {
-            val strokeWidth = 2.dp.toPx()
-
-            // Outer arc
-            drawArc(
-                color = GrayMedium,
-                startAngle = -90f,
-                sweepAngle = 300f,
-                useCenter = false,
-                style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
-                topLeft = Offset(strokeWidth / 2, strokeWidth / 2),
-                size = Size(size.width - strokeWidth, size.height - strokeWidth)
-            )
-
-            // Red arc showing low battery
-            drawArc(
-                color = RedAccent,
-                startAngle = -90f,
-                sweepAngle = (batteryLevel / 100f) * 300f,
-                useCenter = false,
-                style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
-                topLeft = Offset(strokeWidth / 2, strokeWidth / 2),
-                size = Size(size.width - strokeWidth, size.height - strokeWidth)
-            )
-
-            // Center dot
-            drawCircle(
-                color = GrayMedium.copy(alpha = 0.3f),
-                radius = size.minDimension * 0.2f,
-                center = center
-            )
-        }
-
-        // Battery badge
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .offset(x = 4.dp, y = 4.dp)
-                .background(RedAccent, RoundedCornerShape(6.dp))
-                .padding(horizontal = 4.dp, vertical = 2.dp)
-        ) {
-            Text(
-                text = "${batteryLevel}%".toFarsiDigits(),
-                color = Color.White,
-                fontSize = 8.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-    }
-}
-
 // ======================= BOTTOM SHEETS =======================
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -231,49 +222,49 @@ fun ConnectivityBottomSheet(
     onConnectClick: () -> Unit,
     sheetState: SheetState = rememberModalBottomSheetState()
 ) {
-        ModalBottomSheet(
-            onDismissRequest = onDismiss,
-            sheetState = sheetState,
-            containerColor = Color.White,
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-            dragHandle = {
-                Box(
-                    modifier = Modifier
-                        .padding(vertical = 12.dp)
-                        .width(40.dp)
-                        .height(4.dp)
-                        .background(GrayLight, RoundedCornerShape(2.dp))
-                )
-            }
-        ) {
-            Column(
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Color.White,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        dragHandle = {
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .padding(bottom = 32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // Title
-                Text(
-                    text = "اتصال حلقه",
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = TextDark
-                    ),
-                    modifier = Modifier.padding(bottom = 24.dp)
-                )
+                    .padding(vertical = 12.dp)
+                    .width(40.dp)
+                    .height(4.dp)
+                    .background(GrayLight, RoundedCornerShape(2.dp))
+            )
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Title
+            Text(
+                text = "اتصال حلقه",
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = TextDark
+                ),
+                modifier = Modifier.padding(bottom = 24.dp)
+            )
 
-                when (connectionState) {
-                    is DeviceConnectionState.Disconnected -> {
-                        DisconnectedBottomSheetContent(onConnectClick = onConnectClick)
-                    }
-                    is DeviceConnectionState.Connected -> {
-                        ConnectedBottomSheetContent(batteryLevel = connectionState.batteryLevel)
-                    }
+            when (connectionState) {
+                is DeviceConnectionState.Disconnected -> {
+                    DisconnectedBottomSheetContent(onConnectClick = onConnectClick)
+                }
+                is DeviceConnectionState.Connected -> {
+                    ConnectedBottomSheetContent(batteryLevel = connectionState.batteryLevel)
                 }
             }
         }
     }
+}
 
 
 @Composable
@@ -480,15 +471,19 @@ fun ConnectionIndicatorPreview() {
         modifier = Modifier.padding(16.dp)
     ) {
         ConnectionIndicatorButton(
-            connectionState = DeviceConnectionState.Connected(batteryLevel = 75),
+            connectionState = DeviceConnectionState.Connected(batteryLevel = 90),
             onClick = {}
         )
         ConnectionIndicatorButton(
-            connectionState = DeviceConnectionState.Disconnected,
+            connectionState = DeviceConnectionState.Connected(batteryLevel = 50),
             onClick = {}
         )
         ConnectionIndicatorButton(
             connectionState = DeviceConnectionState.Connected(batteryLevel = 15),
+            onClick = {}
+        )
+        ConnectionIndicatorButton(
+            connectionState = DeviceConnectionState.Disconnected,
             onClick = {}
         )
     }

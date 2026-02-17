@@ -30,7 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.bonyad.healthplat.R
 import com.bonyad.healthplat.domain.model.PresetAmounts
 import com.bonyad.healthplat.domain.model.TopUpState
@@ -43,14 +43,15 @@ import java.util.*
 
 // Color constants
 private val TealColor = Color(0xFF5BA3A3)
-private val GreenColor = Color(0xFF4CAF50)
+private val GreenColor = Color(0xFF58BD83)
 private val BackgroundColor = Color(0xFFF5F5F5)
 private val CardColor = Color.White
 private val TextPrimaryColor = Color(0xFF2C2C2C)
-private val TextSecondaryColor = Color(0xFF666666)
+private val TextSecondaryColor = Color(0xFF6B6B6B)
 private val TextTertiaryColor = Color(0xFF999999)
 private val BorderColor = Color(0xFFE8E8E8)
 private val PatternColor = Color(0xFF4A9090)
+private val BalanceCardColor = Color(0xFF578888)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,43 +63,44 @@ fun WalletScreen(
     val walletInfo by viewModel.walletInfo.collectAsState()
     val showTopUpSheet by viewModel.showTopUpSheet.collectAsState()
 
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-        Scaffold(
-            topBar = {
-                WalletTopBar(onBack = onBack)
-            },
-            bottomBar = {
-                TopUpButton(onClick = { viewModel.onTopUpClick() })
-            },
-            containerColor = BackgroundColor
-        ) { paddingValues ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            ) {
-                when (uiState) {
-                    is WalletUiState.Loading -> {
-                        CircularProgressIndicator(
-                            modifier = Modifier.align(Alignment.Center),
-                            color = TealColor
-                        )
-                    }
-                    is WalletUiState.Success -> {
-                        WalletContent(
-                            balance = walletInfo.balance,
-                            transactions = walletInfo.transactions
-                        )
-                    }
-                    is WalletUiState.Error -> {
-                        ErrorState(
-                            message = (uiState as WalletUiState.Error).message,
-                            modifier = Modifier.align(Alignment.Center)
-                        )
-                    }
+    Scaffold(
+        topBar = {
+            WalletTopBar(onBack = onBack)
+        },
+        bottomBar = {
+            TopUpButton(onClick = { viewModel.onTopUpClick() })
+        },
+        containerColor = BackgroundColor
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            when (uiState) {
+                is WalletUiState.Loading -> {
+                    CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.Center),
+                        color = TealColor
+                    )
+                }
+
+                is WalletUiState.Success -> {
+                    WalletContent(
+                        balance = walletInfo.balance,
+                        transactions = walletInfo.transactions
+                    )
+                }
+
+                is WalletUiState.Error -> {
+                    ErrorState(
+                        message = (uiState as WalletUiState.Error).message,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
                 }
             }
         }
+
 
         // Top-up Bottom Sheet
         if (showTopUpSheet) {
@@ -134,9 +136,8 @@ private fun WalletTopBar(onBack: () -> Unit) {
         actions = {
             IconButton(onClick = { /* Sync action */ }) {
                 Icon(
-                    painter = painterResource(R.drawable.sync_icon),
-                    contentDescription = "همگام‌سازی",
-                    tint = TealColor
+                    painter = painterResource(R.drawable.notification),
+                    contentDescription = "notification",
                 )
             }
         },
@@ -157,6 +158,7 @@ private fun TopUpButton(onClick: () -> Unit) {
             onClick = onClick,
             modifier = Modifier
                 .fillMaxWidth()
+                .systemBarsPadding()
                 .height(56.dp),
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(containerColor = GreenColor)
@@ -191,9 +193,8 @@ private fun WalletContent(
         // Transaction History
         Text(
             text = "تاریخچه تراکنش",
-            fontWeight = FontWeight.Bold,
             fontSize = 16.sp,
-            color = TextPrimaryColor,
+            color = TextSecondaryColor,
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.End
         )
@@ -229,7 +230,7 @@ private fun BalanceCard(balance: Long) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(80.dp)
-                    .background(TealColor)
+                    .background(BalanceCardColor)
             ) {
                 // Draw zigzag pattern
                 Canvas(modifier = Modifier.fillMaxSize()) {
@@ -265,9 +266,10 @@ private fun BalanceCard(balance: Long) {
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp,
                     color = Color.White,
+                    textAlign = TextAlign.End,
                     modifier = Modifier
-                        .align(Alignment.Center)
-                        .padding(16.dp)
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 16.dp)
                 )
             }
 
@@ -291,10 +293,10 @@ private fun BalanceCard(balance: Long) {
                     Spacer(modifier = Modifier.height(4.dp))
 
                     Text(
-                        text = "${formatAmount(balance)} تومان".toFarsiDigits(),
+                        text = " تومان ${formatAmount(balance)}".toFarsiDigits(),
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
-                        color = TextPrimaryColor
+                        color = Color.Black
                     )
                 }
             }
@@ -320,7 +322,7 @@ private fun EmptyTransactionState() {
             Box(
                 modifier = Modifier
                     .size(120.dp)
-                    .background(Color(0xFFF5F5F5), RoundedCornerShape(12.dp)),
+                    .background(Color.White, RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 // Wallet illustration
@@ -336,26 +338,10 @@ private fun EmptyTransactionState() {
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            painter = painterResource(R.drawable.wallet),
+                            painter = painterResource(R.drawable.wallet_history),
                             contentDescription = null,
                             tint = TealColor,
                             modifier = Modifier.size(32.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    // Person icon
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .offset(y = (-10).dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.profile),
-                            contentDescription = null,
-                            tint = TextTertiaryColor,
-                            modifier = Modifier.size(24.dp)
                         )
                     }
                 }
@@ -403,7 +389,11 @@ private fun TransactionItem(transaction: WalletTransaction) {
         ) {
             // Amount
             Text(
-                text = "${if (transaction.type == TransactionType.DEPOSIT) "+" else "-"}${formatAmount(transaction.amount)} تومان".toFarsiDigits(),
+                text = "${if (transaction.type == TransactionType.DEPOSIT) "+" else "-"}${
+                    formatAmount(
+                        transaction.amount
+                    )
+                } تومان".toFarsiDigits(),
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
                 color = if (transaction.type == TransactionType.DEPOSIT) GreenColor else Color.Red
@@ -667,6 +657,7 @@ private fun TopUpBottomSheet(
                             strokeWidth = 2.dp
                         )
                     }
+
                     is TopUpState.Success -> {
                         Text(
                             text = "✓ موفق",
@@ -675,6 +666,7 @@ private fun TopUpBottomSheet(
                             color = Color.White
                         )
                     }
+
                     else -> {
                         Text(
                             text = "پرداخت",

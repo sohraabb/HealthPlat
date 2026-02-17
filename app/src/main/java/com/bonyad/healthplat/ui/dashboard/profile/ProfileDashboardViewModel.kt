@@ -3,18 +3,32 @@ package com.bonyad.healthplat.ui.dashboard.profile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bonyad.healthplat.data.local.UserPreferencesDataStore
+import com.bonyad.healthplat.data.repository.AuthRepository
+import com.bonyad.healthplat.worker.HealthSyncScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
 
+
+sealed class ProfileNavigationEvent {
+    object NavigateToLogin : ProfileNavigationEvent()
+}
+
 @HiltViewModel
 class ProfileDashboardViewModel @Inject constructor(
-    private val userPreferences: UserPreferencesDataStore
+    private val userPreferences: UserPreferencesDataStore,
+    private val authRepository: AuthRepository,
+    private val healthSyncScheduler: HealthSyncScheduler
 ) : ViewModel() {
+
+    private val _navigationEvent = Channel<ProfileNavigationEvent>()
+    val navigationEvent = _navigationEvent.receiveAsFlow()
 
     private val _userName = MutableStateFlow<String?>(null)
     val userName: StateFlow<String?> = _userName.asStateFlow()
@@ -63,11 +77,24 @@ class ProfileDashboardViewModel @Inject constructor(
     fun logout() {
         viewModelScope.launch {
             try {
+                Timber.i("🚪 Logout initiated...")
+
+                healthSyncScheduler.stopPeriodicSync()
+                Timber.i("✅ Background sync stopped")
+
+                authRepository.logout()
                 userPreferences.clearAuthOnly()
-                Timber.i("User logged out successfully")
-                // TODO: Navigate to login screen
+                Timber.i("✅ Auth data cleared")
+
+                _navigationEvent.send(ProfileNavigationEvent.NavigateToLogin)
+                Timber.i("✅ Logout complete")
+
             } catch (e: Exception) {
-                Timber.e(e, "Failed to logout")
+                Timber.e(e, "❌ Logout failed, but clearing data anyway...")
+                // Fallback
+                healthSyncScheduler.stopPeriodicSync()
+                userPreferences.clearAuthOnly()
+                _navigationEvent.send(ProfileNavigationEvent.NavigateToLogin)
             }
         }
     }

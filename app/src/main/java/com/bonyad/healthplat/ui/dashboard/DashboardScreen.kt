@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -67,6 +68,7 @@ import com.bonyad.healthplat.R
 import com.bonyad.healthplat.ui.dashboard.calory.CaloryScreen
 import com.bonyad.healthplat.ui.dashboard.care.CareScreen
 import com.bonyad.healthplat.ui.dashboard.profile.ProfileScreenDashboard
+import com.bonyad.healthplat.ui.navigation.NavRoutes
 import com.bonyad.healthplat.ui.utils.PermissionUtils
 import timber.log.Timber
 
@@ -85,7 +87,8 @@ sealed class DashboardScreen(
 @Composable
 fun DashboardScreen(
     viewModel: DashboardViewModel = hiltViewModel(),
-    onNavigateToRoot: (String) -> Unit
+    onNavigateToRoot: (String) -> Unit,
+    onLogout: () -> Unit = {}
 ) {
     val bottomTabNavController = rememberNavController()
     val needsBluetoothPermissions by viewModel.needsBluetoothPermissions.collectAsState()
@@ -142,6 +145,7 @@ fun DashboardScreen(
 
 
     Scaffold(
+        containerColor = Color(0xFFF5F5F5),
         bottomBar = {
             DashboardBottomBar(navController = bottomTabNavController)
         }
@@ -149,7 +153,9 @@ fun DashboardScreen(
         NavHost(
             navController = bottomTabNavController,
             startDestination = DashboardScreen.Home.route,
-            modifier = Modifier.padding(paddingValues)
+            modifier = Modifier.padding(
+                top = paddingValues.calculateTopPadding()
+            )
         ) {
             composable(DashboardScreen.Home.route) {
                 HomeScreen(
@@ -159,6 +165,9 @@ fun DashboardScreen(
                     },
                     onNavigateToAi = { route ->
                         onNavigateToRoot(route)
+                    },
+                    onNavigateToNotifications = {
+                        onNavigateToRoot(NavRoutes.Notifications.route)
                     }
                 )
             }
@@ -168,14 +177,16 @@ fun DashboardScreen(
             }
 
             composable(DashboardScreen.Calory.route) {
-                CaloryScreenDashboard()
+                // ✅ FIX: Pass onNavigateToRoot to CaloryScreenDashboard
+                CaloryScreenDashboard(
+                    onNavigateToRoute = onNavigateToRoot
+                )
             }
 
             composable(DashboardScreen.Profile.route) {
                 ProfileScreen(
-                    onNavigateToRoute = { route ->
-                        onNavigateToRoot(route)
-                    }
+                    onNavigateToRoute = { route -> onNavigateToRoot(route) },
+                    onLogout = onLogout
                 )
             }
         }
@@ -196,45 +207,48 @@ fun DashboardBottomBar(navController: NavHostController) {
     val currentRoute = navBackStackEntry?.destination?.route
 
     val selectedColor = Color(0xFF5BA3A3)
-    val unselectedColor = Color(0xFF999999)
+    val unselectedColor = Color(0xFF6B6B6B)
 
-    // Using Surface instead of NavigationBar for better height control
-    Surface(
-        color = Color.White,
-        tonalElevation = 8.dp,
-        shadowElevation = 8.dp,
+    // Transparent container that sits above system navigation
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(90.dp) // Fixed height to ensure it doesn't take over the screen
+            .background(Color.Transparent) // Transparent background
+            .navigationBarsPadding() // Respect system navigation bar
+            .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxSize(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
+        Surface(
+            color = Color.White,
+            shape = RoundedCornerShape(24.dp),
+            shadowElevation = 8.dp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(72.dp)
         ) {
-            items.forEach { screen ->
-                val isSelected = currentRoute == screen.route
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                items.forEach { screen ->
+                    val isSelected = currentRoute == screen.route
 
-                val backgroundColor by animateColorAsState(
-                    targetValue = if (isSelected) selectedColor else Color.Transparent,
-                    label = "bgColor"
-                )
-                val contentColor by animateColorAsState(
-                    targetValue = if (isSelected) Color.White else unselectedColor,
-                    label = "contentColor"
-                )
+                    val backgroundColor by animateColorAsState(
+                        targetValue = if (isSelected) selectedColor else Color.Transparent,
+                        label = "bgColor"
+                    )
+                    val contentColor by animateColorAsState(
+                        targetValue = if (isSelected) Color.White else unselectedColor,
+                        label = "contentColor"
+                    )
 
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .padding(horizontal = 8.dp, vertical = 8.dp),
-                    contentAlignment = Alignment.Center
-                ) {
                     Column(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(20.dp)) // Matches the rounded look in your image
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(16.dp))
                             .background(backgroundColor)
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
@@ -242,7 +256,9 @@ fun DashboardBottomBar(navController: NavHostController) {
                             ) {
                                 if (!isSelected) {
                                     navController.navigate(screen.route) {
-                                        popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                        popUpTo(navController.graph.startDestinationId) {
+                                            saveState = true
+                                        }
                                         launchSingleTop = true
                                         restoreState = true
                                     }
@@ -258,26 +274,15 @@ fun DashboardBottomBar(navController: NavHostController) {
                             modifier = Modifier.size(24.dp)
                         )
 
-                        // Added slight delay/animation visibility for the text
-                        if (isSelected) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = screen.title,
-                                color = contentColor,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1
-                            )
-                        } else {
-                            // If you want text even when NOT selected, uncomment below:
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = screen.title,
-                                color = contentColor,
-                                style = MaterialTheme.typography.labelSmall,
-                                maxLines = 1
-                            )
-                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Text(
+                            text = screen.title,
+                            color = contentColor,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Normal,
+                            maxLines = 1
+                        )
                     }
                 }
             }
@@ -292,13 +297,21 @@ fun CareScreenDashboard() {
 }
 
 @Composable
-fun CaloryScreenDashboard() {
-    CaloryScreen()
+fun CaloryScreenDashboard(
+    onNavigateToRoute: (String) -> Unit = {}
+) {
+    CaloryScreen(
+        onNavigateToRoute = onNavigateToRoute
+    )
 }
 
 @Composable
-fun ProfileScreen(onNavigateToRoute: (String) -> Unit = {}) {
+fun ProfileScreen(
+    onNavigateToRoute: (String) -> Unit = {},
+    onLogout: () -> Unit = {}
+) {
     ProfileScreenDashboard(
-        onNavigateToProfileRoutes = onNavigateToRoute
+        onNavigateToProfileRoutes = onNavigateToRoute,
+        onNavigateToLogin = onLogout  // ← ADD THIS
     )
 }

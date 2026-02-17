@@ -9,6 +9,7 @@ import com.bonyad.healthplat.domain.model.RecordDataResult
 import com.bonyad.healthplat.domain.model.SleepMetricRequest
 import com.bonyad.healthplat.domain.model.SleepSummary
 import com.bonyad.healthplat.domain.model.SyncHealthDataRequest
+import com.bonyad.healthplat.ui.utils.SleepDataHelper
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -27,11 +28,12 @@ import kotlin.coroutines.resume
 class HealthDataRepository @Inject constructor(
     private val deviceManager: HealthDeviceManager,
     private val apiService: HealthPlatApiService,
-    private val userPreferences: UserPreferencesDataStore
+    private val userPreferences: UserPreferencesDataStore,
+    private val sleepDataHelper: SleepDataHelper // ✅ ADD THIS
 ) {
 
     companion object {
-        private const val MAX_HISTORY_DAYS = 7 // Ring stores up to 7 days
+        private const val MAX_HISTORY_DAYS = 7
     }
 
     /**
@@ -43,7 +45,7 @@ class HealthDataRepository @Inject constructor(
      * - Gap 1-7 days → sync from oldest to today
      * - Same day (gap = 0) → sync day 0 (refresh today's data)
      *
-     * @return RecordDataResult of day 0 (today) for UI display
+     * @return RecordDataResult of day 0 (today) with CORRECTED sleep data
      */
     suspend fun syncAllMissingDays(): RecordDataResult {
         val today = LocalDate.now()
@@ -108,7 +110,8 @@ class HealthDataRepository @Inject constructor(
                 // User gone too long - ring doesn't have data that old
                 daysMissing > MAX_HISTORY_DAYS -> {
                     Timber.i("📅 Gap too large ($daysMissing days) - syncing today only")
-                    listOf(0)
+                    // Sohrab changed whole data sent !
+                    listOf(6)
                 }
 
                 // Same day - just refresh today
@@ -131,8 +134,12 @@ class HealthDataRepository @Inject constructor(
         }
     }
 
+    /**
+     * ✅ FIXED: Now returns RecordDataResult with CORRECTED sleep data
+     */
     suspend fun syncDashboardData(day: Int): RecordDataResult {
-        val recordResult = deviceManager.getRecordData(day)
+        // ✅ Use helper to get complete sleep data (including pre-midnight portion)
+        val recordResult = sleepDataHelper.getRecordDataWithFullSleep(day)
 
         if (recordResult is RecordDataResult.Success) {
             uploadHealthData(recordResult)
@@ -166,6 +173,10 @@ class HealthDataRepository @Inject constructor(
         }
     }
 
+    /**
+     * ✅ This now receives CORRECTED sleep data from syncDashboardData()
+     * Server will get complete sleep data including pre-midnight portion
+     */
     private suspend fun uploadHealthData(data: RecordDataResult.Success) = coroutineScope {
         val userId = userPreferences.getUserId().first()
         val deviceId = userPreferences.getDeviceId().first()
@@ -212,7 +223,7 @@ class HealthDataRepository @Inject constructor(
             }
         }
 
-        // 3. Sleep
+        // 3. Sleep ✅ Now uploads COMPLETE sleep data (including pre-midnight)
         if (data.sleep?.sourceList?.any { it > 0 } == true) {
             launch {
                 uploadMetric(

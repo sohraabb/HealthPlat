@@ -48,7 +48,6 @@ fun StressDetailScreen(
     viewModel: StressDetailViewModel = hiltViewModel(),
     onBack: () -> Unit,
     onInfoClick: () -> Unit = {}
-
 ) {
     val points by viewModel.chartPoints.collectAsState()
     val stats by viewModel.stats.collectAsState()
@@ -104,7 +103,7 @@ fun StressDetailScreen(
                         else -> "بازه استرس"
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray,
+                    color = Color(0xFF6B6B6B),
                     textAlign = TextAlign.End
                 )
 
@@ -118,43 +117,32 @@ fun StressDetailScreen(
 
                 Text(
                     text = rangeText,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.Black,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontSize = 20.sp,
+                        color = Color.Black
+                    ),
                     textAlign = TextAlign.End
                 )
 
                 Text(
                     text = dateLabel,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray,
+                    color = Color(0xFF6B6B6B),
                     textAlign = TextAlign.End
                 )
             }
 
-            // 3. Stress Chart (Bezier Curve)
-            if (points.isNotEmpty()) {
-                StressChart(points)
-            } else if (!isLoading) {
-                // Empty state
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(250.dp)
-                        .background(Color.White),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "داده‌ای موجود نیست",
-                        color = Color.Gray
-                    )
-                }
-            }
+            // 3. Stress Chart - Always show the chart structure
+            StressChart(
+                points = points,
+                showEmptyState = points.isEmpty() && !isLoading
+            )
 
             // 4. Last Measurement
             LatestMeasurementCard(
                 value = stats.currentVal,
-                time = stats.currentTime.toFarsiDigits()
+                time = stats.currentTime.toFarsiDigits(),
+                unit = ""
             )
 
             // 5. Stats Row
@@ -162,9 +150,9 @@ fun StressDetailScreen(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                StatBox("بالا ترین", stats.high, Modifier.weight(1f))
-                StatBox("میانگین", stats.avg, Modifier.weight(1f))
-                StatBox("پایین ترین", stats.low, Modifier.weight(1f))
+                StatBox("بالا ترین", stats.high, Modifier.weight(1f), unit = "")
+                StatBox("میانگین", stats.avg, Modifier.weight(1f), unit = "")
+                StatBox("پایین ترین", stats.low, Modifier.weight(1f), unit = "")
             }
 
             Spacer(modifier = Modifier.height(30.dp))
@@ -172,15 +160,18 @@ fun StressDetailScreen(
     }
 }
 
-
 @Composable
-fun StressChart(points: List<StressDetailViewModel.StressPoint>) {
+fun StressChart(
+    points: List<StressDetailViewModel.StressPoint>,
+    showEmptyState: Boolean = false
+) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(250.dp)
             .background(Color.White)
     ) {
+        // Always draw the chart canvas with grid and axes
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
@@ -190,7 +181,7 @@ fun StressChart(points: List<StressDetailViewModel.StressPoint>) {
             val h = size.height
             val maxVal = 100f
 
-            // Grid Lines
+            // Grid Lines - Always drawn
             val pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
             listOf(0f, 0.5f, 1f).forEach { r ->
                 drawLine(
@@ -209,7 +200,7 @@ fun StressChart(points: List<StressDetailViewModel.StressPoint>) {
                 )
             }
 
-            // Draw Curve
+            // Draw Curve - Only if we have data
             if (points.isNotEmpty()) {
                 val path = Path()
                 points.forEachIndexed { i, p ->
@@ -255,7 +246,7 @@ fun StressChart(points: List<StressDetailViewModel.StressPoint>) {
             }
         }
 
-        // Axis Labels
+        // Axis Labels - Always shown
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -267,9 +258,9 @@ fun StressChart(points: List<StressDetailViewModel.StressPoint>) {
                     .padding(vertical = 24.dp),
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("۱۰۰", fontSize = 10.sp, color = Color.Gray)
-                Text("۵۰", fontSize = 10.sp, color = Color.Gray)
-                Text("۰", fontSize = 10.sp, color = Color.Gray)
+                Text("۱۰۰", fontSize = 10.sp, color = Color(0xFF6B6B6B))
+                Text("۵۰", fontSize = 10.sp, color = Color(0xFF6B6B6B))
+                Text("۰", fontSize = 10.sp, color = Color(0xFF6B6B6B))
             }
             Row(
                 modifier = Modifier
@@ -277,10 +268,26 @@ fun StressChart(points: List<StressDetailViewModel.StressPoint>) {
                     .align(Alignment.BottomCenter),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("00:00", fontSize = 10.sp, color = Color.Gray)
-                Text("07:59", fontSize = 10.sp, color = Color.Gray)
-                Text("15:59", fontSize = 10.sp, color = Color.Gray)
-                Text("23:59", fontSize = 10.sp, color = Color.Gray)
+                Text("00:00", fontSize = 10.sp, color = Color(0xFF6B6B6B))
+                Text("07:59", fontSize = 10.sp, color = Color(0xFF6B6B6B))
+                Text("15:59", fontSize = 10.sp, color = Color(0xFF6B6B6B))
+                Text("23:59", fontSize = 10.sp, color = Color(0xFF6B6B6B))
+            }
+        }
+
+        // Empty State Overlay - Only shown when there's no data
+        if (showEmptyState) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.White.copy(alpha = 0.7f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "داده‌ای موجود نیست",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFF6B6B6B)
+                )
             }
         }
     }

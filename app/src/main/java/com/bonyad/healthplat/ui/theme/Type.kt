@@ -122,7 +122,7 @@ val Typography = Typography(
         letterSpacing = 0.1.sp
     ),
     labelMedium = TextStyle(
-        fontFamily = DanaFaNumFontFamily,
+        fontFamily = DanaFontFamily,
         fontWeight = FontWeight.Medium,
         fontSize = 12.sp,
         lineHeight = 16.sp,

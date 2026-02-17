@@ -128,6 +128,7 @@ fun DeviceConnectionStartScreen(
                     onClick = { onBack() },
                     modifier = Modifier
                         .align(Alignment.TopStart)
+                        .zIndex(1f)
                         .statusBarsPadding()
                         .padding(start = 24.dp, top = 16.dp)
                         .size(48.dp)
@@ -261,6 +262,7 @@ fun DeviceConnectionStartScreen(
                     onClick = { onSkip?.invoke() },
                     modifier = Modifier
                         .fillMaxWidth()
+                        .systemBarsPadding()
                         .height(56.dp),
                     shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.outlinedButtonColors(

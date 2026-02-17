@@ -2,7 +2,6 @@ package com.bonyad.healthplat.ui.device
 
 import android.annotation.SuppressLint
 import androidx.activity.compose.BackHandler
-import androidx.compose.runtime.Composable
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -11,23 +10,19 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Face
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.bonlala.bonlalable.bean.ScanDeviceInfo
 import com.bonyad.healthplat.R
 import timber.log.Timber
@@ -52,9 +47,6 @@ fun DeviceScanningScreen(
 
     LaunchedEffect(scannedDevices.size) {
         Timber.d("UI: Scanned devices count changed: ${scannedDevices.size}")
-        scannedDevices.forEach { device ->
-            Timber.d("UI: Device - ${device.bluetoothDevice?.address}")
-        }
     }
 
     // Navigate on success
@@ -77,17 +69,6 @@ fun DeviceScanningScreen(
         viewModel.startScan()
     }
 
-    val statusMessage = when (uiState) {
-        is DeviceConnectionUiState.Scanning -> {
-            if (scanDuration > 15) "جستجو بیش از حد طول کشید؟"
-            else "در حال جستجو..."
-        }
-        is DeviceConnectionUiState.Connecting -> "در حال برقراری ارتباط با دستگاه..."
-        is DeviceConnectionUiState.WaitingForPairing -> "لطفا درخواست جفت‌سازی را تایید کنید"
-        is DeviceConnectionUiState.Initializing -> "در حال آماده‌سازی دستگاه..."
-        else -> "در حال جستجو..."
-    }
-
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = Color(0xFFF5F5F5)
@@ -97,20 +78,17 @@ fun DeviceScanningScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-
+            // Back button
             if (onBack != null) {
                 IconButton(
                     onClick = { onBack() },
                     modifier = Modifier
                         .align(Alignment.TopStart)
-                        // IMPORTANT: Adds padding for status bar (clock/battery)
                         .statusBarsPadding()
-                        // Fixed padding to match Figma (not too close to edge)
-                        .padding(start = 24.dp, top = 16.dp)
+                        .padding(start = 16.dp, top = 8.dp)
                         .size(48.dp)
                 ) {
                     Icon(
-                        // FIX: Using your custom drawable
                         painter = painterResource(id = R.drawable.back_arrow),
                         contentDescription = "بازگشت",
                         tint = Color(0xFF2C2C2C)
@@ -121,104 +99,121 @@ fun DeviceScanningScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(24.dp),
+                    .padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Spacer(modifier = Modifier.height(40.dp))
+                Spacer(modifier = Modifier.height(80.dp))
 
-//                // Animated scanning indicator
-//                if (uiState is DeviceConnectionUiState.Scanning) {
-//                    ScanningAnimation()
-//                } else if (uiState is DeviceConnectionUiState.Connecting) {
-//                    ConnectingAnimation()
-//                }
-
-                // Animated indicator
-                when (uiState) {
-                    is DeviceConnectionUiState.Scanning -> ScanningAnimation()
-                    is DeviceConnectionUiState.Connecting,
-                    is DeviceConnectionUiState.WaitingForPairing, // NEW
-                    is DeviceConnectionUiState.Initializing -> ConnectingAnimation()
-                    else -> ScanningAnimation()
-                }
-
-
-                Spacer(modifier = Modifier.height(32.dp))
-
-                // Status text
+                // Title
                 Text(
-                    text = statusMessage,
+                    text = "جستجو برای حلقه شما",
                     style = MaterialTheme.typography.headlineSmall.copy(
                         fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp,
-                        textAlign = TextAlign.Center
+                        fontSize = 20.sp
                     ),
-                    color = Color(0xFF2C2C2C),
-                    modifier = Modifier.padding(bottom = 16.dp)
+                    color = Color(0xFF2C2C2C)
                 )
 
-                // Additional instructions for pairing
-                if (uiState is DeviceConnectionUiState.WaitingForPairing) {
+                Spacer(modifier = Modifier.height(40.dp))
+
+                // Compact iOS-style spinner
+                when (uiState) {
+                    is DeviceConnectionUiState.Scanning,
+                    is DeviceConnectionUiState.Idle -> {
+                        CompactSpinner()
+                    }
+                    is DeviceConnectionUiState.Connecting,
+                    is DeviceConnectionUiState.WaitingForPairing,
+                    is DeviceConnectionUiState.Initializing -> {
+                        // Teal colored spinner when connecting
+                        CompactSpinner(color = Color(0xFF5BA3A3))
+                    }
+                    is DeviceConnectionUiState.Connected -> {
+                        // Checkmark or success indicator
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(Color(0xFF4CAF50).copy(alpha = 0.1f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "✓",
+                                fontSize = 20.sp,
+                                color = Color(0xFF4CAF50),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    else -> CompactSpinner()
+                }
+
+                Spacer(modifier = Modifier.height(40.dp))
+
+                // Status message
+                val statusText = when (uiState) {
+                    is DeviceConnectionUiState.Connecting -> "در حال برقراری ارتباط..."
+                    is DeviceConnectionUiState.WaitingForPairing -> "درخواست جفت‌سازی را تایید کنید"
+                    is DeviceConnectionUiState.Initializing -> "در حال آماده‌سازی دستگاه..."
+                    is DeviceConnectionUiState.Connected -> "اتصال برقرار شد"
+                    else -> {
+                        if (scanDuration > 15) {
+                            "جستجو بیش از حد طول کشید؟"
+                        } else null
+                    }
+                }
+
+                statusText?.let {
                     Text(
-                        text = "یک پیام در بخش اعلان‌ها ظاهر می‌شود. لطفا آن را تایید کنید",
+                        text = it,
                         style = MaterialTheme.typography.bodyMedium.copy(
                             fontSize = 14.sp,
                             textAlign = TextAlign.Center,
-                            lineHeight = 22.sp,
+                            lineHeight = 22.sp
                         ),
-                        color = Color(0xFF666666),
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        color = Color(0xFF666666)
                     )
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                // Secondary hint when scanning takes long
+                if (uiState is DeviceConnectionUiState.Scanning && scanDuration > 15) {
+                    Text(
+                        text = "حلقه خود را به شارژر وصل کنید.",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 14.sp,
+                            textAlign = TextAlign.Center
+                        ),
+                        color = Color(0xFF666666),
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
 
-//                // Title
-//                Text(
-//                    text = when (uiState) {
-//                        is DeviceConnectionUiState.Scanning -> "جستجو برای حلقه شما"
-//                        is DeviceConnectionUiState.Connecting -> "در حال اتصال ..."
-//                        else -> "جستجو برای حلقه شما"
-//                    },
-//                    style = MaterialTheme.typography.headlineSmall.copy(
-//                        fontWeight = FontWeight.Bold,
-//                        fontSize = 24.sp,
-//                        textAlign = TextAlign.Center
-//                    ),
-//                    color = Color(0xFF2C2C2C),
-//                    modifier = Modifier.padding(bottom = 16.dp)
-//                )
-//
-//                // Instruction
-//                if (uiState is DeviceConnectionUiState.Scanning) {
-//                    Text(
-//                        text = if (scanDuration > 10) {
-//                            "جستجو بیش از حد طول کشید؟ دستگاه خود را به شارژر وصل کنید."
-//                        } else {
-//                            "لطفا صبر کنید..."
-//                        },
-//                        style = MaterialTheme.typography.bodyLarge.copy(
-//                            fontSize = 14.sp,
-//                            textAlign = TextAlign.Center,
-//                            lineHeight = 26.sp,
-//                        ),
-//                        color = Color(0xFF666666),
-//                        modifier = Modifier.padding(bottom = 32.dp)
-//                    )
-//                }
+                // Pairing hint
+                if (uiState is DeviceConnectionUiState.WaitingForPairing) {
+                    Text(
+                        text = "یک پیام در بخش اعلان‌ها ظاهر می‌شود",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center
+                        ),
+                        color = Color(0xFF999999),
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(32.dp))
 
                 // Device list
                 if (scannedDevices.isNotEmpty()) {
                     Text(
                         text = "دستگاه‌های یافت شده:",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
+                        style = MaterialTheme.typography.titleSmall.copy(
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 14.sp
                         ),
-                        color = Color(0xFF2C2C2C),
+                        color = Color(0xFF666666),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 16.dp, start = 8.dp),
+                            .padding(bottom = 12.dp),
                         textAlign = TextAlign.End
                     )
 
@@ -229,7 +224,9 @@ fun DeviceScanningScreen(
                         items(scannedDevices) { device ->
                             DeviceListItem(
                                 device = device,
-                                isConnecting = uiState is DeviceConnectionUiState.Connecting,
+                                isConnecting = uiState is DeviceConnectionUiState.Connecting ||
+                                        uiState is DeviceConnectionUiState.WaitingForPairing ||
+                                        uiState is DeviceConnectionUiState.Initializing,
                                 onClick = { viewModel.connectToDevice(device) }
                             )
                         }
@@ -238,103 +235,75 @@ fun DeviceScanningScreen(
                     Spacer(modifier = Modifier.weight(1f))
                 }
 
-                // Troubleshoot button - hide during connection
+                // Troubleshoot button
                 if (uiState !is DeviceConnectionUiState.Connecting &&
                     uiState !is DeviceConnectionUiState.WaitingForPairing &&
-                    uiState !is DeviceConnectionUiState.Initializing) {
+                    uiState !is DeviceConnectionUiState.Initializing
+                ) {
                     TextButton(
                         onClick = onTroubleshoot,
-                        modifier = Modifier.padding(top = 16.dp)
+                        modifier = Modifier.padding(vertical = 16.dp)
                     ) {
                         Text(
-                            text = "مشکل در اتصال؟",
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                fontSize = 14.sp
-                            ),
+                            text = "مشکل در اتصال ؟",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                             color = Color(0xFF5BA3A3)
                         )
                     }
                 } else {
-                    Spacer(modifier = Modifier.height(48.dp))
+                    Spacer(modifier = Modifier.height(56.dp))
                 }
-
-//                // Troubleshoot button
-//                TextButton(
-//                    onClick = onTroubleshoot,
-//                    modifier = Modifier.padding(top = 16.dp)
-//                ) {
-//                    Text(
-//                        text = "مشکل در اتصال؟",
-//                        style = MaterialTheme.typography.bodyMedium.copy(
-//                            fontSize = 14.sp
-//                        ),
-//                        color = Color(0xFF5BA3A3)
-//                    )
-//                }
             }
         }
     }
 }
 
 @Composable
-fun ScanningAnimation() {
-    val infiniteTransition = rememberInfiniteTransition(label = "scan")
+fun CompactSpinner(
+    size: Dp = 40.dp,
+    color: Color = Color(0xFF2C2C2C),
+    lineCount: Int = 8
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "spinner")
     val rotation by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearEasing),
+            animation = tween(1000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "rotation"
     )
 
     Box(
-        modifier = Modifier.size(120.dp),
+        modifier = Modifier
+            .size(size)
+            .graphicsLayer { rotationZ = rotation },
         contentAlignment = Alignment.Center
     ) {
-        // Outer circle
-        Box(
-            modifier = Modifier
-                .size(120.dp)
-                .background(
-                    color = Color(0xFF5BA3A3).copy(alpha = 0.1f),
-                    shape = CircleShape
+        for (i in 0 until lineCount) {
+            val angle = i * (360f / lineCount)
+            // Opacity decreases as we go around (creates the spinning trail effect)
+            val alpha = 1f - (i * (0.85f / lineCount))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { rotationZ = angle }
+            ) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 2.dp) // Small gap from edge
+                        .width(4.dp)   // Fixed line width
+                        .height(10.dp) // Fixed line height
+                        .background(
+                            color = color.copy(alpha = alpha.coerceIn(0.15f, 1f)),
+                            shape = RoundedCornerShape(2.dp)
+                        )
                 )
-        )
-
-        // Middle circle with rotation
-        Box(
-            modifier = Modifier
-                .size(80.dp)
-                .background(
-                    color = Color(0xFF5BA3A3).copy(alpha = 0.2f),
-                    shape = CircleShape
-                )
-                .rotate(rotation)
-        )
-
-        // Inner icon
-        Icon(
-            painter = painterResource(id = R.drawable.ring_img),
-            contentDescription = null,
-            modifier = Modifier.size(40.dp),
-            tint = Color(0xFF5BA3A3)
-        )
-    }
-}
-
-@Composable
-fun ConnectingAnimation() {
-    Box(
-        modifier = Modifier.size(120.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        CircularProgressIndicator(
-            modifier = Modifier.size(80.dp),
-            color = Color(0xFF5BA3A3),
-            strokeWidth = 6.dp
-        )
+            }
+        }
     }
 }
 
@@ -377,9 +346,7 @@ fun DeviceListItem(
 
                 Text(
                     text = device.bluetoothDevice?.address ?: "",
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontSize = 12.sp
-                    ),
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                     color = Color(0xFF999999),
                     modifier = Modifier.padding(top = 4.dp)
                 )
@@ -387,7 +354,7 @@ fun DeviceListItem(
 
             Spacer(modifier = Modifier.width(16.dp))
 
-            // Bluetooth icon
+            // Ring icon
             Box(
                 modifier = Modifier
                     .size(48.dp)

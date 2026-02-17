@@ -6,6 +6,7 @@ import com.bonyad.healthplat.data.repository.AuthResult
 import com.bonyad.healthplat.data.repository.CareRepository
 import com.bonyad.healthplat.domain.model.CarePermissions
 import com.bonyad.healthplat.domain.model.CaregiverUiModel
+import com.bonyad.healthplat.domain.model.MetricData
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,6 +15,8 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
 sealed class AddCaregiverMode {
@@ -57,11 +60,37 @@ class CareViewModel @Inject constructor(
     private val _showQrScanner = MutableStateFlow(false)
     val showQrScanner: StateFlow<Boolean> = _showQrScanner.asStateFlow()
 
+    // Edit permissions dialog
+    private val _showEditPermissionsDialog = MutableStateFlow(false)
+    val showEditPermissionsDialog: StateFlow<Boolean> = _showEditPermissionsDialog.asStateFlow()
+
+    private val _editingCaregiver = MutableStateFlow<CaregiverUiModel?>(null)
+    val editingCaregiver: StateFlow<CaregiverUiModel?> = _editingCaregiver.asStateFlow()
+
+    // Patient overview
+    private val _selectedPatient = MutableStateFlow<CaregiverUiModel?>(null)
+    val selectedPatient: StateFlow<CaregiverUiModel?> = _selectedPatient.asStateFlow()
+
+    private val _showPatientOverview = MutableStateFlow(false)
+    val showPatientOverview: StateFlow<Boolean> = _showPatientOverview.asStateFlow()
+
+    // Patient overview metrics
+    private val _patientHeartRate = MutableStateFlow<List<MetricData>>(emptyList())
+    val patientHeartRate: StateFlow<List<MetricData>> = _patientHeartRate.asStateFlow()
+
+    private val _patientSleep = MutableStateFlow<List<MetricData>>(emptyList())
+    val patientSleep: StateFlow<List<MetricData>> = _patientSleep.asStateFlow()
+
+    private val _patientSpo2 = MutableStateFlow<List<MetricData>>(emptyList())
+    val patientSpo2: StateFlow<List<MetricData>> = _patientSpo2.asStateFlow()
+
+    private val _patientStress = MutableStateFlow<List<MetricData>>(emptyList())
+    val patientStress: StateFlow<List<MetricData>> = _patientStress.asStateFlow()
+
     // ============ QR Code Data ============
     private val _qrCodeData = MutableStateFlow<String?>(null)
     val qrCodeData: StateFlow<String?> = _qrCodeData.asStateFlow()
 
-    // Store permissions temporarily when starting QR scanner
     private val _pendingQrPermissions = MutableStateFlow<CarePermissions?>(null)
     val pendingQrPermissions: StateFlow<CarePermissions?> = _pendingQrPermissions.asStateFlow()
 
@@ -87,11 +116,8 @@ class CareViewModel @Inject constructor(
     private fun loadAllData() {
         viewModelScope.launch {
             _isLoading.value = true
-
-            // Load both lists
             loadCaregivers()
-            loadMyUsers()
-
+            loadMyPatients()
             _isLoading.value = false
         }
     }
@@ -99,12 +125,10 @@ class CareViewModel @Inject constructor(
     private fun loadDataForCurrentTab() {
         viewModelScope.launch {
             _isLoading.value = true
-
             when (_selectedTab.value) {
                 CareTab.MY_CAREGIVERS -> loadCaregivers()
-                CareTab.I_AM_CAREGIVER -> loadMyUsers()
+                CareTab.I_AM_CAREGIVER -> loadMyPatients()
             }
-
             _isLoading.value = false
         }
     }
@@ -126,14 +150,14 @@ class CareViewModel @Inject constructor(
         }
     }
 
-    private suspend fun loadMyUsers() {
-        when (val result = careRepository.getMyUsers()) {
+    private suspend fun loadMyPatients() {
+        when (val result = careRepository.getMyPatients()) {
             is AuthResult.Success -> {
                 _iAmCaregiverFor.value = result.data
-                Timber.i("✅ Loaded ${result.data.size} users I'm caring for")
+                Timber.i("✅ Loaded ${result.data.size} patients I'm caring for")
             }
             is AuthResult.Error -> {
-                Timber.e("❌ Failed to load users: ${result.message}")
+                Timber.e("❌ Failed to load patients: ${result.message}")
                 _uiEvents.emit(CareUiEvent.ShowError(result.message))
             }
         }
@@ -167,11 +191,8 @@ class CareViewModel @Inject constructor(
 
     // ============ QR Scanner ============
     fun onStartQrScanner(permissions: CarePermissions) {
-        // Store permissions for use after scanning
         _pendingQrPermissions.value = permissions
-        // Close the add dialog
         _showAddCaregiverDialog.value = false
-        // Show scanner
         _showQrScanner.value = true
     }
 
@@ -182,13 +203,7 @@ class CareViewModel @Inject constructor(
 
     // ============ Add Caregiver Actions ============
 
-    /**
-     * Add caregiver by phone number
-     */
-    fun onAddCaregiverByPhone(
-        phoneNumber: String,
-        permissions: CarePermissions
-    ) {
+    fun onAddCaregiverByPhone(phoneNumber: String, permissions: CarePermissions) {
         viewModelScope.launch {
             _isLoading.value = true
 
@@ -197,7 +212,7 @@ class CareViewModel @Inject constructor(
                     Timber.i("✅ Caregiver added successfully")
                     _uiEvents.emit(CareUiEvent.ShowSuccess("درخواست با موفقیت ارسال شد"))
                     _showAddCaregiverDialog.value = false
-                    loadAllData() // Reload to show the new caregiver
+                    loadAllData()
                 }
                 is AuthResult.Error -> {
                     Timber.e("❌ Failed to add caregiver: ${result.message}")
@@ -209,12 +224,8 @@ class CareViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Add caregiver by scanning QR code
-     */
     fun onQrCodeScanned(qrData: String, permissions: CarePermissions) {
         viewModelScope.launch {
-            // Close scanner first
             _showQrScanner.value = false
 
             val userId = careRepository.parseQrCodeData(qrData)
@@ -227,7 +238,7 @@ class CareViewModel @Inject constructor(
 
             _isLoading.value = true
 
-            when (val result = careRepository.addCaregiverByUserId(userId, permissions)) {
+            when (val result = careRepository.addCaregiverByScan(userId, permissions)) {
                 is AuthResult.Success -> {
                     Timber.i("✅ Caregiver added by QR code")
                     _uiEvents.emit(CareUiEvent.ShowSuccess("تن‌یار با موفقیت اضافه شد"))
@@ -246,9 +257,6 @@ class CareViewModel @Inject constructor(
 
     // ============ Caregiver Actions ============
 
-    /**
-     * Accept a caregiver request (called by the caregiver)
-     */
     fun onAcceptCaregiverRequest(careId: Int) {
         viewModelScope.launch {
             _isLoading.value = true
@@ -257,7 +265,7 @@ class CareViewModel @Inject constructor(
                 is AuthResult.Success -> {
                     Timber.i("✅ Caregiver request accepted")
                     _uiEvents.emit(CareUiEvent.ShowSuccess("درخواست پذیرفته شد"))
-                    loadAllData() // Reload to update the status
+                    loadAllData()
                 }
                 is AuthResult.Error -> {
                     Timber.e("❌ Failed to accept request: ${result.message}")
@@ -269,20 +277,42 @@ class CareViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Edit caregiver permissions
-     */
+    // ============ Edit Permissions ============
+
     fun onEditCaregiver(caregiver: CaregiverUiModel) {
-        // TODO: Show edit dialog with current permissions
+        _editingCaregiver.value = caregiver
+        _showEditPermissionsDialog.value = true
+    }
+
+    fun onDismissEditPermissionsDialog() {
+        _showEditPermissionsDialog.value = false
+        _editingCaregiver.value = null
+    }
+
+    fun onSavePermissions(careId: Int, permissions: CarePermissions) {
         viewModelScope.launch {
-            Timber.i("Edit caregiver: ${caregiver.phoneNumber}")
-            _uiEvents.emit(CareUiEvent.ShowSuccess("ویرایش به زودی اضافه می‌شود"))
+            _isLoading.value = true
+
+            when (val result = careRepository.updateCaregiverPermissions(careId, permissions)) {
+                is AuthResult.Success -> {
+                    Timber.i("✅ Permissions updated")
+                    _uiEvents.emit(CareUiEvent.ShowSuccess("دسترسی‌ها به‌روزرسانی شد"))
+                    _showEditPermissionsDialog.value = false
+                    _editingCaregiver.value = null
+                    loadAllData()
+                }
+                is AuthResult.Error -> {
+                    Timber.e("❌ Failed to update permissions: ${result.message}")
+                    _uiEvents.emit(CareUiEvent.ShowError(result.message))
+                }
+            }
+
+            _isLoading.value = false
         }
     }
 
-    /**
-     * Delete a caregiver from my caregivers list
-     */
+    // ============ Delete ============
+
     fun onDeleteCaregiver(caregiver: CaregiverUiModel) {
         viewModelScope.launch {
             _isLoading.value = true
@@ -291,7 +321,7 @@ class CareViewModel @Inject constructor(
                 is AuthResult.Success -> {
                     Timber.i("✅ Caregiver deleted")
                     _uiEvents.emit(CareUiEvent.ShowSuccess("تن‌یار حذف شد"))
-                    loadAllData() // Reload the list
+                    loadAllData()
                 }
                 is AuthResult.Error -> {
                     Timber.e("❌ Failed to delete caregiver: ${result.message}")
@@ -303,9 +333,6 @@ class CareViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Remove myself as caregiver for someone
-     */
     fun onRemoveCaregiverRole(person: CaregiverUiModel) {
         viewModelScope.launch {
             _isLoading.value = true
@@ -319,6 +346,73 @@ class CareViewModel @Inject constructor(
                 is AuthResult.Error -> {
                     Timber.e("❌ Failed to remove caregiver role: ${result.message}")
                     _uiEvents.emit(CareUiEvent.ShowError(result.message))
+                }
+            }
+
+            _isLoading.value = false
+        }
+    }
+
+    // ============ Patient Overview ============
+
+    fun onOpenPatientOverview(patient: CaregiverUiModel) {
+        if (patient.isPending) {
+            viewModelScope.launch {
+                _uiEvents.emit(CareUiEvent.ShowError("ابتدا باید درخواست تایید شود"))
+            }
+            return
+        }
+
+        _selectedPatient.value = patient
+        _showPatientOverview.value = true
+        loadPatientMetrics(patient)
+    }
+
+    fun onDismissPatientOverview() {
+        _showPatientOverview.value = false
+        _selectedPatient.value = null
+        _patientHeartRate.value = emptyList()
+        _patientSleep.value = emptyList()
+        _patientSpo2.value = emptyList()
+        _patientStress.value = emptyList()
+    }
+
+    private fun loadPatientMetrics(patient: CaregiverUiModel) {
+        val patientUserId = patient.patientId ?: return
+
+        val today = LocalDate.now()
+        val dateFrom = today.format(DateTimeFormatter.ISO_LOCAL_DATE)
+        val dateTo = today.format(DateTimeFormatter.ISO_LOCAL_DATE)
+
+        viewModelScope.launch {
+            _isLoading.value = true
+
+            // Load all permitted metrics in parallel
+            if (patient.permissions.heartRate) {
+                when (val result = careRepository.getPatientHeartRate(patientUserId, dateFrom, dateTo)) {
+                    is AuthResult.Success -> _patientHeartRate.value = result.data
+                    is AuthResult.Error -> Timber.w("Could not load heart rate: ${result.message}")
+                }
+            }
+
+            if (patient.permissions.sleepQuality) {
+                when (val result = careRepository.getPatientSleep(patientUserId, dateFrom, dateTo)) {
+                    is AuthResult.Success -> _patientSleep.value = result.data
+                    is AuthResult.Error -> Timber.w("Could not load sleep: ${result.message}")
+                }
+            }
+
+            if (patient.permissions.bloodPressure) {
+                when (val result = careRepository.getPatientSpo2(patientUserId, dateFrom, dateTo)) {
+                    is AuthResult.Success -> _patientSpo2.value = result.data
+                    is AuthResult.Error -> Timber.w("Could not load spo2: ${result.message}")
+                }
+            }
+
+            if (patient.permissions.stressLevel) {
+                when (val result = careRepository.getPatientStress(patientUserId, dateFrom, dateTo)) {
+                    is AuthResult.Success -> _patientStress.value = result.data
+                    is AuthResult.Error -> Timber.w("Could not load stress: ${result.message}")
                 }
             }
 

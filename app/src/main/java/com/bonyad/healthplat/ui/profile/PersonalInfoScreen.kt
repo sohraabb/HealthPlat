@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -58,12 +59,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
@@ -100,6 +104,13 @@ fun PersonalInfoScreen(
     val showGenderPicker by viewModel.showGenderPicker.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Focus requesters for keyboard navigation
+    val lastNameFocusRequester = remember { FocusRequester() }
+    val heightFocusRequester = remember { FocusRequester() }
+    val weightFocusRequester = remember { FocusRequester() }
+
+
 
     BackHandler(enabled = onBack != null) {
         onBack?.invoke()
@@ -212,8 +223,12 @@ fun PersonalInfoScreen(
                                     value = name,
                                     onValueChange = { viewModel.updateName(it) },
                                     modifier = Modifier.weight(1f),
-                                    label = { Text("نام") },
+                                    label = { Text("نام", color = Color.Black) },
                                     placeholder = { Text("علی", color = PlaceholderColor) },
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                                    keyboardActions = KeyboardActions(
+                                        onNext = { lastNameFocusRequester.requestFocus() }
+                                    ),
                                     singleLine = true,
                                     shape = RoundedCornerShape(12.dp),
                                     colors = OutlinedTextFieldDefaults.colors(
@@ -232,9 +247,15 @@ fun PersonalInfoScreen(
                                 OutlinedTextField(
                                     value = lastName,
                                     onValueChange = { viewModel.updateLastName(it) },
-                                    modifier = Modifier.weight(1f),
-                                    label = { Text("نام خانوادگی") },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .focusRequester(lastNameFocusRequester),
+                                    label = { Text("نام خانوادگی", color = Color.Black) },
                                     placeholder = { Text("محمدی", color = PlaceholderColor) },
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                                    keyboardActions = KeyboardActions(
+                                        onNext = { heightFocusRequester.requestFocus() }
+                                    ),
                                     singleLine = true,
                                     shape = RoundedCornerShape(12.dp),
                                     colors = OutlinedTextFieldDefaults.colors(
@@ -261,10 +282,18 @@ fun PersonalInfoScreen(
                                 OutlinedTextField(
                                     value = height,
                                     onValueChange = { viewModel.updateHeight(it) },
-                                    modifier = Modifier.weight(1f),
-                                    label = { Text("قد") },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .focusRequester(heightFocusRequester),
+                                    label = { Text("قد", color = Color.Black) },
                                     placeholder = { Text("سانتی‌متر", color = PlaceholderColor) },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Number,
+                                        imeAction = ImeAction.Next
+                                    ),
+                                    keyboardActions = KeyboardActions(
+                                        onNext = { weightFocusRequester.requestFocus() }
+                                    ),
                                     singleLine = true,
                                     shape = RoundedCornerShape(12.dp),
                                     colors = OutlinedTextFieldDefaults.colors(
@@ -360,10 +389,22 @@ fun PersonalInfoScreen(
                                 OutlinedTextField(
                                     value = weight,
                                     onValueChange = { viewModel.updateWeight(it) },
-                                    modifier = Modifier.weight(1f),
-                                    label = { Text("وزن") },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .focusRequester(weightFocusRequester),
+                                    label = { Text("وزن", color = Color.Black) },
                                     placeholder = { Text("کیلوگرم", color = PlaceholderColor) },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Number,
+                                        imeAction = ImeAction.Done
+                                    ),
+                                    keyboardActions = KeyboardActions(
+                                        onDone = {
+                                            if (isFormValid) {
+                                                viewModel.savePersonalInfo()
+                                            }
+                                        }
+                                    ),
                                     singleLine = true,
                                     shape = RoundedCornerShape(12.dp),
                                     colors = OutlinedTextFieldDefaults.colors(

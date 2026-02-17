@@ -56,6 +56,8 @@ dependencies {
     // Dependency Injection
     implementation(libs.hilt.android)
     implementation(libs.hilt.compose)
+    implementation(libs.androidx.hilt.common)
+    implementation(libs.androidx.hilt.work)
     ksp(libs.hilt.compiler)
 
 
@@ -94,8 +96,13 @@ dependencies {
     implementation("com.microsoft.signalr:signalr:10.0.0")
 
     // QR Code Generation
-    // QR Code Generation
     implementation("com.google.zxing:core:3.5.2")
+
+    implementation("io.coil-kt.coil3:coil-compose:3.3.0")
+    implementation("io.coil-kt.coil3:coil-network-okhttp:3.3.0")
+
+    // WorkManager
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
 
     // CameraX for QR Scanner
     val cameraxVersion = "1.3.1"

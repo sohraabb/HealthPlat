@@ -118,11 +118,11 @@ fun StepsDetailScreen(
                             else -> "مجموع"
                         },
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray
+                        color = Color(0xFF6B6B6B)
                     )
                 }
 
-                // Value row (Steps + unit) — EXACTLY like bpm row
+                // Value row (Steps + unit)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
@@ -131,20 +131,21 @@ fun StepsDetailScreen(
                     Text(
                         text = "قدم",
                         fontSize = 14.sp,
-                        color = Color.Gray
+                        color = Color(0xFF6B6B6B)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = totalSteps.toString().toFarsiDigits(),
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.DarkGray
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = 20.sp,
+                            color = Color.Black
+                        )
                     )
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Date row — EXACT SAME LOGIC as HR
+                // Date row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -162,19 +163,11 @@ fun StepsDetailScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Bar Chart
-                if (barData.isNotEmpty()) {
-                    StepsBarChart(data = barData)
-                } else if (!isLoading) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(250.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("داده‌ای موجود نیست", color = Color.Gray)
-                    }
-                }
+                // Bar Chart - Always show the chart structure
+                StepsBarChart(
+                    data = barData,
+                    showEmptyState = barData.isEmpty() && !isLoading
+                )
             }
 
             // 4. Comparison Card (Bottom Section)
@@ -190,7 +183,10 @@ fun StepsDetailScreen(
 }
 
 @Composable
-fun StepsBarChart(data: List<StepsDetailViewModel.StepBarPoint>) {
+fun StepsBarChart(
+    data: List<StepsDetailViewModel.StepBarPoint>,
+    showEmptyState: Boolean = false
+) {
     val maxVal = (data.maxOfOrNull { it.steps } ?: 1).coerceAtLeast(1000).toFloat()
     val selectedPoint = data.find { it.isSelected }
 
@@ -199,6 +195,7 @@ fun StepsBarChart(data: List<StepsDetailViewModel.StepBarPoint>) {
             .fillMaxWidth()
             .height(250.dp)
     ) {
+        // Always draw the chart canvas with grid and axes
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
@@ -207,7 +204,7 @@ fun StepsBarChart(data: List<StepsDetailViewModel.StepBarPoint>) {
             val w = size.width
             val h = size.height
 
-            // 1. Draw Grid Lines (Horizontal)
+            // 1. Draw Grid Lines (Horizontal) - Always drawn
             val pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
             listOf(0f, 0.5f, 1f).forEach { ratio ->
                 val y = h * ratio
@@ -219,7 +216,7 @@ fun StepsBarChart(data: List<StepsDetailViewModel.StepBarPoint>) {
                 )
             }
 
-            // 2. Draw Vertical Grid Lines
+            // 2. Draw Vertical Grid Lines - Always drawn
             listOf(0.25f, 0.5f, 0.75f).forEach { ratio ->
                 val x = w * ratio
                 drawLine(
@@ -230,36 +227,38 @@ fun StepsBarChart(data: List<StepsDetailViewModel.StepBarPoint>) {
                 )
             }
 
-            // 3. Draw Bars
-            val barWidth = 12.dp.toPx()
-            val spacing = w / (data.size + 1)
+            // 3. Draw Bars - Only if we have data
+            if (data.isNotEmpty()) {
+                val barWidth = 12.dp.toPx()
+                val spacing = w / (data.size + 1)
 
-            data.forEachIndexed { index, point ->
-                val x = spacing * (index + 1)
-                val barHeight = (point.steps / maxVal * h).coerceAtLeast(4.dp.toPx())
+                data.forEachIndexed { index, point ->
+                    val x = spacing * (index + 1)
+                    val barHeight = (point.steps / maxVal * h).coerceAtLeast(4.dp.toPx())
 
-                drawRoundRect(
-                    color = Color(0xFFFF9100),
-                    topLeft = Offset(x - barWidth / 2, h - barHeight),
-                    size = Size(barWidth, barHeight),
-                    cornerRadius = CornerRadius(barWidth / 2, barWidth / 2)
-                )
-
-                // 4. Draw Tooltip line if selected
-                if (point.isSelected) {
-                    drawLine(
-                        color = Color.Gray,
-                        start = Offset(x, h - barHeight),
-                        end = Offset(x, -30f),
-                        pathEffect = pathEffect,
-                        strokeWidth = 2f
+                    drawRoundRect(
+                        color = Color(0xFFFF9100),
+                        topLeft = Offset(x - barWidth / 2, h - barHeight),
+                        size = Size(barWidth, barHeight),
+                        cornerRadius = CornerRadius(barWidth / 2, barWidth / 2)
                     )
+
+                    // 4. Draw Tooltip line if selected
+                    if (point.isSelected) {
+                        drawLine(
+                            color = Color.Gray,
+                            start = Offset(x, h - barHeight),
+                            end = Offset(x, -30f),
+                            pathEffect = pathEffect,
+                            strokeWidth = 2f
+                        )
+                    }
                 }
             }
         }
 
-        // 5. Tooltip Box (Overlay UI) - Dynamic data
-        if (selectedPoint != null) {
+        // 5. Tooltip Box (Overlay UI) - Only shown when data exists and point is selected
+        if (selectedPoint != null && data.isNotEmpty()) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -283,7 +282,7 @@ fun StepsBarChart(data: List<StepsDetailViewModel.StepBarPoint>) {
             }
         }
 
-        // 6. Labels (Y-Axis)
+        // 6. Labels (Y-Axis) - Always shown
         Box(modifier = Modifier.fillMaxSize()) {
             Text(
                 maxVal.toInt().toString().toFarsiDigits(),
@@ -303,7 +302,7 @@ fun StepsBarChart(data: List<StepsDetailViewModel.StepBarPoint>) {
             )
         }
 
-        // 7. Labels (X-Axis)
+        // 7. Labels (X-Axis) - Always shown
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -311,17 +310,34 @@ fun StepsBarChart(data: List<StepsDetailViewModel.StepBarPoint>) {
                 .padding(start = 30.dp, end = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            if (data.size <= 7) {
-                // Show all labels for weekly view
+            if (data.isNotEmpty() && data.size <= 7) {
+                // Show all labels for weekly view when we have data
                 data.forEach { point ->
                     Text(point.hourLabel, fontSize = 10.sp, color = Color.Gray)
                 }
             } else {
-                // Show time labels for daily view
+                // Show time labels for daily view or when no data
                 Text("00:00", fontSize = 10.sp, color = Color.Gray)
                 Text("07:59", fontSize = 10.sp, color = Color.Gray)
                 Text("15:59", fontSize = 10.sp, color = Color.Gray)
                 Text("23:59", fontSize = 10.sp, color = Color.Gray)
+            }
+        }
+
+        // Empty State Overlay - Only shown when there's no data
+        if (showEmptyState) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(start = 30.dp, end = 16.dp, bottom = 24.dp, top = 40.dp)
+                    .background(Color.White.copy(alpha = 0.7f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "داده‌ای موجود نیست",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.Gray
+                )
             }
         }
     }

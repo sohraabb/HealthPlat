@@ -1,6 +1,5 @@
-package com.yourpackage.healthplat.ui.auth
+package com.bonyad.healthplat.ui.login
 
-import androidx.compose.ui.autofill.ContentType.Companion.Gender
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bonyad.healthplat.data.repository.AuthRepository
@@ -208,6 +207,7 @@ class AuthViewModel @Inject constructor(
 
         viewModelScope.launch {
             _otp.value = ""
+            _serverOtp.value = ""  // Clear so toast re-triggers even if same code
             _authState.value = AuthState.Idle
             sendOtp()
         }

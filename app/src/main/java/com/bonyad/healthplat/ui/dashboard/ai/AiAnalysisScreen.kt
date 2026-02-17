@@ -20,8 +20,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -42,6 +40,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -59,8 +58,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.bonyad.healthplat.R
+import com.bonyad.healthplat.ui.components.PersianDate
+import com.bonyad.healthplat.ui.components.PersianDatePickerDialog
+import com.bonyad.healthplat.ui.utils.PersianDateUtils
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
 
 // Color palette matching the design
@@ -82,8 +84,30 @@ fun AiAnalysisScreen(
     onConsultClick: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsState()
+    val selectedDate by viewModel.selectedPersianDate.collectAsState()
 
-    // Force LTR for proper back button placement, but content remains RTL
+    // Date picker dialog visibility
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    // Max selectable date = today (can't pick future)
+    val todayPersian = remember {
+        val (jy, jm, jd) = PersianDateUtils.getCurrentJalaliDate()
+        PersianDate(jy, jm, jd)
+    }
+
+    // Show date picker dialog
+    if (showDatePicker) {
+        PersianDatePickerDialog(
+            selectedDate = selectedDate,
+            onDateSelected = { date ->
+                showDatePicker = false
+                viewModel.fetchAnalysisForDate(date)
+            },
+            onDismiss = { showDatePicker = false },
+            maxDate = todayPersian
+        )
+    }
+
     Scaffold(
         containerColor = DarkBackground,
         topBar = {
@@ -96,6 +120,17 @@ fun AiAnalysisScreen(
                             contentDescription = "بازگشت",
                             tint = TextWhite,
                             modifier = Modifier.size(28.dp)
+                        )
+                    }
+                },
+                actions = {
+                    // Calendar icon — opposite side of back button
+                    IconButton(onClick = { showDatePicker = true }) {
+                        Icon(
+                            painter = painterResource(R.drawable.calendar),
+                            contentDescription = "انتخاب تاریخ",
+                            tint = TextWhite,
+                            modifier = Modifier.size(24.dp)
                         )
                     }
                 },
@@ -188,7 +223,7 @@ private fun ErrorContent(
             ) {
                 Text(
                     text = "تلاش مجدد",
-                    color = DarkBackground,
+                    color = Color.White,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -240,7 +275,7 @@ private fun SuccessContent(
             )
             Spacer(modifier = Modifier.width(6.dp))
             Icon(
-                painter = painterResource(id = R.drawable.ic_sparkle), // Add sparkle icon
+                painter = painterResource(id = R.drawable.ic_sparkle),
                 contentDescription = null,
                 tint = AccentCyan,
                 modifier = Modifier.size(16.dp)
@@ -289,7 +324,7 @@ private fun SuccessContent(
 
         // Section Title
         Text(
-            text = "شاخص‌های سبک زندگی",
+            text = "شاخص\u200Cهای سبک زندگی",
             modifier = Modifier.fillMaxWidth(),
             style = MaterialTheme.typography.titleMedium.copy(
                 fontWeight = FontWeight.Bold
@@ -319,7 +354,7 @@ private fun SuccessContent(
             shape = RoundedCornerShape(14.dp)
         ) {
             Icon(
-                painter = painterResource(id = R.drawable.ic_consultant), // Add consultant icon
+                painter = painterResource(id = R.drawable.ic_consultant),
                 contentDescription = null,
                 tint = DarkBackground,
                 modifier = Modifier.size(20.dp)
@@ -376,7 +411,7 @@ private fun AiIconHeader() {
         contentAlignment = Alignment.Center
     ) {
         Icon(
-            painter = painterResource(id = R.drawable.ic_ai_brain), // Add AI/neural icon
+            painter = painterResource(id = R.drawable.ic_ai_brain),
             contentDescription = null,
             tint = AccentCyan,
             modifier = Modifier.size(36.dp)
@@ -596,7 +631,7 @@ private fun AiMetricCard(metric: AiMetric) {
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Icon(
-                        painter = painterResource(id = R.drawable.ic_lightbulb), // Add lightbulb/tip icon
+                        painter = painterResource(id = R.drawable.ic_lightbulb),
                         contentDescription = null,
                         tint = AccentCyan,
                         modifier = Modifier.size(16.dp)

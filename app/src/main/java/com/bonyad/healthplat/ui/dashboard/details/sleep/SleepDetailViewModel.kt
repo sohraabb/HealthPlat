@@ -8,6 +8,8 @@ import com.bonyad.healthplat.data.repository.HealthDataRepository
 import com.bonyad.healthplat.data.repository.MetricType
 import com.bonyad.healthplat.domain.model.MetricData
 import com.bonyad.healthplat.domain.model.RecordDataResult
+import com.bonyad.healthplat.ui.utils.SleepDataHelper
+import com.bonyad.healthplat.ui.utils.toFarsiDigits
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -16,16 +18,19 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import saman.zamani.persiandate.PersianDate
 import timber.log.Timber
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.util.GregorianCalendar
 import javax.inject.Inject
 
 @HiltViewModel
 class SleepDetailViewModel @Inject constructor(
     private val deviceManager: HealthDeviceManager,
     private val healthRepository: HealthDataRepository,
-    private val userPreferences: UserPreferencesDataStore
+    private val userPreferences: UserPreferencesDataStore,
+    private val sleepDataHelper: SleepDataHelper
 ) : ViewModel() {
 
     private val _deepMinutes = MutableStateFlow(0)
@@ -103,21 +108,22 @@ class SleepDetailViewModel @Inject constructor(
     // ============ PRIMARY: Load from Ring ============
 
     private fun loadSleepData(offset: Int) {
+        val today = LocalDate.now()
+        val formatter = DateTimeFormatter.ISO_LOCAL_DATE
+
         viewModelScope.launch {
             _isLoading.value = true
-            updateDateLabel(offset)
+            val targetDate = today.plusDays(_selectedDayOffset.value.toLong())
+            val dateStr = targetDate.format(formatter)
+            updateDateLabel(targetDate)
 
             try {
-                // PRIMARY: Try ring first
-                val result = deviceManager.getRecordData(offset)
+                // PRIMARY: Try ring first - get full sleep data (may span midnight)
+                val fullSleepData = loadFullSleepDataFromRing(offset)
 
-                if (result is RecordDataResult.Success &&
-                    result.sleep?.sourceList?.any { it > 0 } == true) {
-
-                    val sleepList = result.sleep.sourceList
-                    Timber.i("📊 Sleep from RING: ${sleepList.size} values")
-                    processSleepData(sleepList)
-
+                if (fullSleepData.isNotEmpty()) {
+                    Timber.i("📊 Sleep from RING: ${fullSleepData.size} values")
+                    processSleepData(fullSleepData)
                 } else {
                     // FALLBACK: Try API
                     Timber.w("⚠️ No ring data, trying API fallback...")
@@ -131,6 +137,14 @@ class SleepDetailViewModel @Inject constructor(
                 _isLoading.value = false
             }
         }
+    }
+
+    /**
+     * Load sleep data that may span across midnight.
+     * Uses shared SleepDataHelper to ensure consistency across app.
+     */
+    private suspend fun loadFullSleepDataFromRing(offset: Int): List<Int> {
+        return sleepDataHelper.getFullSleepData(offset)
     }
 
     // ============ FALLBACK: Load from API ============
@@ -309,14 +323,18 @@ class SleepDetailViewModel @Inject constructor(
         return normalized.coerceIn(0.0, 100.0).toInt()
     }
 
-    private fun updateDateLabel(offset: Int) {
+    private fun updateDateLabel(date: LocalDate) {
         val today = LocalDate.now()
-        val targetDate = today.plusDays(offset.toLong())
-
-        _dateLabel.value = when (offset) {
-            0 -> "امشب"
-            -1 -> "دیشب"
-            else -> "${targetDate.dayOfMonth} ${getPersianMonth(targetDate.monthValue)}"
+        _dateLabel.value = when {
+            date == today -> "امشب"
+            date == today.minusDays(1) -> "دیشب"
+            else -> {
+                val calendar = GregorianCalendar(date.year, date.monthValue - 1, date.dayOfMonth)
+                val pDate = PersianDate(calendar.time)
+                val dayOfMonth = pDate.shDay.toString().toFarsiDigits()
+                val monthName = pDate.monthName
+                "$monthName $dayOfMonth"
+            }
         }
     }
 

@@ -7,14 +7,17 @@ import com.bonyad.healthplat.data.repository.HealthDataRepository
 import com.bonyad.healthplat.data.repository.MetricType
 import com.bonyad.healthplat.domain.model.MetricData
 import com.bonyad.healthplat.domain.model.RecordDataResult
+import com.bonyad.healthplat.ui.utils.toFarsiDigits
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import saman.zamani.persiandate.PersianDate
 import timber.log.Timber
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.util.GregorianCalendar
 import javax.inject.Inject
 
 @HiltViewModel
@@ -171,25 +174,13 @@ class StepsDetailViewModel @Inject constructor(
         _dateLabel.value = when {
             date == today -> "امروز"
             date == today.minusDays(1) -> "دیروز"
-            else -> "${date.dayOfMonth} ${getPersianMonth(date.monthValue)}"
-        }
-    }
-
-    private fun getPersianMonth(month: Int): String {
-        return when (month) {
-            1 -> "ژانویه"
-            2 -> "فوریه"
-            3 -> "مارس"
-            4 -> "آوریل"
-            5 -> "می"
-            6 -> "ژوئن"
-            7 -> "جولای"
-            8 -> "آگوست"
-            9 -> "سپتامبر"
-            10 -> "اکتبر"
-            11 -> "نوامبر"
-            12 -> "دسامبر"
-            else -> ""
+            else -> {
+                val calendar = GregorianCalendar(date.year, date.monthValue - 1, date.dayOfMonth)
+                val pDate = PersianDate(calendar.time)
+                val dayOfMonth = pDate.shDay.toString().toFarsiDigits()
+                val monthName = pDate.monthName
+                "$dayOfMonth $monthName"
+            }
         }
     }
 

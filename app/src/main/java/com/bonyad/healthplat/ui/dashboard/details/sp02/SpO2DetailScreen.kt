@@ -90,13 +90,13 @@ fun SpO2DetailScreen(
                 )
             }
 
-            // 3. Chart Section
+            // 3. Chart Section - Always show the chart structure
             SpO2ChartSection(
                 data = chartData,
                 rangeText = rangeText,
                 dateLabel = dateLabel,
                 selectedRange = selectedRange,
-                isLoading = isLoading
+                showEmptyState = chartData.isEmpty() && !isLoading
             )
 
             // 4. Latest Measurement Card
@@ -120,169 +120,191 @@ fun SpO2ChartSection(
     rangeText: String,
     dateLabel: String,
     selectedRange: String,
-    isLoading: Boolean
+    showEmptyState: Boolean = false
 ) {
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
         // Chart Header
-        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                Text(
-                    text = when (selectedRange) {
-                        "هفتگی", "ماهانه" -> "میانگین بازه اکسیژن"
-                        else -> "بازه اکسیژن"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
-                )
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // Value row (range %)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = if (rangeText.isNotEmpty())
-                        rangeText.toFarsiDigits()
-                    else
-                        "-",
-                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                    color = Color.Black
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "%",
-                    fontSize = 14.sp,
-                    color = Color.Gray
-                )
-
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // Date row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Spacer(modifier = Modifier.weight(1f))
-
-                Text(
-                    text = dateLabel,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
-                )
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            Text(
+                text = when (selectedRange) {
+                    "هفتگی", "ماهانه" -> "میانگین بازه اکسیژن"
+                    else -> "بازه اکسیژن"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.Gray
+            )
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
-        // Scatter Chart Canvas
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(250.dp)
-                .background(Color.White)
+        // Value row (range %)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            if (data.isNotEmpty()) {
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(start = 30.dp, end = 16.dp, top = 20.dp, bottom = 30.dp)
-                ) {
-                    val w = size.width
-                    val h = size.height
+            Text(
+                text = if (rangeText.isNotEmpty())
+                    rangeText.toFarsiDigits()
+                else
+                    "-",
+                style = MaterialTheme.typography.headlineMedium,
+                color = Color.Black
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = "%",
+                fontSize = 14.sp,
+                color = Color.Gray
+            )
+        }
 
-                    val minVal = 85f
-                    val maxVal = 100f
-                    val range = maxVal - minVal
+        Spacer(modifier = Modifier.height(4.dp))
 
-                    // Horizontal Grid Lines
-                    val pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
-                    val steps = 3
+        // Date row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            Text(
+                text = dateLabel,
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.Gray
+            )
+        }
 
-                    for (i in 0..steps) {
-                        val y = h * (i.toFloat() / steps)
-                        drawLine(
-                            color = Color.LightGray.copy(alpha = 0.5f),
-                            start = Offset(0f, y),
-                            end = Offset(w, y),
-                            pathEffect = pathEffect
-                        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Chart Card (same structure as Heart Rate)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            shape = RoundedCornerShape(16.dp),
+            elevation = CardDefaults.cardElevation(0.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(240.dp)
+                    .padding(top = 16.dp, bottom = 24.dp)
+            ) {
+                Row(modifier = Modifier.fillMaxSize()) {
+                    // Y-Axis Labels
+                    Column(
+                        modifier = Modifier
+                            .width(32.dp)
+                            .fillMaxHeight()
+                            .padding(end = 4.dp, top = 8.dp, bottom = 16.dp),
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("۱۰۰", fontSize = 10.sp, color = Color.Gray)
+                        Text("۹۵", fontSize = 10.sp, color = Color.Gray)
+                        Text("۹۰", fontSize = 10.sp, color = Color.Gray)
+                        Text("۸۵", fontSize = 10.sp, color = Color.Gray)
                     }
 
-                    // Vertical Grid Lines
-                    listOf(0.33f, 0.66f).forEach { ratio ->
-                        val x = w * ratio
-                        drawLine(
-                            color = Color.LightGray.copy(alpha = 0.5f),
-                            start = Offset(x, 0f),
-                            end = Offset(x, h),
-                            pathEffect = pathEffect
-                        )
-                    }
+                    // Chart Area
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                    ) {
+                        Canvas(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(top = 8.dp, bottom = 16.dp, end = 8.dp)
+                        ) {
+                            val w = size.width
+                            val h = size.height
 
-                    // Draw Scatter Points
-                    val dotColor = Color(0xFF4DD0E1)
+                            val minVal = 85f
+                            val maxVal = 100f
+                            val range = maxVal - minVal
 
-                    data.forEach { point ->
-                        val x = w * point.timeRatio
-                        val y = (h - ((point.value - minVal) / range) * h).coerceIn(0f, h)
+                            // Horizontal Grid Lines
+                            val pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f)
+                            val steps = 3
 
-                        drawCircle(
-                            color = dotColor,
-                            radius = 4.dp.toPx(),
-                            center = Offset(x, y)
-                        )
+                            for (i in 0..steps) {
+                                val y = h * (i.toFloat() / steps)
+                                drawLine(
+                                    color = Color.LightGray.copy(alpha = 0.5f),
+                                    start = Offset(0f, y),
+                                    end = Offset(w, y),
+                                    strokeWidth = 1.dp.toPx(),
+                                    pathEffect = pathEffect
+                                )
+                            }
+
+                            // Vertical Grid Lines
+                            val verticalLines = listOf(0f, 0.25f, 0.5f, 0.75f, 1f)
+                            verticalLines.forEach { ratio ->
+                                val x = w * ratio
+                                drawLine(
+                                    color = Color.LightGray.copy(alpha = 0.3f),
+                                    start = Offset(x, 0f),
+                                    end = Offset(x, h),
+                                    strokeWidth = 1.dp.toPx(),
+                                    pathEffect = pathEffect
+                                )
+                            }
+
+                            // Draw Scatter Points
+                            if (data.isNotEmpty()) {
+                                val dotColor = Color(0xFF4DD0E1)
+
+                                data.forEach { point ->
+                                    val x = w * point.timeRatio
+                                    val y = (h - ((point.value - minVal) / range) * h).coerceIn(0f, h)
+
+                                    drawCircle(
+                                        color = dotColor,
+                                        radius = 4.dp.toPx(),
+                                        center = Offset(x, y)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Time Labels at bottom - LTR for correct ordering
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .align(Alignment.BottomCenter)
+                                    .padding(end = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                listOf("۰۰:۰۰", "۰۷:۵۹", "۱۵:۵۹", "۲۳:۵۹").forEach { label ->
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.Gray,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
-                // Y-Axis Labels
-                Column(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .padding(vertical = 20.dp),
-                    verticalArrangement = Arrangement.SpaceBetween,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text("۱۰۰", fontSize = 10.sp, color = Color.Gray)
-                    Text("۹۵", fontSize = 10.sp, color = Color.Gray)
-                    Text("۹۰", fontSize = 10.sp, color = Color.Gray)
-                    Text("۸۵", fontSize = 10.sp, color = Color.Gray)
-                }
-
-                // X-Axis Labels
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.BottomCenter)
-                        .padding(start = 30.dp, end = 16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("00:00", fontSize = 10.sp, color = Color.Gray)
-                    Text("07:59", fontSize = 10.sp, color = Color.Gray)
-                    Text("15:59", fontSize = 10.sp, color = Color.Gray)
-                    Text("23:59", fontSize = 10.sp, color = Color.Gray)
-                }
-            } else if (!isLoading) {
-                // Empty state
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "داده‌ای موجود نیست",
-                        color = Color.Gray
-                    )
+                // Empty State Overlay
+                if (showEmptyState) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.White.copy(alpha = 0.7f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "داده‌ای موجود نیست",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color(0xFF6B6B6B)
+                        )
+                    }
                 }
             }
         }
@@ -290,7 +312,7 @@ fun SpO2ChartSection(
 }
 
 @Composable
-fun LatestMeasurementCard(value: Int, time: String) {
+fun LatestMeasurementCard(value: Int, time: String, unit: String = "%") {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -312,16 +334,18 @@ fun LatestMeasurementCard(value: Int, time: String) {
 
                 Text(
                     text = if (value > 0) value.toString().toFarsiDigits() else "-",
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    color = Color.Gray
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color(0xFF6B6B6B)
                 )
 
-                Text(
-                    text = " %",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray,
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
+                if (unit.isNotEmpty()) {
+                    Text(
+                        text = " $unit",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF6B6B6B),
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                }
             }
 
 
@@ -329,7 +353,7 @@ fun LatestMeasurementCard(value: Int, time: String) {
             Text(
                 text = if (time.isNotEmpty()) "آخرین اندازه گیری: $time" else "آخرین اندازه گیری",
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color.Gray
+                color = Color(0xFF6B6B6B)
             )
 
 
@@ -353,40 +377,45 @@ fun SpO2StatsRow(stats: SpO2DetailViewModel.SpO2Stats) {
 
 @Composable
 fun SpO2StatCard(title: String, value: Int, modifier: Modifier) {
-    Card(
+    Column(
         modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(1.dp, Color(0xFF5BA3A3))
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+        // The box with value only
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            border = BorderStroke(1.dp, Color(0xFF5BA3A3))
         ) {
-            Row(verticalAlignment = Alignment.Bottom) {
-
-                Text(
-                    text = if (value > 0) value.toString().toFarsiDigits() else "-",
-                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                    color = Color.Gray
-                )
-
-                Text(
-                    text = " %",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray,
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 20.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = if (value > 0) value.toString().toFarsiDigits() else "-",
+                        fontSize = 20.sp,
+                        color = Color(0xFF6B6B6B)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "%",
+                        fontSize = 14.sp,
+                        color = Color.Gray
+                    )
+                }
             }
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.Gray
-            )
         }
+
+        // Label below the box
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = title,
+            fontSize = 12.sp,
+            color = Color.Gray
+        )
     }
 }

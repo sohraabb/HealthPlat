@@ -1,5 +1,8 @@
 package com.bonyad.healthplat.ui.dashboard.calory
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -17,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,40 +28,31 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -66,92 +61,183 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.bonyad.healthplat.R
+import com.bonyad.healthplat.domain.model.MealSummaryUi
+import com.bonyad.healthplat.domain.model.MealType
+import com.bonyad.healthplat.ui.components.AddFoodBottomSheet
+import com.bonyad.healthplat.ui.components.StandardFloatingActionButton
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
-import java.util.UUID
+import saman.zamani.persiandate.PersianDate
 
-data class FoodItem(
-    val id: String = UUID.randomUUID().toString(),
-    val name: String,
-    val calories: Int,
-    val mealType: MealType,
-    val imageRes: Int? = null,
-    val timestamp: Long = System.currentTimeMillis()
-)
-
-enum class MealType(val persianName: String) {
-    BREAKFAST("صبحانه"),
-    LUNCH("ناهار"),
-    DINNER("شام"),
-    SNACK("میان‌وعده")
-}
-
-// --- Colors from Design ---
+// ============ Design System Colors ============
 val TealPrimary = Color(0xFF5BA3A3)
 val BackgroundColor = Color(0xFFF8F8F8)
+val CardBackground = Color(0xFFFFFFFF)
 val TextDark = Color(0xFF2C2C2C)
-val TextGray = Color(0xFF9E9E9E)
+val TextGray = Color(0xFF6B6B6B)
+val TextLightGray = Color(0xFFBDBDBD)
+val BorderColor = Color(0xFFEEEEEE)
+val GreenAccent = Color(0xFF4CAF50)
+val BlueAccent = Color(0xFF2196F3)
 
+// ============ Main Screen ============
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CaloryScreen(
-    viewModel: CaloryViewModel = hiltViewModel()
+    viewModel: CaloryViewModel = hiltViewModel(),
+    // Option 1: Individual callbacks (for use in CaloryRoutes.Main)
+    onNavigateToConsumed: () -> Unit = {},
+    onNavigateToBurned: () -> Unit = {},
+    onNavigateToScan: () -> Unit = {},
+    // Option 2: Route-based navigation (for use in Dashboard bottom nav)
+    onNavigateToRoute: ((String) -> Unit)? = null
 ) {
+    val uiState by viewModel.uiState.collectAsState()
     val consumedCalories by viewModel.consumedCalories.collectAsState()
     val burnedCalories by viewModel.burnedCalories.collectAsState()
-    val foodItems by viewModel.foodItems.collectAsState()
+    val mealSummaries by viewModel.mealSummaries.collectAsState()
+    val currentMonth by viewModel.currentMonth.collectAsState()
+    val dateItems by viewModel.dateItems.collectAsState()
+    val showAddFoodSheet by viewModel.showAddFoodSheet.collectAsState()
+    val selectedMealType by viewModel.selectedMealType.collectAsState()
+
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Handle events
+    LaunchedEffect(Unit) {
+        viewModel.toastMessage.collect { message ->
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.navigateToConsumedDetails.collect {
+            if (onNavigateToRoute != null) {
+                onNavigateToRoute("calory_consumed_details")
+            } else {
+                onNavigateToConsumed()
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.navigateToBurnedDetails.collect {
+            if (onNavigateToRoute != null) {
+                onNavigateToRoute("calory_burned_details")
+            } else {
+                onNavigateToBurned()
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.navigateToFoodScan.collect { mealType ->
+            if (onNavigateToRoute != null) {
+                onNavigateToRoute("calory_food_scan")
+            } else {
+                onNavigateToScan()
+            }
+        }
+    }
 
     // Force RTL for this screen
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-        Scaffold(
-            topBar = { CaloryTopBar() },
-            containerColor = BackgroundColor
-        ) { paddingValues ->
+    Scaffold(
+        topBar = { CaloryTopBar() },
+        containerColor = BackgroundColor,
+        snackbarHost = {
+            // Position snackbar above bottom navigation
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 80.dp) // Account for bottom nav height
+            ) {
+                SnackbarHost(snackbarHostState)
+            }
+        },
+        floatingActionButton = {
+            StandardFloatingActionButton(
+                onClick = { viewModel.onScanFoodClick(MealType.SNACK) },
+                icon = R.drawable.camera_scan,
+                contentDescription = "Scan Food",
+                modifier = Modifier.padding(bottom = 80.dp) // Account for bottom navigation
+            )
+        }
+    ) { paddingValues ->
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            // Loading overlay
+            AnimatedVisibility(
+                visible = uiState is CaloryUiState.Loading,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = TealPrimary)
+                }
+            }
+
+            // Content
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(paddingValues)
                     .verticalScroll(rememberScrollState())
             ) {
-                // 1. Date Strip Section
-                DateStripSection()
+                // 1. More space between appbar and date section
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // 2. Date Strip Section with white rounded background
+                DateStripSection(
+                    currentMonth = currentMonth,
+                    dateItems = dateItems,
+                    onDateSelected = { viewModel.onDateSelected(it.date) }
+                )
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // 2. Stats Cards (Burned / Received)
+                // 2. Stats Cards
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Received (Green Icon)
-                    StatsCard(
-                        modifier = Modifier.weight(1f),
-                        title = "کالری دریافتی",
-                        value = consumedCalories,
-                        iconRes = R.drawable.pills, // Replace with your apple drawable
-                        iconTint = Color(0xFF4CAF50), // Green
-                        timeRange = "۱۰:۲۵ تا ۱۷:۲۹"
-                    )
 
-                    // Burned (Blue/Lightning Icon)
-                    StatsCard(
+                    // Burned Calories Card
+                    CalorieStatsCard(
                         modifier = Modifier.weight(1f),
                         title = "کالری سوخته شده",
                         value = burnedCalories,
-                        iconRes = R.drawable.pills, // Replace with your lightning drawable
-                        iconTint = Color(0xFF2196F3), // Blue
-                        timeRange = "۰۰:۰۱ تا ۱۷:۲۹"
+                        iconRes = R.drawable.flash,
+                        iconTint = BlueAccent,
+                        timeRange = "۰۰:۰۱ تا ۱۷:۲۹",
+                        onClick = { viewModel.onBurnedCaloriesClick() }
+                    )
+
+                    // Received Calories Card
+                    CalorieStatsCard(
+                        modifier = Modifier.weight(1f),
+                        title = "کالری دریافتی",
+                        value = consumedCalories,
+                        iconRes = R.drawable.apple,
+                        iconTint = GreenAccent,
+                        timeRange = "۱۰:۲۵ تا ۱۷:۲۹",
+                        onClick = { viewModel.onConsumedCaloriesClick() }
                     )
                 }
+
 
                 Spacer(modifier = Modifier.height(24.dp))
 
@@ -160,38 +246,41 @@ fun CaloryScreen(
                     modifier = Modifier.padding(horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    MealType.values().forEach { mealType ->
-                        val mealsInThisType = foodItems.filter { it.mealType == mealType }
-                        MealSummaryCard(
+                    MealType.entries.forEach { mealType ->
+                        val summary = mealSummaries[mealType] ?: MealSummaryUi(
                             mealType = mealType,
-                            items = mealsInThisType,
+                            items = emptyList(),
+                            totalCaloriesMin = 0,
+                            totalCaloriesMax = 0
+                        )
+                        MealSummaryCard(
+                            mealSummary = summary,
                             onAddClick = { viewModel.onAddFoodClick(mealType) }
                         )
                     }
                 }
 
                 // Extra space for scrolling above bottom bar
-                Spacer(modifier = Modifier.height(80.dp))
+                Spacer(modifier = Modifier.height(100.dp))
             }
         }
     }
 
-    // Your existing Bottom Sheet logic here
-    val showAddFoodSheet by viewModel.showAddFoodSheet.collectAsState()
-    val selectedMealType by viewModel.selectedMealType.collectAsState()
 
+    // Add Food Bottom Sheet
     if (showAddFoodSheet && selectedMealType != null) {
         AddFoodBottomSheet(
             mealType = selectedMealType!!,
             onDismiss = { viewModel.dismissAddFoodSheet() },
-            onAddFood = { name, calories ->
-                viewModel.addFoodItem(name, calories, selectedMealType!!)
+            onAddFood = { name, caloriesMin, caloriesMax, amount, unit ->
+                viewModel.addFoodItem(name, caloriesMin, caloriesMax, amount, unit)
             }
         )
     }
 }
 
-// --- 1. Top Bar ---
+// ============ Top Bar ============
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CaloryTopBar() {
@@ -199,25 +288,29 @@ fun CaloryTopBar() {
         title = {
             Text(
                 text = "کالری",
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp
+                ),
                 color = TextDark
             )
         },
         navigationIcon = {
             IconButton(onClick = { /* Info */ }) {
                 Icon(
-                    imageVector = Icons.Default.Info,
-                    contentDescription = "Info",
-                    tint = Color.Gray
+                    painter = painterResource(R.drawable.info_circle),
+                    contentDescription = "اطلاعات",
+                    modifier = Modifier.size(24.dp),
+                    tint = Color(0xFF6B6B6B)
                 )
             }
         },
         actions = {
             IconButton(onClick = { /* Notifications */ }) {
                 Icon(
-                    imageVector = Icons.Outlined.Notifications,
+                    painter = painterResource(R.drawable.notification),
                     contentDescription = "Notifications",
-                    tint = Color.Gray
+                    tint = Color.Black
                 )
             }
         },
@@ -227,104 +320,218 @@ fun CaloryTopBar() {
     )
 }
 
-// --- 2. Date Strip ---
+// ============ Date Strip Section ============
+
 @Composable
-fun DateStripSection() {
-    Column(modifier = Modifier.fillMaxWidth()) {
+fun DateStripSection(
+    currentMonth: String,
+    dateItems: List<DateItem>,
+    onDateSelected: (DateItem) -> Unit
+) {
+    // White rounded background container for the entire date section
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .background(
+                color = CardBackground,
+                shape = RoundedCornerShape(20.dp)
+            )
+            .padding(vertical = 16.dp)
+    ) {
         // Header with Month Name and Calendar Icon
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp),
-            horizontalArrangement = Arrangement.End, // Aligns "Mehr Mah" to right (start in RTL)
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "آذر ماه",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = Color.Gray
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Icon(
-                imageVector = Icons.Default.DateRange,
-                contentDescription = null,
-                tint = Color.Gray,
-                modifier = Modifier.size(20.dp)
-            )
+            // Navigation arrows
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.circle_left),
+                    contentDescription = "Previous",
+                    tint = Color(0xFF6B6B6B),
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clickable { /* Navigate to previous week */ }
+                )
+                Icon(
+                    painter = painterResource(R.drawable.circle_right),
+                    contentDescription = "Next",
+                    tint = Color(0xFF6B6B6B),
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clickable { /* Navigate to next week */ }
+                )
+            }
+
+            // Month and Calendar
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = currentMonth,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = TextGray
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Icon(
+                    painter = painterResource(R.drawable.calendar),
+                    contentDescription = null,
+                    tint = TextGray,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Horizontal Day List
-        // Mock data: (DayNum, DayName, isSelected)
-        val days = listOf(
-            Triple("۱۶", "ج", false),
-            Triple("۱۷", "ش", false),
-            Triple("۱۸", "ی", false),
-            Triple("۱۹", "د", false),
-            Triple("۲۰", "س", false),
-            Triple("۲۱", "چ", false),
-            Triple("۲۲", "پ", true)
+        // Horizontal Day List - Using the working date logic
+        DateStrip(
+            selectedOffset = dateItems.indexOfFirst { it.isSelected }.let {
+                if (it >= 0) -(dateItems.size - 1 - it) else 0
+            },
+            onDaySelected = { offset ->
+                // Find the date item matching this offset and call onDateSelected
+                val index = dateItems.size - 1 + offset
+                if (index in dateItems.indices) {
+                    onDateSelected(dateItems[index])
+                }
+            }
         )
+    }
+}
 
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(days.size) { index ->
-                val (num, name, selected) = days[index]
-                DateItem(num, name, selected)
+// Working DateStrip implementation
+@Composable
+fun DateStrip(
+    selectedOffset: Int,  // 0 = today, -1 = yesterday, -2 = day before, etc.
+    onDaySelected: (Int) -> Unit
+) {
+    val today = PersianDate()
+
+    // Persian weekday letters: Saturday=ش, Sunday=ی, Monday=د, etc.
+    val weekDayNames = mapOf(
+        0 to "ش",  // Saturday
+        1 to "ی",  // Sunday
+        2 to "د",  // Monday
+        3 to "س",  // Tuesday
+        4 to "چ",  // Wednesday
+        5 to "پ",  // Thursday
+        6 to "ج"   // Friday
+    )
+
+    // Generate last 7 days: today (offset=0) to 6 days ago (offset=-6)
+    // But display order: oldest first (left) to newest/today (right)
+    val days = (-6..0).map { offset ->
+        val date = PersianDate(today.time).apply {
+            if (offset < 0) subDays(-offset)
+        }
+        Pair(offset, date)
+    }
+
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        reverseLayout = true  // RTL: today on right
+    ) {
+        items(days) { (offset, date) ->
+            val isSelected = offset == selectedOffset
+            val dayOfWeek = date.dayOfWeek()  // 0=Saturday, 1=Sunday, etc.
+
+            Column(
+                modifier = Modifier
+                    .width(50.dp)
+                    .height(70.dp)
+                    .background(
+                        if (isSelected) TealPrimary else Color.White,
+                        RoundedCornerShape(16.dp)
+                    )
+                    .border(
+                        1.dp,
+                        if (isSelected) Color.Transparent else BorderColor,
+                        RoundedCornerShape(16.dp)
+                    )
+                    .clickable {
+                        onDaySelected(offset)
+                    },
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = date.shDay.toString().toFarsiDigits(),
+                    color = if (isSelected) Color.White else TextGray,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = weekDayNames[dayOfWeek] ?: "",
+                    color = if (isSelected) Color.White else TextGray,
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
     }
 }
 
 @Composable
-fun DateItem(dayNum: String, dayName: String, isSelected: Boolean) {
+fun DateItemCard(
+    item: DateItem,
+    onClick: () -> Unit
+) {
     Column(
         modifier = Modifier
             .width(50.dp)
             .height(70.dp)
+            .clip(RoundedCornerShape(16.dp))
             .background(
-                color = if (isSelected) TealPrimary else Color.White,
-                shape = RoundedCornerShape(16.dp)
+                color = if (item.isSelected) TealPrimary else CardBackground
             )
             .border(
-                width = if (isSelected) 0.dp else 1.dp,
-                color = if (isSelected) Color.Transparent else Color(0xFFEEEEEE),
+                width = if (item.isSelected) 0.dp else 1.dp,
+                color = if (item.isSelected) Color.Transparent else BorderColor,
                 shape = RoundedCornerShape(16.dp)
-            ),
+            )
+            .clickable { onClick() },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = dayNum,
+            text = item.dayNumber,
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-            color = if (isSelected) Color.White else TextDark
+            color = if (item.isSelected) Color.White else TextDark
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = dayName,
+            text = item.dayName,
             style = MaterialTheme.typography.bodySmall,
-            color = if (isSelected) Color.White.copy(alpha = 0.8f) else TextGray
+            color = if (item.isSelected) Color.White.copy(alpha = 0.8f) else TextGray
         )
     }
 }
 
-// --- 3. Stats Cards ---
+// ============ Stats Card ============
+
 @Composable
-fun StatsCard(
+fun CalorieStatsCard(
     modifier: Modifier = Modifier,
     title: String,
     value: Int,
     iconRes: Int,
     iconTint: Color,
-    timeRange: String
+    timeRange: String,
+    onClick: () -> Unit
 ) {
     Card(
-        modifier = modifier.height(150.dp),
+        modifier = modifier
+            .height(150.dp)
+            .clickable { onClick() },
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = CardBackground),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
@@ -333,27 +540,30 @@ fun StatsCard(
                 .padding(16.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Icon Header
+            // Top Row: Icon on START (left in RTL), Title on END (right in RTL)
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Icon (Apple or Lightning)
+                // Icon without circle background (on START)
                 Icon(
-                    painter = painterResource(id = iconRes),
+                    painter = painterResource(iconRes),
                     contentDescription = null,
                     tint = iconTint,
                     modifier = Modifier.size(24.dp)
                 )
-            }
 
-            Column {
+                // Title on END
                 Text(
                     text = title,
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextGray
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+            }
+
+            // Middle: Value with kcal
+            Column {
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(
                         text = value.toString().toFarsiDigits(),
@@ -370,6 +580,7 @@ fun StatsCard(
                 }
             }
 
+            // Bottom Row: Time range and arrow button
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -377,31 +588,33 @@ fun StatsCard(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        painter = painterResource(id = R.drawable.pills), // Needs a clock icon
+                        painter = painterResource(id = R.drawable.circle_clock),
                         contentDescription = null,
                         modifier = Modifier.size(14.dp),
                         tint = TextGray
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = timeRange.toFarsiDigits(),
+                        text = timeRange,
                         style = MaterialTheme.typography.labelSmall,
                         color = TextGray
                     )
                 }
 
-                // Up Arrow Circle
+                // Bigger Up Arrow Button (more height)
                 Box(
                     modifier = Modifier
-                        .size(28.dp)
-                        .background(TealPrimary.copy(alpha = 0.8f), CircleShape),
+                        .width(36.dp)
+                        .height(36.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(TealPrimary),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.KeyboardArrowUp,
-                        contentDescription = null,
+                        painter = painterResource(R.drawable.arrow_up),
+                        contentDescription = "Details",
                         tint = Color.White,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }
@@ -409,22 +622,25 @@ fun StatsCard(
     }
 }
 
-// --- 4. Meal Summary Row (The Design Specifics) ---
+// ============ Meal Summary Card ============
+
 @Composable
 fun MealSummaryCard(
-    mealType: MealType,
-    items: List<FoodItem>,
+    mealSummary: MealSummaryUi,
     onAddClick: () -> Unit
 ) {
-    val totalCalories = items.sumOf { it.calories }
-    // Mocking a range for visual similarity to design "450 - 580"
-    val calRange = if(totalCalories > 0) "${totalCalories - 100} _ $totalCalories" else "۰"
+    val calRange = if (mealSummary.totalCaloriesMax > 0) {
+        "${mealSummary.totalCaloriesMin} _ ${mealSummary.totalCaloriesMax}".toFarsiDigits()
+    } else {
+        "۰"
+    }
 
-    val iconRes = when(mealType) {
-        MealType.BREAKFAST -> R.drawable.pills // Replace with egg/toast icon
-        MealType.LUNCH -> R.drawable.pills // Replace with chicken icon
-        MealType.DINNER -> R.drawable.pills // Replace with soup icon
-        MealType.SNACK -> R.drawable.pills // Replace with grape icon
+    // Get meal icon based on type
+    val iconRes = when (mealSummary.mealType) {
+        MealType.BREAKFAST -> R.drawable.breakfast
+        MealType.LUNCH -> R.drawable.lunch
+        MealType.DINNER -> R.drawable.dinner
+        MealType.SNACK -> R.drawable.brunch
     }
 
     Card(
@@ -432,57 +648,22 @@ fun MealSummaryCard(
             .fillMaxWidth()
             .height(85.dp),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = CardBackground),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-
-            // LEFT SIDE (In RTL, this is the right side visually): Icon + Text
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Meal Icon Container
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .border(1.dp, Color(0xFFEEEEEE), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        painter = painterResource(id = iconRes),
-                        contentDescription = null,
-                        tint = Color.Unspecified, // Use original colors of drawable
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column {
-                    Text(
-                        text = mealType.persianName,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = TextDark
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "$calRange کیلو کالری".toFarsiDigits(),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextGray
-                    )
-                }
-            }
-
-            // RIGHT SIDE (In RTL, this is the left side visually): Overlapping Images + Add Button
+            // LEFT SIDE (in RTL this appears on right): Add Button + Food Images
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy((-12).dp) // Negative spacing for overlap
+                horizontalArrangement = Arrangement.spacedBy((-12).dp)
             ) {
-                // Add Button (First item in the visual stack on the left)
+                // Add Button
                 Box(
                     modifier = Modifier
                         .size(40.dp)
@@ -490,29 +671,55 @@ fun MealSummaryCard(
                         .border(1.dp, TealPrimary, CircleShape)
                         .background(Color.White)
                         .clickable { onAddClick() }
-                        .zIndex(10f), // Ensure it's on top
+                        .zIndex(10f),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Add,
+                        painter = painterResource(R.drawable.add),
                         contentDescription = "Add",
                         tint = TealPrimary
                     )
                 }
 
-                // Food Images (Iterate backwards or handle z-index)
-                items.take(3).forEachIndexed { index, item ->
-                    // In a real app, use Coil/Glide for URLs.
-                    // Using a placeholder Box for now based on design.
-                    Image(
-                        painter = painterResource(id = R.drawable.pills), // Your food image
+                // Food Images (overlapping)
+                mealSummary.items.take(3).forEachIndexed { index, item ->
+                    FoodImageCircle(
+                        imageUrl = item.imageUrl,
+                        modifier = Modifier.zIndex((5 - index).toFloat())
+                    )
+                }
+            }
+
+            // RIGHT SIDE (in RTL): Title on top, Icon + Calories below
+            Column(
+                horizontalAlignment = Alignment.End
+            ) {
+                // Title on top-end
+                Text(
+                    text = mealSummary.mealType.persianName,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = TextDark
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Icon and calory value next to each other
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "$calRange کیلو کالری",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextGray
+                    )
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Icon(
+                        painter = painterResource(iconRes),
                         contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .border(2.dp, Color.White, CircleShape)
-                            .zIndex((5 - index).toFloat()) // Stack order
+                        tint = Color.Unspecified,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
@@ -520,115 +727,47 @@ fun MealSummaryCard(
     }
 }
 
-
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddFoodBottomSheet(
-    mealType: MealType,
-    onDismiss: () -> Unit,
-    onAddFood: (String, Int) -> Unit
+fun FoodImageCircle(
+    imageUrl: String?,
+    modifier: Modifier = Modifier
 ) {
-    val sheetState = rememberModalBottomSheetState()
-    var foodName by remember { mutableStateOf("") }
-    var calories by remember { mutableStateOf("") }
+    Box(
+        modifier = modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .border(2.dp, Color.White, CircleShape)
+            .background(Color.LightGray.copy(alpha = 0.3f)),
+        contentAlignment = Alignment.Center
+    ) {
+        // In production, use Coil/Glide for URL loading
+        Image(
+            painter = painterResource(id = R.drawable.pills), // Placeholder
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}
 
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+// ============ Floating Scan Button ============
 
-        ModalBottomSheet(
-            onDismissRequest = onDismiss,
-            sheetState = sheetState,
-            containerColor = Color.White
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "افزودن به ${mealType.persianName}",
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp
-                    ),
-                    color = Color(0xFF2C2C2C),
-                    modifier = Modifier.padding(bottom = 24.dp)
-                )
-
-                // Food name input
-                OutlinedTextField(
-                    value = foodName,
-                    onValueChange = { foodName = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("نام غذا") },
-                    placeholder = { Text("مثال: سیب") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFF5BA3A3),
-                        unfocusedBorderColor = Color(0xFFE0E0E0)
-                    ),
-                    textStyle = LocalTextStyle.current.copy(
-                        textAlign = TextAlign.End,
-                        color = Color.Black
-                    )
-
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Calories input
-                OutlinedTextField(
-                    value = calories,
-                    onValueChange = { if (it.all { char -> char.isDigit() }) calories = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("کالری") },
-                    placeholder = { Text("مثال: ۱۹۹") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFF5BA3A3),
-                        unfocusedBorderColor = Color(0xFFE0E0E0)
-                    ),
-                    textStyle = LocalTextStyle.current.copy(
-                        textAlign = TextAlign.Start,
-                        color = Color.Black
-                    )
-
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Add button
-                Button(
-                    onClick = {
-                        if (foodName.isNotBlank() && calories.isNotBlank()) {
-                            onAddFood(foodName, calories.toInt())
-                            onDismiss()
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF5BA3A3),
-                        disabledContainerColor = Color(0xFFE0E0E0)
-                    ),
-                    enabled = foodName.isNotBlank() && calories.isNotBlank()
-                ) {
-                    Text(
-                        text = "افزودن",
-                        style = MaterialTheme.typography.bodyLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
-                        ),
-                        color = Color.White
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-        }
+@Composable
+fun FloatingScanButton(onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(52.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White)
+            .border(1.dp, TealPrimary, RoundedCornerShape(16.dp))
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            painter = painterResource(id = R.drawable.camera_scan),
+            contentDescription = "Scan Food",
+            tint = TealPrimary,
+            modifier = Modifier.size(24.dp)
+        )
     }
 }

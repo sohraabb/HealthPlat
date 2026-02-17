@@ -1,5 +1,6 @@
 package com.bonyad.healthplat.ui.dashboard
 
+import android.annotation.SuppressLint
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -20,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -33,6 +35,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,13 +47,14 @@ import com.bonyad.healthplat.ui.components.InfoBottomSheet
 import com.bonyad.healthplat.ui.navigation.HealthDetailRoutes
 import com.bonyad.healthplat.ui.navigation.NavRoutes
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
+import androidx.compose.foundation.layout.BoxWithConstraints
 
 // Define custom colors from design
 val TealPrimary = Color(0xFF5BA3A3)
 val OrangeAccent = Color(0xFFFF9800)
 val RedAccent = Color(0xFFE53935)
 val BlueAccent = Color(0xFF2196F3)
-val TextDark = Color(0xFF2C2C2C)
+val TextDark = Color(0xFF000000)
 val TextGray = Color(0xFF999999)
 
 // Data class for health cards
@@ -73,12 +77,14 @@ enum class ChartType {
     STRESS
 }
 
+@SuppressLint("UnusedBoxWithConstraintsScope")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     viewModel: DashboardViewModel,
     onNavigateToDetail: (String) -> Unit,
-    onNavigateToAi: (String) -> Unit
+    onNavigateToAi: (String) -> Unit,
+    onNavigateToNotifications: () -> Unit
 ) {
     val healthOverview by viewModel.healthOverview.collectAsState()
     val userName by viewModel.userName.collectAsState()
@@ -241,111 +247,139 @@ fun HomeScreen(
                         Text(
                             text = "سلام ${userName ?: "کاربر"}",
                             style = MaterialTheme.typography.titleLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = TextDark
+                                color = Color.Black
                             )
                         )
                     },
                     navigationIcon = {
-                        IconButton(onClick = { /* TODO: Notifications */ }) {
+                        IconButton(
+                            onClick =  onNavigateToNotifications ,
+                            modifier = Modifier.size(40.dp) // Smaller icon button
+                        ) {
                             Icon(
-                                imageVector = Icons.Outlined.Notifications,
+                                painterResource(R.drawable.notification),
                                 contentDescription = "Notifications",
-                                tint = TextGray
+                                tint = Color.Black
                             )
                         }
                     },
                     actions = {
-                        // ==================== CONNECTION INDICATOR BUTTON ====================
                         ConnectionIndicatorButton(
                             connectionState = connectionState,
                             onClick = { showConnectivitySheet = true }
                         )
-                        // =====================================================================
 
-                        // ==================== INFO/HELP BUTTON ====================
-                        IconButton(onClick = { showInfoSheet = true }) {
+                        IconButton(
+                            onClick = { showInfoSheet = true },
+                            modifier = Modifier.size(40.dp)
+                        ) {
                             Icon(
                                 painter = painterResource(R.drawable.information),
                                 contentDescription = "Help",
                                 tint = TextGray
                             )
                         }
-                        // ==========================================================
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = Color(0xFFF5F5F5)
-                    )
+                    ),
+                    // Reduce vertical padding
+                    modifier = Modifier.height(60.dp), // Reduced from default ~64.dp
+                    expandedHeight = 60.dp // For Material 3
                 )
             }
         },
         containerColor = Color(0xFFF5F5F5)
     ) { paddingValues ->
-        Column(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            NewHealthStatusCard(
-                score = readinessScore,
-                insights = insights,
-                navigateToAi = { onNavigateToAi(NavRoutes.AiScreen.route) }
-            )
+            val screenWidth = maxWidth
+            val horizontalPadding = 16.dp
+            val cardSpacing = 12.dp
+            // Calculate card width: (screen width - padding on both sides - spacing between cards) / 2
+            val cardWidth = (screenWidth - (horizontalPadding * 2) - cardSpacing) / 2
 
-            // Horizontal scrollable health cards in 2x2 grid
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                contentPadding = PaddingValues(horizontal = 4.dp)
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = horizontalPadding)
+                    .padding(top = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Group cards into pages of 4 (2x2 grid)
-                val pages = healthCards.chunked(4)
-                items(pages.size) { pageIndex ->
-                    val pageCards = pages[pageIndex]
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        // Top row
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                // Health Status Card
+                NewHealthStatusCard(
+                    score = readinessScore,
+                    insights = insights,
+                    navigateToAi = { onNavigateToAi(NavRoutes.AiScreen.route) }
+                )
+
+                // Health cards in horizontal pager style (2x2 grid per page)
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    val pages = healthCards.chunked(4)
+                    items(pages.size) { pageIndex ->
+                        val pageCards = pages[pageIndex]
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(cardSpacing),
+                            modifier = Modifier.width(screenWidth - (horizontalPadding * 2))
                         ) {
-                            pageCards.getOrNull(0)?.let { card ->
-                                HealthMetricCard(
-                                    data = card,
-                                    onClick = { onNavigateToDetail(card.route) }
-                                )
+                            // Top row
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(cardSpacing),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                pageCards.getOrNull(0)?.let { card ->
+                                    HealthMetricCard(
+                                        data = card,
+                                        onClick = { onNavigateToDetail(card.route) },
+                                        cardWidth = cardWidth
+                                    )
+                                }
+                                pageCards.getOrNull(1)?.let { card ->
+                                    HealthMetricCard(
+                                        data = card,
+                                        onClick = { onNavigateToDetail(card.route) },
+                                        cardWidth = cardWidth
+                                    )
+                                }
                             }
-                            pageCards.getOrNull(1)?.let { card ->
-                                HealthMetricCard(
-                                    data = card,
-                                    onClick = { onNavigateToDetail(card.route) }
-                                )
-                            }
-                        }
-                        // Bottom row
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            pageCards.getOrNull(2)?.let { card ->
-                                HealthMetricCard(
-                                    data = card,
-                                    onClick = { onNavigateToDetail(card.route) }
-                                )
-                            }
-                            pageCards.getOrNull(3)?.let { card ->
-                                HealthMetricCard(
-                                    data = card,
-                                    onClick = { onNavigateToDetail(card.route) }
-                                )
+                            // Bottom row
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(cardSpacing),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                pageCards.getOrNull(2)?.let { card ->
+                                    HealthMetricCard(
+                                        data = card,
+                                        onClick = { onNavigateToDetail(card.route) },
+                                        cardWidth = cardWidth
+                                    )
+                                }
+                                pageCards.getOrNull(3)?.let { card ->
+                                    HealthMetricCard(
+                                        data = card,
+                                        onClick = { onNavigateToDetail(card.route) },
+                                        cardWidth = cardWidth
+                                    )
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(30.dp)) // Extra space at bottom
+                // Bottom spacing for the floating navigation bar
+                Spacer(
+                    modifier = Modifier
+                        .height(96.dp)
+                        .navigationBarsPadding() // Adds extra space on devices with system nav bar
+                )
+            }
         }
     }
 }
@@ -363,44 +397,46 @@ fun NewHealthStatusCard(
             .fillMaxWidth()
             .shadow(
                 elevation = 10.dp,
-                shape = RoundedCornerShape(24.dp),
+                shape = RoundedCornerShape(16.dp),
                 ambientColor = TealPrimary.copy(alpha = 0.3f),
                 spotColor = TealPrimary.copy(alpha = 0.3f)
             )
-            .border(1.dp, TealPrimary.copy(alpha = 0.1f), RoundedCornerShape(24.dp)),
-        shape = RoundedCornerShape(24.dp),
+            .border(1.dp, TealPrimary.copy(alpha = 0.1f), RoundedCornerShape(16.dp)),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(12.dp), // Reduced from 16.dp
+            horizontalAlignment = Alignment.End // Changed to End for RTL alignment
         ) {
+            // Title aligned to end
             Text(
                 text = "وضعیت کلی سلامت",
                 style = MaterialTheme.typography.titleMedium,
                 color = TextDark,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.End // Align text to end
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp)) // Reduced from 16.dp
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // --- MODIFIED CIRCLE SECTION ---
+                // Circle section
                 HealthScoreCircle(
                     score = score,
-                    modifier = Modifier.size(120.dp) // Increased size slightly to fit dots
+                    modifier = Modifier.size(100.dp) // Reduced from 120.dp
                 )
-                // -------------------------------
 
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(12.dp)) // Reduced from 16.dp
 
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp), // Reduced from 12.dp
                     horizontalAlignment = Alignment.End,
                     modifier = Modifier.weight(1f)
                 ) {
@@ -410,13 +446,13 @@ fun NewHealthStatusCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(12.dp)) // Reduced from 20.dp
 
             Button(
                 onClick = { navigateToAi() },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp),
+                    .height(44.dp), // Reduced from 50.dp
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color.White),
                 border = BorderStroke(1.dp, TealPrimary)
@@ -537,12 +573,14 @@ fun InsightItem(text: String) {
 @Composable
 fun HealthMetricCard(
     data: HealthCardData,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    cardWidth: Dp = 180.dp
 ) {
     Card(
         modifier = Modifier
-            .width(180.dp)
-            .height(210.dp)
+            .width(cardWidth)
+            .height(180.dp)
+            .padding(1.dp)
             .clickable { onClick() },
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -569,9 +607,8 @@ fun HealthMetricCard(
 
                 Text(
                     text = data.title,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.labelLarge,
                     color = TextDark,
-                    fontWeight = FontWeight.Bold
                 )
             }
 
@@ -607,9 +644,8 @@ fun HealthMetricCard(
                 ) {
                     Text(
                         text = data.value,
-                        style = MaterialTheme.typography.headlineMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 24.sp
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = 22.sp
                         ),
                         color = TextDark
                     )
@@ -632,12 +668,9 @@ fun HealthMetricCard(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.ArrowForward,
+                        painter = painterResource(R.drawable.custom_arrow),
                         contentDescription = "Details",
-                        tint = Color.White,
-                        modifier = Modifier
-                            .size(16.dp)
-                            .rotate(-45f)
+                        tint = Color.White
                     )
                 }
             }
@@ -946,9 +979,8 @@ fun HomeScreenLegacy(
                     title = {
                         Text(
                             text = "سلام ${userName ?: "کاربر"}",
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = TextDark
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                color = Color.Black
                             )
                         )
                     },
@@ -1070,7 +1102,7 @@ fun NewHealthStatusCardLegacy(
             Text(
                 text = "وضعیت کلی سلامت",
                 style = MaterialTheme.typography.titleMedium,
-                color = TextDark,
+                color = Color.Black,
                 fontWeight = FontWeight.Bold
             )
 
@@ -1215,8 +1247,7 @@ fun BaseMetricCard(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = TextDark,
-                    fontWeight = FontWeight.Bold
+                    color = Color.Black,
                 )
 
             }
@@ -1225,7 +1256,7 @@ fun BaseMetricCard(
                 Text(
                     text = statusText,
                     style = MaterialTheme.typography.bodySmall,
-                    color = TextGray,
+                    color = Color.Black,
                     textAlign = TextAlign.End, // Right in RTL
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -1280,12 +1311,9 @@ fun BaseMetricCard(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.ArrowForward,
+                        painter = painterResource(R.drawable.custom_arrow),
                         contentDescription = "Details",
                         tint = Color.White,
-                        modifier = Modifier
-                            .size(16.dp)
-                            .rotate(-45f) // Rotate to point diagonal up
                     )
                 }
             }

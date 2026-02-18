@@ -1,10 +1,13 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.hilt)
-    id("kotlin-kapt")
-    id("org.jetbrains.kotlin.plugin.serialization") version "2.2.21"}
+    id("com.google.devtools.ksp")
+    id("com.google.dagger.hilt.android")
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.2.21"
+}
 
 android {
     namespace = "com.bonyad.healthplat"
@@ -12,7 +15,7 @@ android {
 
     defaultConfig {
         applicationId = "com.bonyad.healthplat"
-        minSdk = 24
+        minSdk = 23
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
@@ -30,29 +33,33 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
     }
-    kotlinOptions {
-        jvmTarget = "11"
+    kotlin {
+        compilerOptions {
+            jvmTarget = JvmTarget.JVM_17
+        }
     }
     buildFeatures {
         compose = true
-    }
-    kapt {
-        correctErrorTypes = true
     }
 }
 
 dependencies {
 
     // BLE SDK implementations (Keep these as they are local files)
-    implementation(files("libs/Bonlala_ble_v1.3.aar"))
+    implementation(files("libs/Bonlala_ble_v1.4.aar"))
     implementation(files("libs/NordicDfuLibrary.aar"))
 
     // Dependency Injection
     implementation(libs.hilt.android)
-    kapt(libs.hilt.compiler)
+    implementation(libs.hilt.compose)
+    implementation(libs.androidx.hilt.common)
+    implementation(libs.androidx.hilt.work)
+    ksp(libs.hilt.compiler)
+
 
     // Navigation
     implementation(libs.androidx.navigation.compose)
@@ -74,6 +81,40 @@ dependencies {
 
     // Logging
     implementation(libs.timber)
+
+    // DataStore
+    implementation(libs.androidx.datastore.preferences)
+
+    //Persian DatePicker
+    implementation(libs.compose.persian.date.picker)
+    implementation("com.github.samanzamani:PersianDate:1.7.1")
+
+    //Splash Screen Api
+    implementation("androidx.core:core-splashscreen:1.0.1")
+
+    //SignalR
+    implementation("com.microsoft.signalr:signalr:10.0.0")
+
+    // QR Code Generation
+    implementation("com.google.zxing:core:3.5.2")
+
+    implementation("io.coil-kt.coil3:coil-compose:3.3.0")
+    implementation("io.coil-kt.coil3:coil-network-okhttp:3.3.0")
+
+    // WorkManager
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+
+    // CameraX for QR Scanner
+    val cameraxVersion = "1.3.1"
+    implementation("androidx.camera:camera-core:$cameraxVersion")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-view:$cameraxVersion")
+
+    // ML Kit Barcode Scanning
+    implementation("com.google.mlkit:barcode-scanning:17.2.0")
+
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

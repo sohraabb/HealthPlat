@@ -11,11 +11,13 @@ import com.bonyad.healthplat.domain.model.RecordDataResult
 import com.bonyad.healthplat.ui.utils.SleepDataHelper
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import saman.zamani.persiandate.PersianDate
@@ -51,7 +53,6 @@ class SleepDetailViewModel @Inject constructor(
     private val _sleepQuality = MutableStateFlow(0)
     val sleepQuality: StateFlow<Int> = _sleepQuality.asStateFlow()
 
-    // Sleep Timeline Data
     data class SleepSegment(
         val stage: SleepStage,
         val startRatio: Float,
@@ -63,13 +64,11 @@ class SleepDetailViewModel @Inject constructor(
     private val _sleepTimeline = MutableStateFlow<List<SleepSegment>>(emptyList())
     val sleepTimeline: StateFlow<List<SleepSegment>> = _sleepTimeline.asStateFlow()
 
-    // Stats
     data class SleepStats(val hours: Int = 0, val minutes: Int = 0, val score: Int = 0)
 
     private val _sleepStats = MutableStateFlow(SleepStats())
     val sleepStats: StateFlow<SleepStats> = _sleepStats.asStateFlow()
 
-    // Percentages for Donut (Deep, Light, REM)
     private val _stagePercentages = MutableStateFlow(Triple(0, 0, 0))
     val stagePercentages: StateFlow<Triple<Int, Int, Int>> = _stagePercentages.asStateFlow()
 
@@ -79,11 +78,18 @@ class SleepDetailViewModel @Inject constructor(
     private val _selectedDayOffset = MutableStateFlow(0)
     val selectedDayOffset = _selectedDayOffset.asStateFlow()
 
-    // Loading state
+    // ── Loading: server → UI ──────────────────────────────────────────────────
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    // Date label
+    // ── Syncing: device → server ──────────────────────────────────────────────
+    private val _isSyncing = MutableStateFlow(false)
+    val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
+
+    // ── One-time snackbar events ──────────────────────────────────────────────
+    private val _syncMessage = Channel<String>(Channel.BUFFERED)
+    val syncMessage = _syncMessage.receiveAsFlow()
+
     private val _dateLabel = MutableStateFlow("")
     val dateLabel: StateFlow<String> = _dateLabel.asStateFlow()
 
@@ -91,8 +97,33 @@ class SleepDetailViewModel @Inject constructor(
         loadSleepData(0)
     }
 
+    // ── Public actions ────────────────────────────────────────────────────────
+
+    /**
+     * Phase 1: push latest ring data → server  (isSyncing = true)
+     * Phase 2: reload sleep data from ring/API   (isLoading = true)
+     */
     fun refreshData() {
-        loadSleepData(_selectedDayOffset.value)
+        viewModelScope.launch {
+            // Phase 1 — Device → Server
+            _isSyncing.value = true
+            try {
+                when (val result = healthRepository.syncDashboardData(day = 0)) {
+                    is RecordDataResult.Success ->
+                        _syncMessage.trySend("داده‌های خواب به‌روز شد ✓")
+                    is RecordDataResult.Error ->
+                        _syncMessage.trySend("دستگاه متصل نیست — نمایش آخرین داده")
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "Sleep sync to server failed")
+                _syncMessage.trySend("خطا در همگام‌سازی")
+            } finally {
+                _isSyncing.value = false
+            }
+
+            // Phase 2 — Reload (always runs)
+            loadSleepData(_selectedDayOffset.value)
+        }
     }
 
     fun setTimeRange(range: String) {
@@ -105,7 +136,7 @@ class SleepDetailViewModel @Inject constructor(
         loadSleepData(offset)
     }
 
-    // ============ PRIMARY: Load from Ring ============
+    // ── Private: data loading ─────────────────────────────────────────────────
 
     private fun loadSleepData(offset: Int) {
         val today = LocalDate.now()
@@ -114,22 +145,17 @@ class SleepDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             val targetDate = today.plusDays(_selectedDayOffset.value.toLong())
-            val dateStr = targetDate.format(formatter)
             updateDateLabel(targetDate)
 
             try {
-                // PRIMARY: Try ring first - get full sleep data (may span midnight)
-                val fullSleepData = loadFullSleepDataFromRing(offset)
-
+                val fullSleepData = sleepDataHelper.getFullSleepData(offset)
                 if (fullSleepData.isNotEmpty()) {
                     Timber.i("📊 Sleep from RING: ${fullSleepData.size} values")
                     processSleepData(fullSleepData)
                 } else {
-                    // FALLBACK: Try API
                     Timber.w("⚠️ No ring data, trying API fallback...")
                     loadSleepFromApi(offset)
                 }
-
             } catch (e: Exception) {
                 Timber.e(e, "❌ Failed to load sleep from ring")
                 loadSleepFromApi(offset)
@@ -139,22 +165,11 @@ class SleepDetailViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Load sleep data that may span across midnight.
-     * Uses shared SleepDataHelper to ensure consistency across app.
-     */
-    private suspend fun loadFullSleepDataFromRing(offset: Int): List<Int> {
-        return sleepDataHelper.getFullSleepData(offset)
-    }
-
-    // ============ FALLBACK: Load from API ============
-
     private suspend fun loadSleepFromApi(offset: Int) {
         try {
             val today = LocalDate.now()
             val targetDate = today.plusDays(offset.toLong())
             val dateStr = targetDate.format(DateTimeFormatter.ISO_LOCAL_DATE)
-
             Timber.d("📡 Sleep API fallback: $dateStr")
 
             healthRepository.getMetricData(
@@ -165,24 +180,15 @@ class SleepDetailViewModel @Inject constructor(
                 onSuccess = { metricsData ->
                     if (metricsData.isNotEmpty()) {
                         val values = metricsData.first().values
-
-                        // Backend bug: data might be duplicated
-                        // Sleep should be 1440 values (1 per minute for 24 hours)
-                        // If we have more, take only first 1440
                         val cleanedValues = if (values.size > 1440 && values.size % 1440 == 0) {
                             Timber.w("⚠️ API sleep data duplicated (${values.size}), taking first 1440")
                             values.take(1440)
-                        } else {
-                            values
-                        }
-
+                        } else values
                         processSleepData(cleanedValues)
-                    } else {
-                        clearData()
-                    }
+                    } else clearData()
                 },
-                onFailure = { error ->
-                    Timber.e(error, "❌ Sleep API error")
+                onFailure = { e ->
+                    Timber.e(e, "❌ Sleep API error")
                     clearData()
                 }
             )
@@ -192,28 +198,18 @@ class SleepDetailViewModel @Inject constructor(
         }
     }
 
-    // ============ Process Sleep Data (same for ring & API) ============
+    // ── Sleep data processing ─────────────────────────────────────────────────
 
     private fun processSleepData(sourceList: List<Int>) {
-        if (sourceList.isEmpty()) {
-            clearData()
-            return
-        }
+        if (sourceList.isEmpty()) { clearData(); return }
 
-        // Count minutes per stage
-        // Sleep values: 0=Activity, 1=Deep, 2=Light, 3=Awake, 4=REM
         val deep = sourceList.count { it == 1 }
         val light = sourceList.count { it == 2 }
         val awake = sourceList.count { it == 3 }
         val rem = sourceList.count { it == 4 }
+        val totalSleep = deep + light + rem
 
-        val totalSleep = deep + light + rem  // Don't count awake in total sleep
-
-        if (totalSleep == 0) {
-            Timber.w("⚠️ No actual sleep data (all activity/awake)")
-            clearData()
-            return
-        }
+        if (totalSleep == 0) { Timber.w("⚠️ No actual sleep data"); clearData(); return }
 
         _deepMinutes.value = deep
         _lightMinutes.value = light
@@ -221,87 +217,54 @@ class SleepDetailViewModel @Inject constructor(
         _remMinutes.value = rem
         _totalSleepMinutes.value = totalSleep
 
-        // Update stats
-        val hours = totalSleep / 60
-        val minutes = totalSleep % 60
         val score = calculateSleepQuality(deep, light, rem, awake)
-
-        _sleepStats.value = SleepStats(hours, minutes, score)
+        _sleepStats.value = SleepStats(totalSleep / 60, totalSleep % 60, score)
         _sleepQuality.value = score
 
-        // Calculate percentages for donut
         if (totalSleep > 0) {
-            val deepPct = (deep * 100) / totalSleep
-            val lightPct = (light * 100) / totalSleep
-            val remPct = (rem * 100) / totalSleep
-            _stagePercentages.value = Triple(deepPct, lightPct, remPct)
-        } else {
-            _stagePercentages.value = Triple(0, 0, 0)
+            _stagePercentages.value = Triple(
+                (deep * 100) / totalSleep,
+                (light * 100) / totalSleep,
+                (rem * 100) / totalSleep
+            )
         }
 
-        // Generate timeline segments
         _sleepTimeline.value = generateTimeline(sourceList)
-
-        Timber.i("✅ Sleep: ${hours}h ${minutes}m, Deep=$deep, Light=$light, REM=$rem, Awake=$awake, Score=$score")
+        Timber.i("✅ Sleep: ${totalSleep / 60}h ${totalSleep % 60}m — Deep=$deep Light=$light REM=$rem Awake=$awake Score=$score")
     }
 
     private fun generateTimeline(sourceList: List<Int>): List<SleepSegment> {
         if (sourceList.isEmpty()) return emptyList()
-
         val segments = mutableListOf<SleepSegment>()
-        val totalMinutes = sourceList.size
-
+        val total = sourceList.size
         var currentStage: SleepStage? = null
         var segmentStart = 0
 
         sourceList.forEachIndexed { index, value ->
             val stage = when (value) {
-                0 -> null  // Activity - skip
                 1 -> SleepStage.DEEP
                 2 -> SleepStage.LIGHT
                 3 -> SleepStage.AWAKE
                 4 -> SleepStage.REM
                 else -> null
             }
-
-            // Detect stage change
             if (stage != currentStage) {
-                // Save previous segment (skip AWAKE for cleaner chart)
                 if (currentStage != null && currentStage != SleepStage.AWAKE) {
-                    val startRatio = segmentStart.toFloat() / totalMinutes
-                    val widthRatio = (index - segmentStart).toFloat() / totalMinutes
-
-                    if (widthRatio > 0.001f) {  // Only add if visible
-                        segments.add(
-                            SleepSegment(
-                                stage = currentStage!!,
-                                startRatio = startRatio,
-                                widthRatio = widthRatio.coerceAtLeast(0.01f)
-                            )
-                        )
+                    val widthRatio = (index - segmentStart).toFloat() / total
+                    if (widthRatio > 0.001f) {
+                        segments.add(SleepSegment(currentStage!!, segmentStart.toFloat() / total, widthRatio.coerceAtLeast(0.01f)))
                     }
                 }
                 currentStage = stage
                 segmentStart = index
             }
         }
-
-        // Add final segment
         if (currentStage != null && currentStage != SleepStage.AWAKE) {
-            val startRatio = segmentStart.toFloat() / totalMinutes
-            val widthRatio = (totalMinutes - segmentStart).toFloat() / totalMinutes
-
+            val widthRatio = (total - segmentStart).toFloat() / total
             if (widthRatio > 0.001f) {
-                segments.add(
-                    SleepSegment(
-                        stage = currentStage!!,
-                        startRatio = startRatio,
-                        widthRatio = widthRatio.coerceAtLeast(0.01f)
-                    )
-                )
+                segments.add(SleepSegment(currentStage!!, segmentStart.toFloat() / total, widthRatio.coerceAtLeast(0.01f)))
             }
         }
-
         Timber.d("📊 Generated ${segments.size} sleep segments")
         return segments
     }
@@ -309,18 +272,8 @@ class SleepDetailViewModel @Inject constructor(
     private fun calculateSleepQuality(deep: Int, light: Int, rem: Int, awake: Int): Int {
         val total = deep + light + rem + awake
         if (total == 0) return 0
-
-        // Weight: Deep sleep most important, then REM, then light
-        // Awake time penalizes score
-        val deepWeight = deep * 0.4
-        val remWeight = rem * 0.35
-        val lightWeight = light * 0.2
-        val awakeWeight = awake * -0.1
-
-        val rawScore = deepWeight + remWeight + lightWeight + awakeWeight
-        val normalized = (rawScore / total) * 100
-
-        return normalized.coerceIn(0.0, 100.0).toInt()
+        val raw = deep * 0.4 + rem * 0.35 + light * 0.2 + awake * -0.1
+        return ((raw / total) * 100).coerceIn(0.0, 100.0).toInt()
     }
 
     private fun updateDateLabel(date: LocalDate) {
@@ -331,19 +284,8 @@ class SleepDetailViewModel @Inject constructor(
             else -> {
                 val calendar = GregorianCalendar(date.year, date.monthValue - 1, date.dayOfMonth)
                 val pDate = PersianDate(calendar.time)
-                val dayOfMonth = pDate.shDay.toString().toFarsiDigits()
-                val monthName = pDate.monthName
-                "$monthName $dayOfMonth"
+                "${pDate.monthName} ${pDate.shDay.toString().toFarsiDigits()}"
             }
-        }
-    }
-
-    private fun getPersianMonth(month: Int): String {
-        return when (month) {
-            1 -> "ژانویه"; 2 -> "فوریه"; 3 -> "مارس"; 4 -> "آوریل"
-            5 -> "مه"; 6 -> "ژوئن"; 7 -> "جولای"; 8 -> "اوت"
-            9 -> "سپتامبر"; 10 -> "اکتبر"; 11 -> "نوامبر"; 12 -> "دسامبر"
-            else -> ""
         }
     }
 
@@ -359,13 +301,11 @@ class SleepDetailViewModel @Inject constructor(
         _sleepTimeline.value = emptyList()
     }
 
-    fun getSleepQualityLabel(): String {
-        return when {
-            _sleepStats.value.score >= 85 -> "عالی"
-            _sleepStats.value.score >= 70 -> "خوب"
-            _sleepStats.value.score >= 50 -> "متوسط"
-            _sleepStats.value.score > 0 -> "ضعیف"
-            else -> ""
-        }
+    fun getSleepQualityLabel(): String = when {
+        _sleepStats.value.score >= 85 -> "عالی"
+        _sleepStats.value.score >= 70 -> "خوب"
+        _sleepStats.value.score >= 50 -> "متوسط"
+        _sleepStats.value.score > 0 -> "ضعیف"
+        else -> ""
     }
 }

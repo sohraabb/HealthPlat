@@ -45,6 +45,9 @@ class ProfileDashboardViewModel @Inject constructor(
     private val _nightModeEnabled = MutableStateFlow(false)
     val nightModeEnabled: StateFlow<Boolean> = _nightModeEnabled.asStateFlow()
 
+    private val _showLogoutDialog = MutableStateFlow(false)
+    val showLogoutDialog: StateFlow<Boolean> = _showLogoutDialog.asStateFlow()
+
     init {
         loadUserData()
     }
@@ -97,5 +100,18 @@ class ProfileDashboardViewModel @Inject constructor(
                 _navigationEvent.send(ProfileNavigationEvent.NavigateToLogin)
             }
         }
+    }
+
+    fun showLogoutConfirmation() {
+        _showLogoutDialog.value = true
+    }
+
+    fun dismissLogoutDialog() {
+        _showLogoutDialog.value = false
+    }
+
+    fun confirmLogout() {
+        _showLogoutDialog.value = false
+        logout()
     }
 }

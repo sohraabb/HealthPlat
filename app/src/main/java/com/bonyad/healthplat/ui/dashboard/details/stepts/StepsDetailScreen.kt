@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -21,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -49,7 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.bonyad.healthplat.R
-import com.bonyad.healthplat.ui.dashboard.details.heart_rate.CustomDetailTopBar
+import com.bonyad.healthplat.ui.dashboard.details.CustomDetailTopBar
 import com.bonyad.healthplat.ui.dashboard.details.heart_rate.DateStrip
 import com.bonyad.healthplat.ui.dashboard.details.heart_rate.TimeRangeSelector
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
@@ -161,13 +163,35 @@ fun StepsDetailScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
-
+                Spacer(modifier = Modifier.height(12.dp))
                 // Bar Chart - Always show the chart structure
-                StepsBarChart(
-                    data = barData,
-                    showEmptyState = barData.isEmpty() && !isLoading
-                )
+                if (isLoading) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = CardDefaults.cardElevation(0.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(250.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(color = Color(0xFFFF9100))
+                        }
+                    }
+                } else {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = CardDefaults.cardElevation(0.dp)
+                    ) {
+                        StepsBarChart(
+                            data = barData,
+                            showEmptyState = barData.isEmpty()
+                        )
+                    }
+                }
             }
 
             // 4. Comparison Card (Bottom Section)
@@ -185,159 +209,192 @@ fun StepsDetailScreen(
 @Composable
 fun StepsBarChart(
     data: List<StepsDetailViewModel.StepBarPoint>,
+    isLoading: Boolean = false,
     showEmptyState: Boolean = false
 ) {
-    val maxVal = (data.maxOfOrNull { it.steps } ?: 1).coerceAtLeast(1000).toFloat()
+    val maxVal = (data.maxOfOrNull { it.steps } ?: 1000).coerceAtLeast(1000).toFloat()
     val selectedPoint = data.find { it.isSelected }
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(250.dp)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(0.dp)
     ) {
-        // Always draw the chart canvas with grid and axes
-        Canvas(
+        // Loading state
+        if (isLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(240.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(color = Color(0xFFFF9100))
+            }
+            return@Card
+        }
+
+        Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(start = 30.dp, end = 16.dp, bottom = 24.dp, top = 40.dp)
+                .fillMaxWidth()
+                .height(240.dp)
+                .padding(16.dp)
         ) {
-            val w = size.width
-            val h = size.height
-
-            // 1. Draw Grid Lines (Horizontal) - Always drawn
-            val pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
-            listOf(0f, 0.5f, 1f).forEach { ratio ->
-                val y = h * ratio
-                drawLine(
-                    color = Color.LightGray.copy(alpha = 0.5f),
-                    start = Offset(0f, y),
-                    end = Offset(w, y),
-                    pathEffect = pathEffect
-                )
-            }
-
-            // 2. Draw Vertical Grid Lines - Always drawn
-            listOf(0.25f, 0.5f, 0.75f).forEach { ratio ->
-                val x = w * ratio
-                drawLine(
-                    color = Color.LightGray.copy(alpha = 0.5f),
-                    start = Offset(x, 0f),
-                    end = Offset(x, h),
-                    pathEffect = pathEffect
-                )
-            }
-
-            // 3. Draw Bars - Only if we have data
-            if (data.isNotEmpty()) {
-                val barWidth = 12.dp.toPx()
-                val spacing = w / (data.size + 1)
-
-                data.forEachIndexed { index, point ->
-                    val x = spacing * (index + 1)
-                    val barHeight = (point.steps / maxVal * h).coerceAtLeast(4.dp.toPx())
-
-                    drawRoundRect(
-                        color = Color(0xFFFF9100),
-                        topLeft = Offset(x - barWidth / 2, h - barHeight),
-                        size = Size(barWidth, barHeight),
-                        cornerRadius = CornerRadius(barWidth / 2, barWidth / 2)
-                    )
-
-                    // 4. Draw Tooltip line if selected
-                    if (point.isSelected) {
-                        drawLine(
+            // Tooltip — rendered first so it sits above, but inside the Card bounds
+            if (selectedPoint != null && data.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .background(Color(0xFFF5F5F5), RoundedCornerShape(8.dp))
+                        .border(1.dp, Color.White, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            "${selectedPoint.steps.toString().toFarsiDigits()} قدم",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = Color(0xFF2C2C2C)
+                        )
+                        Text(
+                            selectedPoint.hourLabel,
+                            style = MaterialTheme.typography.bodySmall,
                             color = Color.Gray,
-                            start = Offset(x, h - barHeight),
-                            end = Offset(x, -30f),
-                            pathEffect = pathEffect,
-                            strokeWidth = 2f
+                            fontSize = 10.sp
                         )
                     }
                 }
             }
-        }
 
-        // 5. Tooltip Box (Overlay UI) - Only shown when data exists and point is selected
-        if (selectedPoint != null && data.isNotEmpty()) {
-            Box(
+            // Chart body — same Row { Y-axis | Chart } pattern as HeartRate
+            Row(
                 modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .offset(x = (20).dp, y = (-10).dp)
-                    .background(Color(0xFFF5F5F5), RoundedCornerShape(8.dp))
-                    .border(1.dp, Color.White, RoundedCornerShape(8.dp))
-                    .padding(8.dp)
+                    .fillMaxSize()
+                    .padding(top = 32.dp) // room for tooltip above
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                // Y-axis labels — 3 evenly spaced, matching HeartRate style
+                Column(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .padding(end = 8.dp, bottom = 20.dp),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
                     Text(
-                        "${selectedPoint.steps.toString().toFarsiDigits()} قدم",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
+                        maxVal.toInt().toString().toFarsiDigits(),
+                        fontSize = 10.sp,
+                        color = Color.Gray
                     )
                     Text(
-                        selectedPoint.hourLabel,
-                        style = MaterialTheme.typography.bodySmall,
+                        (maxVal / 2).toInt().toString().toFarsiDigits(),
+                        fontSize = 10.sp,
+                        color = Color.Gray
+                    )
+                    Text(
+                        "۰",
+                        fontSize = 10.sp,
                         color = Color.Gray
                     )
                 }
-            }
-        }
 
-        // 6. Labels (Y-Axis) - Always shown
-        Box(modifier = Modifier.fillMaxSize()) {
-            Text(
-                maxVal.toInt().toString().toFarsiDigits(),
-                fontSize = 10.sp,
-                color = Color.Gray,
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .offset(y = (-20).dp)
-            )
-            Text(
-                (maxVal / 5).toInt().toString().toFarsiDigits(),
-                fontSize = 10.sp,
-                color = Color.Gray,
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .offset(y = (-50).dp)
-            )
-        }
+                // Chart area
+                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(bottom = 20.dp) // space for X-axis labels
+                    ) {
+                        val w = size.width
+                        val h = size.height
 
-        // 7. Labels (X-Axis) - Always shown
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-                .padding(start = 30.dp, end = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            if (data.isNotEmpty() && data.size <= 7) {
-                // Show all labels for weekly view when we have data
-                data.forEach { point ->
-                    Text(point.hourLabel, fontSize = 10.sp, color = Color.Gray)
+                        // Grid lines — horizontal
+                        val pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                        listOf(0f, 0.5f, 1f).forEach { ratio ->
+                            drawLine(
+                                color = Color.LightGray.copy(alpha = 0.5f),
+                                start = Offset(0f, h * ratio),
+                                end = Offset(w, h * ratio),
+                                pathEffect = pathEffect
+                            )
+                        }
+
+                        // Grid lines — vertical
+                        listOf(0.25f, 0.5f, 0.75f).forEach { ratio ->
+                            drawLine(
+                                color = Color.LightGray.copy(alpha = 0.5f),
+                                start = Offset(w * ratio, 0f),
+                                end = Offset(w * ratio, h),
+                                pathEffect = pathEffect
+                            )
+                        }
+
+                        if (data.isEmpty()) return@Canvas
+
+                        val barWidth = 12.dp.toPx()
+                        val spacing = w / (data.size + 1)
+
+                        data.forEachIndexed { index, point ->
+                            val x = spacing * (index + 1)
+                            // coerceAtMost(h) ensures bars never exceed canvas height
+                            val barHeight = (point.steps / maxVal * h)
+                                .coerceIn(4.dp.toPx(), h)
+
+                            drawRoundRect(
+                                color = Color(0xFFFF9100),
+                                topLeft = Offset(x - barWidth / 2, h - barHeight),
+                                size = Size(barWidth, barHeight),
+                                cornerRadius = CornerRadius(barWidth / 2, barWidth / 2)
+                            )
+
+                            // Dotted vertical line for selected bar
+                            if (point.isSelected) {
+                                drawLine(
+                                    color = Color.Gray,
+                                    start = Offset(x, h - barHeight),
+                                    end = Offset(x, 0f),
+                                    pathEffect = pathEffect,
+                                    strokeWidth = 2f
+                                )
+                            }
+                        }
+                    }
+
+                    // X-axis labels — LTR so hours read left→right
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .align(Alignment.BottomCenter),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            if (data.isNotEmpty() && data.size <= 7) {
+                                data.forEach { point ->
+                                    Text(point.hourLabel, fontSize = 10.sp, color = Color.Gray)
+                                }
+                            } else {
+                                Text("00:00", fontSize = 10.sp, color = Color.Gray)
+                                Text("08:00", fontSize = 10.sp, color = Color.Gray)
+                                Text("16:00", fontSize = 10.sp, color = Color.Gray)
+                                Text("24:00", fontSize = 10.sp, color = Color.Gray)
+                            }
+                        }
+                    }
+
+                    // Empty state overlay
+                    if (showEmptyState) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.White.copy(alpha = 0.8f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "داده‌ای موجود نیست",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.Gray
+                            )
+                        }
+                    }
                 }
-            } else {
-                // Show time labels for daily view or when no data
-                Text("00:00", fontSize = 10.sp, color = Color.Gray)
-                Text("07:59", fontSize = 10.sp, color = Color.Gray)
-                Text("15:59", fontSize = 10.sp, color = Color.Gray)
-                Text("23:59", fontSize = 10.sp, color = Color.Gray)
-            }
-        }
-
-        // Empty State Overlay - Only shown when there's no data
-        if (showEmptyState) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(start = 30.dp, end = 16.dp, bottom = 24.dp, top = 40.dp)
-                    .background(Color.White.copy(alpha = 0.7f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "داده‌ای موجود نیست",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.Gray
-                )
             }
         }
     }

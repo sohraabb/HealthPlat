@@ -34,7 +34,16 @@ sealed class DeviceConnectionUiState {
     object Connecting : DeviceConnectionUiState()
     object WaitingForPairing : DeviceConnectionUiState()
     object Initializing : DeviceConnectionUiState()
-    object Connected : DeviceConnectionUiState()
+    // ─────────────────────────────────────────────────────────────────────────
+    // CHANGE D: Added a distinct "ReadyToNavigate" state separate from Connected.
+    //
+    // WHY: Previously Connected immediately triggered onDeviceConnected() with
+    // zero visual feedback. The user just saw the screen vanish. Now we show
+    // a success indicator for 1 second, THEN navigate. ReadyToNavigate is what
+    // the screen uses to fire navigation — Connected shows the success UI.
+    // ─────────────────────────────────────────────────────────────────────────
+    object Connected : DeviceConnectionUiState()       // show success UI
+    object ReadyToNavigate : DeviceConnectionUiState() // trigger navigation
     data class Error(val message: String) : DeviceConnectionUiState()
 }
 
@@ -56,76 +65,24 @@ class DeviceConnectionViewModel @Inject constructor(
     val scanDuration: StateFlow<Int> = _scanDuration.asStateFlow()
 
     private val bluetoothAdapter: BluetoothAdapter? by lazy {
-        val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
-        bluetoothManager?.adapter
+        (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
     }
 
-    val isBluetoothEnabled: Boolean
-        get() = bluetoothAdapter?.isEnabled == true
-
-    val isBluetoothSupported: Boolean
-        get() = bluetoothAdapter != null
+    val isBluetoothEnabled: Boolean get() = bluetoothAdapter?.isEnabled == true
+    val isBluetoothSupported: Boolean get() = bluetoothAdapter != null
 
     private var scanTimerJob: Job? = null
     private var connectionJob: Job? = null
 
-
     init {
-
         observeScannedDevices()
-
-
-        // Observe connection state from device manager
-//        viewModelScope.launch {
-//            deviceManager.connectionState.collect { state ->
-//                when (state) {
-//                    ConnectionState.DISCONNECTED -> {
-//                        if (_uiState.value is DeviceConnectionUiState.Connecting) {
-//                            //_uiState.value = DeviceConnectionUiState.Error("اتصال ناموفق بود")
-//                        }
-//                    }
-//                    ConnectionState.SCANNING -> {
-//                        _uiState.value = DeviceConnectionUiState.Scanning
-//                    }
-//                    ConnectionState.CONNECTING -> {
-//                        _uiState.value = DeviceConnectionUiState.Connecting
-//                    }
-//                    ConnectionState.CONNECTED -> {
-////                        _uiState.value = DeviceConnectionUiState.Connected
-//                        stopScanTimer()
-//                    }
-//                }
-//            }
-//        }
-//
-//        viewModelScope.launch {
-//            deviceManager.isPaired.collect { isPaired ->
-//                Timber.d("🔐 Pairing state changed: $isPaired")
-//
-//                // Show pairing state in UI
-//                if (deviceManager.connectionState.value == ConnectionState.CONNECTED &&
-//                    !isPaired &&
-//                    _uiState.value is DeviceConnectionUiState.Connecting) {
-//                    _uiState.value = DeviceConnectionUiState.Pairing
-//                }
-//            }
-//        }
-//
-//
-//        viewModelScope.launch {
-//            deviceManager.scannedDevices.collect { devices ->
-//                _scannedDevices.value = devices
-//                Timber.d("ViewModel: Received ${devices.size} devices")
-//            }
-//        }
     }
-
 
     private fun observeScannedDevices() {
         viewModelScope.launch {
             deviceManager.scannedDevices.collect { devices ->
                 _scannedDevices.value = devices
-                Timber.d("📱 ViewModel: Received ${devices.size} devices")
+                Timber.d("📱 Received ${devices.size} devices")
             }
         }
     }
@@ -140,7 +97,6 @@ class DeviceConnectionViewModel @Inject constructor(
             deviceManager.startScan()
             startScanTimer()
 
-            // Auto-stop after 30 seconds (SDK default is 6 seconds per scan cycle)
             viewModelScope.launch {
                 delay(30000)
                 if (_uiState.value is DeviceConnectionUiState.Scanning) {
@@ -157,7 +113,6 @@ class DeviceConnectionViewModel @Inject constructor(
     }
 
     fun stopScan() {
-        Timber.i("⏹️ Stopping BLE scan")
         deviceManager.stopScan()
         stopScanTimer()
         if (_uiState.value is DeviceConnectionUiState.Scanning) {
@@ -175,88 +130,114 @@ class DeviceConnectionViewModel @Inject constructor(
             return
         }
 
-        // Cancel any existing connection attempt
         connectionJob?.cancel()
-
-        Timber.i("🔌 Starting connection to: $mac")
         stopScan()
         _uiState.value = DeviceConnectionUiState.Connecting
+        Timber.i("🔌 Connecting to: $mac ($name)")
 
         connectionJob = viewModelScope.launch {
             try {
-                // Total timeout: 90 seconds (pairing happens automatically)
-                withTimeout(90000) {
+                withTimeout(90_000) {
 
-                    // Step 1: Start BLE connection (non-blocking)
+                    // ── Step 1: Initiate BLE connection ───────────────────
                     deviceManager.connect(mac)
 
-                    // Step 2: Wait for CONNECTED state
-                    Timber.i("⏳ Waiting for BLE connection...")
+                    // ── Step 2: Wait for BLE CONNECTED state ──────────────
                     deviceManager.connectionState
                         .filter { it == ConnectionState.CONNECTED }
                         .first()
+                    Timber.i("✅ BLE layer connected")
 
-                    Timber.i("✅ BLE Connected")
+                    // ─────────────────────────────────────────────────────
+                    // CHANGE E: Replace pairingState.collect{} with a
+                    // targeted first{} call that terminates cleanly.
+                    //
+                    // BEFORE: We used collect{} which is an infinite suspending
+                    // loop. It never returns on its own — it only exits when
+                    // the coroutine is cancelled (timeout or ViewModel cleared).
+                    // After setting Connected inside collect, the coroutine kept
+                    // running and any future pairingState emission could re-enter
+                    // the when branches unexpectedly.
+                    //
+                    // AFTER: We use first{} which suspends until exactly one
+                    // terminal state arrives (Paired or PairingFailed), then
+                    // returns. The coroutine continues linearly after that —
+                    // no infinite loop, no surprise re-entries.
+                    // ─────────────────────────────────────────────────────
 
-                    // Step 3: Wait for pairing (if needed)
-                    Timber.i("⏳ Checking pairing status...")
+                    // ── Step 3: Wait for pairing to resolve ───────────────
+                    Timber.i("⏳ Waiting for pairing state...")
+                    val pairing = deviceManager.pairingState.first { state ->
+                        state is PairingState.PairingRequested ||
+                                state is PairingState.Paired ||
+                                state is PairingState.PairingFailed
+                    }
 
-                    // Observe pairing state
-                    deviceManager.pairingState.collect { pairingState ->
-                        when (pairingState) {
-                            is PairingState.PairingRequested -> {
-                                Timber.i("📲 Pairing requested - waiting for user")
-                                _uiState.value = DeviceConnectionUiState.WaitingForPairing
+                    when (pairing) {
+                        is PairingState.PairingRequested -> {
+                            // User needs to confirm the system pairing dialog
+                            Timber.i("📲 Pairing dialog shown — waiting for user")
+                            _uiState.value = DeviceConnectionUiState.WaitingForPairing
+
+                            // Now wait for the final outcome
+                            val finalPairing = deviceManager.pairingState.first { state ->
+                                state is PairingState.Paired ||
+                                        state is PairingState.PairingFailed
                             }
-                            is PairingState.Paired -> {
-                                Timber.i("✅ Device paired")
-
-                                // Step 4: Wait for initialization
-                                _uiState.value = DeviceConnectionUiState.Initializing
-                                Timber.i("⏳ Waiting for device initialization...")
-
-                                deviceManager.initializationComplete.first()
-
-                                Timber.i("✅ Device fully initialized")
-
-                                // Step 5: Register with backend
-                                val firmwareVersion = deviceManager.firmwareVersion.value
-                                val result = deviceRepository.addUserDevice(
-                                    deviceMac = mac,
-                                    deviceName = name,
-                                    firmwareVersion = firmwareVersion
-                                )
-
-                                when (result) {
-                                    is AuthResult.Success -> {
-                                        Timber.i("☁️ Device registered: ID=${result.data.id}")
-                                        userPreferences.saveDeviceInfo(mac, name)
-                                        userPreferences.saveDeviceId(result.data.id)
-                                        _uiState.value = DeviceConnectionUiState.Connected
-                                    }
-                                    is AuthResult.Error -> {
-                                        Timber.w("⚠️ Backend registration failed: ${result.message}")
-                                        userPreferences.saveDeviceInfo(mac, name)
-                                        _uiState.value = DeviceConnectionUiState.Connected
-                                    }
-                                }
+                            if (finalPairing is PairingState.PairingFailed) {
+                                throw Exception("Pairing failed: ${finalPairing.error}")
                             }
-                            is PairingState.PairingFailed -> {
-                                Timber.e("❌ Pairing failed: ${pairingState.error}")
-                                throw Exception("Pairing failed: ${pairingState.error}")
-                            }
-                            else -> {
-                                // NotPaired or other state - continue waiting
-                            }
+                            Timber.i("✅ Pairing confirmed by user")
+                        }
+                        is PairingState.PairingFailed -> {
+                            throw Exception("Pairing failed: ${pairing.error}")
+                        }
+                        else -> {
+                            Timber.i("✅ Already paired, no dialog needed")
                         }
                     }
+
+                    // ── Step 4: Wait for device initialization ────────────
+                    _uiState.value = DeviceConnectionUiState.Initializing
+                    Timber.i("⏳ Waiting for device initialization...")
+                    deviceManager.initializationComplete.first()
+                    Timber.i("✅ Device initialized")
+
+                    // ── Step 5: Register with backend ─────────────────────
+                    val firmwareVersion = deviceManager.firmwareVersion.value
+                    val result = deviceRepository.addUserDevice(
+                        deviceMac = mac,
+                        deviceName = name,
+                        firmwareVersion = firmwareVersion
+                    )
+
+                    when (result) {
+                        is AuthResult.Success -> {
+                            Timber.i("☁️ Device registered: ID=${result.data.id}")
+                            userPreferences.saveDeviceInfo(mac, name)
+                            userPreferences.saveDeviceId(result.data.id)
+                        }
+                        is AuthResult.Error -> {
+                            // Non-fatal: save locally and continue
+                            Timber.w("⚠️ Backend registration failed: ${result.message}")
+                            userPreferences.saveDeviceInfo(mac, name)
+                        }
+                    }
+
+                    // ─────────────────────────────────────────────────────
+                    // CHANGE D (continued): Show Connected state for 1 second
+                    // before triggering navigation. This gives the user visible
+                    // feedback that the process completed successfully.
+                    // ─────────────────────────────────────────────────────
+                    _uiState.value = DeviceConnectionUiState.Connected
+                    Timber.i("🎉 Connection complete — showing success UI")
+                    delay(1200)
+                    _uiState.value = DeviceConnectionUiState.ReadyToNavigate
                 }
             } catch (e: TimeoutCancellationException) {
                 Timber.e("⏱️ Connection timeout after 90 seconds")
                 deviceManager.disconnect()
-                _uiState.value = DeviceConnectionUiState.Error(
-                    "زمان اتصال تمام شد. لطفا دوباره تلاش کنید"
-                )
+                _uiState.value = DeviceConnectionUiState.Error("زمان اتصال تمام شد. لطفا دوباره تلاش کنید")
             } catch (e: Exception) {
                 Timber.e(e, "❌ Connection error")
                 deviceManager.disconnect()
@@ -267,46 +248,6 @@ class DeviceConnectionViewModel @Inject constructor(
         }
     }
 
-    /*
-    @SuppressLint("MissingPermission")
-    fun connectToDevice(device: ScanDeviceInfo) {
-        val mac = device.bluetoothDevice?.address
-        if (mac == null) {
-            _uiState.value = DeviceConnectionUiState.Error("آدرس دستگاه نامعتبر است")
-            return
-        }
-
-        Timber.i("Connecting to device: $mac")
-        stopScan()
-        _uiState.value = DeviceConnectionUiState.Connecting
-
-        try {
-            deviceManager.connect(mac)
-
-            // Save device info
-            viewModelScope.launch {
-                delay(1000)
-                userPreferences.saveDeviceInfo(
-                    mac = mac,
-                    name = device.bluetoothDevice?.name
-                )
-            }
-
-            // Timeout after 15 seconds
-            viewModelScope.launch {
-                delay(15000)
-                if (_uiState.value is DeviceConnectionUiState.Connecting) {
-                    _uiState.value = DeviceConnectionUiState.Error("اتصال ناموفق بود. لطفا دوباره تلاش کنید")
-                }
-            }
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to connect")
-            _uiState.value = DeviceConnectionUiState.Error("خطا در اتصال به دستگاه")
-        }
-    }
-
-     */
-
     fun retryConnection() {
         _uiState.value = DeviceConnectionUiState.Idle
     }
@@ -315,16 +256,6 @@ class DeviceConnectionViewModel @Inject constructor(
         if (_uiState.value is DeviceConnectionUiState.Error) {
             _uiState.value = DeviceConnectionUiState.Idle
         }
-    }
-
-    // For testing: Add mock devices
-    fun addMockDevices() {
-        // This is for testing when you don't have a physical ring
-        // Remove in production
-        _scannedDevices.value = listOf(
-            // Mock device - you can't actually create ScanDeviceInfo
-            // This is just for UI testing
-        )
     }
 
     private fun startScanTimer() {

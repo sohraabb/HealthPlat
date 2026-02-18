@@ -9,14 +9,15 @@ import com.bonyad.healthplat.domain.model.MetricData
 import com.bonyad.healthplat.domain.model.RecordDataResult
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import saman.zamani.persiandate.PersianDate
 import timber.log.Timber
 import java.time.LocalDate
-import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.GregorianCalendar
 import javax.inject.Inject
@@ -42,11 +43,7 @@ class SpO2DetailViewModel @Inject constructor(
     private val _selectedDayOffset = MutableStateFlow(0)
     val selectedDayOffset = _selectedDayOffset.asStateFlow()
 
-    data class SpO2Point(
-        val timeLabel: String,
-        val timeRatio: Float,
-        val value: Int
-    )
+    data class SpO2Point(val timeLabel: String, val timeRatio: Float, val value: Int)
 
     private val _chartData = MutableStateFlow<List<SpO2Point>>(emptyList())
     val chartData: StateFlow<List<SpO2Point>> = _chartData.asStateFlow()
@@ -65,8 +62,17 @@ class SpO2DetailViewModel @Inject constructor(
     private val _selectedTimeRange = MutableStateFlow("روزانه")
     val selectedTimeRange: StateFlow<String> = _selectedTimeRange.asStateFlow()
 
+    // ── Loading: server → UI ──────────────────────────────────────────────────
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    // ── Syncing: device → server ──────────────────────────────────────────────
+    private val _isSyncing = MutableStateFlow(false)
+    val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
+
+    // ── One-time snackbar events ──────────────────────────────────────────────
+    private val _syncMessage = Channel<String>(Channel.BUFFERED)
+    val syncMessage = _syncMessage.receiveAsFlow()
 
     private val _dateLabel = MutableStateFlow("")
     val dateLabel: StateFlow<String> = _dateLabel.asStateFlow()
@@ -78,8 +84,29 @@ class SpO2DetailViewModel @Inject constructor(
         loadSpO2Data(0)
     }
 
+    // ── Public actions ────────────────────────────────────────────────────────
+
     fun refreshData() {
-        loadSpO2Data(_selectedDayOffset.value)
+        viewModelScope.launch {
+            // Phase 1 — Device → Server
+            _isSyncing.value = true
+            try {
+                when (val result = healthRepository.syncDashboardData(day = 0)) {
+                    is RecordDataResult.Success ->
+                        _syncMessage.trySend("داده‌های اکسیژن خون به‌روز شد ✓")
+                    is RecordDataResult.Error ->
+                        _syncMessage.trySend("دستگاه متصل نیست — نمایش آخرین داده")
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "SpO2 sync failed")
+                _syncMessage.trySend("خطا در همگام‌سازی")
+            } finally {
+                _isSyncing.value = false
+            }
+
+            // Phase 2 — Reload (always runs)
+            loadSpO2Data(_selectedDayOffset.value)
+        }
     }
 
     fun setTimeRange(range: String) {
@@ -93,13 +120,11 @@ class SpO2DetailViewModel @Inject constructor(
         loadSpO2Data(offset)
     }
 
-    // ============ PRIMARY: Load from Ring ============
+    // ── Private: data loading ─────────────────────────────────────────────────
 
     private fun loadSpO2Data(offset: Int) {
         viewModelScope.launch {
             _isLoading.value = true
-
-            // Update date label based on time range
             when (_selectedTimeRange.value) {
                 "هفتگی" -> _dateLabel.value = "هفته گذشته"
                 "ماهانه" -> _dateLabel.value = "ماه گذشته"
@@ -107,22 +132,15 @@ class SpO2DetailViewModel @Inject constructor(
             }
 
             try {
-                // PRIMARY: Try ring first
                 val result = deviceManager.getRecordData(offset)
-
                 if (result is RecordDataResult.Success &&
                     result.spo2?.sourceList?.any { it > 0 } == true) {
-
-                    val spo2List = result.spo2.sourceList
-                    Timber.i("📊 SpO2 from RING: ${spo2List.size} values")
-                    processSpO2Data(spo2List)
-
+                    Timber.i("📊 SpO2 from RING: ${result.spo2.sourceList.size} values")
+                    processSpO2Data(result.spo2.sourceList)
                 } else {
-                    // FALLBACK: Try API (but data might be corrupted)
                     Timber.w("⚠️ No ring data, trying API fallback...")
                     loadSpO2FromApi(offset)
                 }
-
             } catch (e: Exception) {
                 Timber.e(e, "❌ Failed to load SpO2 from ring")
                 loadSpO2FromApi(offset)
@@ -132,43 +150,24 @@ class SpO2DetailViewModel @Inject constructor(
         }
     }
 
-    // ============ FALLBACK: Load from API ============
-
     private suspend fun loadSpO2FromApi(offset: Int) {
         try {
             val today = LocalDate.now()
-            val targetDate = today.plusDays(offset.toLong())
-            val dateStr = targetDate.format(DateTimeFormatter.ISO_LOCAL_DATE)
-
+            val dateStr = today.plusDays(offset.toLong()).format(DateTimeFormatter.ISO_LOCAL_DATE)
             Timber.d("📡 SpO2 API fallback: $dateStr")
 
-            healthRepository.getMetricData(
-                metricType = MetricType.SPO2,
-                dateFrom = dateStr,
-                dateTo = dateStr
-            ).fold(
+            healthRepository.getMetricData(MetricType.SPO2, dateStr, dateStr).fold(
                 onSuccess = { metricsData ->
                     if (metricsData.isNotEmpty()) {
                         val values = metricsData.first().values
-
-                        // Backend bug: data is duplicated. Expected 48, got 768 (16x)
-                        // Take only first 48 values if data looks duplicated
-                        val cleanedValues = if (values.size > 48 && values.size % 48 == 0) {
+                        val cleaned = if (values.size > 48 && values.size % 48 == 0) {
                             Timber.w("⚠️ API data duplicated (${values.size}), taking first 48")
                             values.take(48)
-                        } else {
-                            values
-                        }
-
-                        processSpO2Data(cleanedValues)
-                    } else {
-                        clearData()
-                    }
+                        } else values
+                        processSpO2Data(cleaned)
+                    } else clearData()
                 },
-                onFailure = { error ->
-                    Timber.e(error, "❌ SpO2 API error")
-                    clearData()
-                }
+                onFailure = { e -> Timber.e(e, "❌ SpO2 API error"); clearData() }
             )
         } catch (e: Exception) {
             Timber.e(e, "❌ SpO2 API fallback failed")
@@ -176,90 +175,58 @@ class SpO2DetailViewModel @Inject constructor(
         }
     }
 
-    // ============ Process Data (same for ring & API) ============
-
     private fun processSpO2Data(spo2List: List<Int>) {
         val validData = spo2List.filter { it > 0 }
-
-        if (validData.isEmpty()) {
-            Timber.w("⚠️ No valid SpO2 data")
-            clearData()
-            return
-        }
+        if (validData.isEmpty()) { clearData(); return }
 
         _spo2Data.value = validData
         _currentSpO2.value = validData.lastOrNull() ?: 0
         _minSpO2.value = validData.minOrNull() ?: 0
         _maxSpO2.value = validData.maxOrNull() ?: 0
-
-        // Convert to scatter points (pass full list to preserve indices)
         _chartData.value = convertToScatterPoints(spo2List)
 
-        val avg = validData.average().toInt()
-
-        // Find last valid time
         val lastValidIndex = spo2List.indexOfLast { it > 0 }
-        val lastTime = if (lastValidIndex >= 0) {
-            indexToTimeLabel(lastValidIndex, spo2List.size)
-        } else ""
+        val lastTime = if (lastValidIndex >= 0) indexToTimeLabel(lastValidIndex, spo2List.size) else ""
 
         _stats.value = SpO2Stats(
             high = _maxSpO2.value,
-            avg = avg,
+            avg = validData.average().toInt(),
             low = _minSpO2.value,
             lastValue = _currentSpO2.value,
             lastTime = lastTime
         )
-
         _rangeText.value = "${_minSpO2.value} - ${_maxSpO2.value}"
-
-        Timber.i("✅ SpO2: ${validData.size} points, avg=$avg, range=${_minSpO2.value}-${_maxSpO2.value}")
+        Timber.i("✅ SpO2: ${validData.size} points, range=${_minSpO2.value}-${_maxSpO2.value}")
     }
 
     private fun convertToScatterPoints(spo2Data: List<Int>): List<SpO2Point> {
-        val points = mutableListOf<SpO2Point>()
-        val totalPoints = spo2Data.size
-
-        // SDK: SpO2 = 48 points per day (30 min intervals)
-        // Calculate dynamically in case of different sizes
-        val minutesPerPoint = (24.0 * 60.0) / totalPoints
-
-        Timber.d("📊 Converting: $totalPoints points, ${minutesPerPoint}min/point")
-
-        spo2Data.forEachIndexed { index, value ->
-            if (value > 0) {
-                val timeRatio = index.toFloat() / totalPoints.toFloat()
-                val timeLabel = indexToTimeLabel(index, totalPoints)
-
-                points.add(SpO2Point(timeLabel, timeRatio, value))
-            }
+        val total = spo2Data.size
+        return spo2Data.mapIndexedNotNull { index, value ->
+            if (value <= 0) null
+            else SpO2Point(
+                timeLabel = indexToTimeLabel(index, total),
+                timeRatio = index.toFloat() / total.toFloat(),
+                value = value
+            )
         }
-
-        Timber.d("📊 Created ${points.size} scatter points")
-        return points
     }
 
     private fun indexToTimeLabel(index: Int, totalPoints: Int): String {
         val minutesPerPoint = (24.0 * 60.0) / totalPoints
         val totalMinutes = (index * minutesPerPoint).toInt()
-        val hour = (totalMinutes / 60) % 24
-        val minute = totalMinutes % 60
-        return String.format("%02d:%02d", hour, minute)
+        return String.format("%02d:%02d", (totalMinutes / 60) % 24, totalMinutes % 60)
     }
 
     private fun updateDateLabel(offset: Int) {
         val today = LocalDate.now()
         val targetDate = today.plusDays(offset.toLong())
-        val calendar =
-            GregorianCalendar(targetDate.year, targetDate.monthValue - 1, targetDate.dayOfMonth)
+        val calendar = GregorianCalendar(targetDate.year, targetDate.monthValue - 1, targetDate.dayOfMonth)
         val pDate = PersianDate(calendar.time)
         val dayOfMonth = pDate.shDay.toString().toFarsiDigits()
-        val monthName = pDate.monthName
-
         _dateLabel.value = when (offset) {
-            0 -> "امروز $dayOfMonth $monthName"
-            -1 -> "دیروز $dayOfMonth $monthName"
-            else -> "$dayOfMonth $monthName"
+            0 -> "امروز $dayOfMonth ${pDate.monthName}"
+            -1 -> "دیروز $dayOfMonth ${pDate.monthName}"
+            else -> "$dayOfMonth ${pDate.monthName}"
         }
     }
 

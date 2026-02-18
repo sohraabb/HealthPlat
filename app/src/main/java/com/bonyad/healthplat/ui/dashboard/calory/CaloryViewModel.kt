@@ -108,6 +108,9 @@ class CaloryViewModel @Inject constructor(
     private val _navigateToFoodScan = MutableSharedFlow<MealType>()
     val navigateToFoodScan: SharedFlow<MealType> = _navigateToFoodScan.asSharedFlow()
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
     // ============ Initialization ============
 
     init {
@@ -193,8 +196,16 @@ class CaloryViewModel @Inject constructor(
         _allFoodItems.value = emptyList()
     }
 
+
     fun refresh() {
-        loadMealsForSelectedDate()
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            try {
+                loadMealsForSelectedDate()
+            } finally {
+                _isRefreshing.value = false
+            }
+        }
     }
 
     // ============ Date Selection ============

@@ -1,5 +1,6 @@
 package com.bonyad.healthplat.ui.dashboard
 
+import android.bluetooth.BluetoothManager
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -20,8 +21,11 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
@@ -77,6 +81,14 @@ class DashboardViewModel @Inject constructor(
 
     private val _needsBluetoothPermissions = MutableStateFlow(false)
     val needsBluetoothPermissions: StateFlow<Boolean> = _needsBluetoothPermissions.asStateFlow()
+
+
+    // Bluetooth enable request — UI observes this to launch the system enable dialog
+    private val _requestBluetoothEnable = MutableSharedFlow<Unit>(replay = 0)
+    val requestBluetoothEnable: SharedFlow<Unit> = _requestBluetoothEnable.asSharedFlow()
+
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
     // --- NEW AI STATE ---
     private val _readinessScore = MutableStateFlow(0)
@@ -167,7 +179,7 @@ class DashboardViewModel @Inject constructor(
 
                 _healthInsights.value =
                     if (data.perAspectNotes.isNotEmpty())
-                        data.perAspectNotes.values.take(3)
+                        data.perAspectNotes.values.toList()
                     else
                         listOf("وضعیت کلی شما نرمال است")
 
@@ -276,7 +288,6 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
-
     fun syncDeviceHistory() {
         syncDeviceHistoryOptimized()
     }
@@ -348,6 +359,14 @@ class DashboardViewModel @Inject constructor(
             try {
                 if (!PermissionUtils.hasBluetoothPermissions(context)) {
                     _needsBluetoothPermissions.value = true
+                    return@launch
+                }
+
+                // Check Bluetooth is actually ON
+                val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+                val bluetoothAdapter = bluetoothManager?.adapter
+                if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled) {
+                    Timber.w("⚠️ Bluetooth is OFF, cannot auto-connect")
                     return@launch
                 }
 
@@ -436,10 +455,29 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun refreshData() {
-        viewModelScope.launch { fetchReadinessData() }
-        if (_healthOverview.value.isDeviceConnected) {
-            deviceManager.readBatteryLevel()
-            syncDeviceHistoryOptimized()
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            try {
+                fetchReadinessData()
+                if (_healthOverview.value.isDeviceConnected) {
+                    deviceManager.readBatteryLevel()
+                    // wait for sync to actually finish
+                    historySyncJob?.cancel()
+                    historySyncJob = launch {
+                        try {
+                            val result = healthRepository.syncAllMissingDays()
+                            if (result is RecordDataResult.Success) {
+                                processHistoryData(result)
+                            }
+                        } catch (e: Exception) {
+                            Timber.e(e, "Refresh sync failed")
+                        }
+                    }
+                    historySyncJob?.join() // wait for it
+                }
+            } finally {
+                _isRefreshing.value = false
+            }
         }
     }
 
@@ -448,7 +486,32 @@ class DashboardViewModel @Inject constructor(
             _needsBluetoothPermissions.value = true
             return
         }
+
+        // Check if Bluetooth is enabled
+        val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+        val bluetoothAdapter = bluetoothManager?.adapter
+
+        if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled) {
+            // Request user to enable Bluetooth
+            viewModelScope.launch {
+                _requestBluetoothEnable.emit(Unit)
+            }
+            return
+        }
+
         viewModelScope.launch { autoConnectDevice() }
+    }
+
+    fun onBluetoothEnabled() {
+        // Called from UI after user enables Bluetooth
+        viewModelScope.launch {
+            delay(500)
+            autoConnectDevice()
+        }
+    }
+
+    fun disconnectDevice() {
+        deviceManager.disconnect()
     }
 
     private fun getDeviceInfo() {

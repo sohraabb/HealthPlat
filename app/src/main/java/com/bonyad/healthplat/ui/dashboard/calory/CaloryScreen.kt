@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -47,6 +48,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -106,6 +108,8 @@ fun CaloryScreen(
     val dateItems by viewModel.dateItems.collectAsState()
     val showAddFoodSheet by viewModel.showAddFoodSheet.collectAsState()
     val selectedMealType by viewModel.selectedMealType.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
+
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -170,98 +174,104 @@ fun CaloryScreen(
         }
     ) { paddingValues ->
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = { viewModel.refresh() },
+            modifier = Modifier.fillMaxSize()  // NO paddingValues here
         ) {
-            // Loading overlay
-            AnimatedVisibility(
-                visible = uiState is CaloryUiState.Loading,
-                enter = fadeIn(),
-                exit = fadeOut()
-            ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(color = TealPrimary)
-                }
-            }
-
-            // Content
-            Column(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
+                    .padding(paddingValues)  // paddingValues goes here instead
             ) {
-                // 1. More space between appbar and date section
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // 2. Date Strip Section with white rounded background
-                DateStripSection(
-                    currentMonth = currentMonth,
-                    dateItems = dateItems,
-                    onDateSelected = { viewModel.onDateSelected(it.date) }
-                )
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // 2. Stats Cards
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                // Loading overlay
+                AnimatedVisibility(
+                    visible = uiState is CaloryUiState.Loading,
+                    enter = fadeIn(),
+                    exit = fadeOut()
                 ) {
-
-                    // Burned Calories Card
-                    CalorieStatsCard(
-                        modifier = Modifier.weight(1f),
-                        title = "کالری سوخته شده",
-                        value = burnedCalories,
-                        iconRes = R.drawable.flash,
-                        iconTint = BlueAccent,
-                        timeRange = "۰۰:۰۱ تا ۱۷:۲۹",
-                        onClick = { viewModel.onBurnedCaloriesClick() }
-                    )
-
-                    // Received Calories Card
-                    CalorieStatsCard(
-                        modifier = Modifier.weight(1f),
-                        title = "کالری دریافتی",
-                        value = consumedCalories,
-                        iconRes = R.drawable.apple,
-                        iconTint = GreenAccent,
-                        timeRange = "۱۰:۲۵ تا ۱۷:۲۹",
-                        onClick = { viewModel.onConsumedCaloriesClick() }
-                    )
-                }
-
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // 3. Meals List
-                Column(
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    MealType.entries.forEach { mealType ->
-                        val summary = mealSummaries[mealType] ?: MealSummaryUi(
-                            mealType = mealType,
-                            items = emptyList(),
-                            totalCaloriesMin = 0,
-                            totalCaloriesMax = 0
-                        )
-                        MealSummaryCard(
-                            mealSummary = summary,
-                            onAddClick = { viewModel.onAddFoodClick(mealType) }
-                        )
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = TealPrimary)
                     }
                 }
 
-                // Extra space for scrolling above bottom bar
-                Spacer(modifier = Modifier.height(100.dp))
+                // Content
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    // 1. More space between appbar and date section
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // 2. Date Strip Section with white rounded background
+                    DateStripSection(
+                        currentMonth = currentMonth,
+                        dateItems = dateItems,
+                        onDateSelected = { viewModel.onDateSelected(it.date) }
+                    )
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    // 2. Stats Cards
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+
+                        // Burned Calories Card
+                        CalorieStatsCard(
+                            modifier = Modifier.weight(1f),
+                            title = "کالری سوخته شده",
+                            value = burnedCalories,
+                            iconRes = R.drawable.flash,
+                            iconTint = BlueAccent,
+                            timeRange = "",
+                            onClick = { viewModel.onBurnedCaloriesClick() }
+                        )
+
+                        // Received Calories Card
+                        CalorieStatsCard(
+                            modifier = Modifier.weight(1f),
+                            title = "کالری دریافتی",
+                            value = consumedCalories,
+                            iconRes = R.drawable.apple,
+                            iconTint = GreenAccent,
+                            timeRange = "",
+                            onClick = { viewModel.onConsumedCaloriesClick() }
+                        )
+                    }
+
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // 3. Meals List
+                    Column(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        MealType.entries.forEach { mealType ->
+                            val summary = mealSummaries[mealType] ?: MealSummaryUi(
+                                mealType = mealType,
+                                items = emptyList(),
+                                totalCaloriesMin = 0,
+                                totalCaloriesMax = 0
+                            )
+                            MealSummaryCard(
+                                mealSummary = summary,
+                                onAddClick = { viewModel.onAddFoodClick(mealType) }
+                            )
+                        }
+                    }
+
+                    // Extra space for scrolling above bottom bar
+                    Spacer(modifier = Modifier.height(100.dp))
+                }
             }
         }
     }
@@ -316,7 +326,8 @@ fun CaloryTopBar() {
         },
         colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
             containerColor = BackgroundColor
-        )
+        ),
+        windowInsets = WindowInsets(top = 8.dp)
     )
 }
 
@@ -425,27 +436,28 @@ fun DateStrip(
         6 to "ج"   // Friday
     )
 
-    // Generate last 7 days: today (offset=0) to 6 days ago (offset=-6)
-    // But display order: oldest first (left) to newest/today (right)
+    // Generate last 7 days: -6 (oldest) to 0 (today)
+    // Reversed so today appears on the right (RTL)
     val days = (-6..0).map { offset ->
         val date = PersianDate(today.time).apply {
             if (offset < 0) subDays(-offset)
         }
         Pair(offset, date)
-    }
+    }.reversed() // Reversed: today first (right side in RTL Row)
 
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        reverseLayout = true  // RTL: today on right
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        items(days) { (offset, date) ->
+        days.forEach { (offset, date) ->
             val isSelected = offset == selectedOffset
-            val dayOfWeek = date.dayOfWeek()  // 0=Saturday, 1=Sunday, etc.
+            val dayOfWeek = date.dayOfWeek()
 
             Column(
                 modifier = Modifier
-                    .width(50.dp)
+                    .weight(1f)
                     .height(70.dp)
                     .background(
                         if (isSelected) TealPrimary else Color.White,
@@ -465,7 +477,7 @@ fun DateStrip(
                 Text(
                     text = date.shDay.toString().toFarsiDigits(),
                     color = if (isSelected) Color.White else TextGray,
-                    fontSize = 18.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(

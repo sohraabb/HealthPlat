@@ -9,12 +9,14 @@ import com.bonyad.healthplat.domain.model.MetricData
 import com.bonyad.healthplat.domain.model.RecordDataResult
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
-import timber.log.Timber
 import saman.zamani.persiandate.PersianDate
+import timber.log.Timber
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -37,7 +39,6 @@ class StressDetailViewModel @Inject constructor(
         val low: Int = 0
     )
 
-    // Points for the curve
     data class StressPoint(val xRatio: Float, val value: Int)
 
     private val _chartPoints = MutableStateFlow<List<StressPoint>>(emptyList())
@@ -52,11 +53,18 @@ class StressDetailViewModel @Inject constructor(
     private val _selectedDayOffset = MutableStateFlow(0)
     val selectedDayOffset = _selectedDayOffset.asStateFlow()
 
-    // Loading state
+    // ── Loading: server → UI ──────────────────────────────────────────────────
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    // Date label for display
+    // ── Syncing: device → server ──────────────────────────────────────────────
+    private val _isSyncing = MutableStateFlow(false)
+    val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
+
+    // ── One-time snackbar events ──────────────────────────────────────────────
+    private val _syncMessage = Channel<String>(Channel.BUFFERED)
+    val syncMessage = _syncMessage.receiveAsFlow()
+
     private val _dateLabel = MutableStateFlow("")
     val dateLabel: StateFlow<String> = _dateLabel.asStateFlow()
 
@@ -64,8 +72,29 @@ class StressDetailViewModel @Inject constructor(
         loadStressFromApi()
     }
 
+    // ── Public actions ────────────────────────────────────────────────────────
+
     fun refreshData() {
-        loadStressFromApi()
+        viewModelScope.launch {
+            // Phase 1 — Device → Server
+            _isSyncing.value = true
+            try {
+                when (val result = healthRepository.syncDashboardData(day = 0)) {
+                    is RecordDataResult.Success ->
+                        _syncMessage.trySend("داده‌های استرس به‌روز شد ✓")
+                    is RecordDataResult.Error ->
+                        _syncMessage.trySend("دستگاه متصل نیست — نمایش آخرین داده")
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "Stress sync failed")
+                _syncMessage.trySend("خطا در همگام‌سازی")
+            } finally {
+                _isSyncing.value = false
+            }
+
+            // Phase 2 — Reload (always runs)
+            loadStressFromApi()
+        }
     }
 
     fun setTimeRange(range: String) {
@@ -75,43 +104,28 @@ class StressDetailViewModel @Inject constructor(
 
     fun selectDay(offset: Int) {
         _selectedDayOffset.value = offset
-        if (_selectedTimeRange.value == "روزانه") {
-            loadStressFromApi()
-        }
+        if (_selectedTimeRange.value == "روزانه") loadStressFromApi()
     }
 
-    // ============ API Integration ============
+    // ── Private: data loading ─────────────────────────────────────────────────
 
     private fun loadStressFromApi() {
         viewModelScope.launch {
             _isLoading.value = true
-
             try {
                 val (dateFrom, dateTo) = getDateRange()
+                Timber.i("📡 Fetching stress: $dateFrom → $dateTo")
 
-                Timber.i("📡 Fetching stress: $dateFrom to $dateTo")
-
-                healthRepository.getMetricData(
-                    metricType = MetricType.STRESS,
-                    dateFrom = dateFrom,
-                    dateTo = dateTo
-                ).fold(
+                healthRepository.getMetricData(MetricType.STRESS, dateFrom, dateTo).fold(
                     onSuccess = { metricsData ->
-                        if (metricsData.isNotEmpty()) {
-                            processStressData(metricsData)
-                            Timber.i("✅ Stress loaded: ${metricsData.size} records")
-                        } else {
-                            Timber.w("⚠️ No stress data from API")
-                            clearData()
-                        }
+                        if (metricsData.isNotEmpty()) processStressData(metricsData)
+                        else { Timber.w("⚠️ No stress data"); clearData() }
                     },
-                    onFailure = { error ->
-                        Timber.e(error, "❌ Stress API error")
-                        // Fallback to device
+                    onFailure = { e ->
+                        Timber.e(e, "❌ Stress API error")
                         loadStressFromDevice(_selectedDayOffset.value)
                     }
                 )
-
             } catch (e: Exception) {
                 Timber.e(e, "❌ Failed to load stress from API")
                 loadStressFromDevice(_selectedDayOffset.value)
@@ -121,36 +135,24 @@ class StressDetailViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Get date range based on selected time range
-     */
     private fun getDateRange(): Pair<String, String> {
         val today = LocalDate.now()
         val formatter = DateTimeFormatter.ISO_LOCAL_DATE
-
         return when (_selectedTimeRange.value) {
             "روزانه" -> {
                 val targetDate = today.plusDays(_selectedDayOffset.value.toLong())
-                val dateStr = targetDate.format(formatter)
                 updateDateLabel(targetDate)
-                Pair(dateStr, dateStr)
+                targetDate.format(formatter).let { Pair(it, it) }
             }
             "هفتگی" -> {
-                val dateFrom = today.minusDays(6).format(formatter)
-                val dateTo = today.format(formatter)
                 _dateLabel.value = "هفته گذشته"
-                Pair(dateFrom, dateTo)
+                Pair(today.minusDays(6).format(formatter), today.format(formatter))
             }
             "ماهانه" -> {
-                val dateFrom = today.minusDays(29).format(formatter)
-                val dateTo = today.format(formatter)
                 _dateLabel.value = "ماه گذشته"
-                Pair(dateFrom, dateTo)
+                Pair(today.minusDays(29).format(formatter), today.format(formatter))
             }
-            else -> {
-                val dateStr = today.format(formatter)
-                Pair(dateStr, dateStr)
-            }
+            else -> today.format(formatter).let { Pair(it, it) }
         }
     }
 
@@ -162,176 +164,104 @@ class StressDetailViewModel @Inject constructor(
             else -> {
                 val calendar = GregorianCalendar(date.year, date.monthValue - 1, date.dayOfMonth)
                 val pDate = PersianDate(calendar.time)
-                val dayOfMonth = pDate.shDay.toString().toFarsiDigits()
-                val monthName = pDate.monthName
-                "$monthName $dayOfMonth"
+                "${pDate.monthName} ${pDate.shDay.toString().toFarsiDigits()}"
             }
         }
     }
 
-    // ============ Data Processing ============
+    // ── Data processing ───────────────────────────────────────────────────────
 
     private fun processStressData(metricsData: List<MetricData>) {
         when (_selectedTimeRange.value) {
             "روزانه" -> processDailyStress(metricsData)
-            "هفتگی" -> processWeeklyStress(metricsData)
-            "ماهانه" -> processMonthlyStress(metricsData)
+            "هفتگی", "ماهانه" -> processAggregatedStress(metricsData)
         }
     }
 
     private fun processDailyStress(metricsData: List<MetricData>) {
         val allValues = metricsData.flatMap { it.values }
         val validData = allValues.filter { it > 0 }
-
-        if (validData.isEmpty()) {
-            clearData()
-            return
-        }
-
-        // Calculate stats
-        val high = validData.maxOrNull() ?: 0
-        val low = validData.minOrNull() ?: 0
-        val avg = validData.average().toInt()
-        val current = validData.lastOrNull() ?: 0
-
-        // Get current time for last measurement
-        val currentTime = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
+        if (validData.isEmpty()) { clearData(); return }
 
         _stats.value = StressStats(
-            rangeMin = low,
-            rangeMax = high,
-            currentVal = current,
-            currentTime = currentTime,
-            high = high,
-            avg = avg,
-            low = low
+            rangeMin = validData.minOrNull() ?: 0,
+            rangeMax = validData.maxOrNull() ?: 0,
+            currentVal = validData.lastOrNull() ?: 0,
+            currentTime = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm")),
+            high = validData.maxOrNull() ?: 0,
+            avg = validData.average().toInt(),
+            low = validData.minOrNull() ?: 0
         )
-
-        // Convert to curve points
         _chartPoints.value = convertToCurvePoints(allValues)
     }
 
-    private fun processWeeklyStress(metricsData: List<MetricData>) {
-        if (metricsData.isEmpty()) {
-            clearData()
-            return
-        }
-
-        // Aggregate all values from the week
+    private fun processAggregatedStress(metricsData: List<MetricData>) {
+        if (metricsData.isEmpty()) { clearData(); return }
         val allValues = mutableListOf<Int>()
-        var totalHigh = 0
-        var totalLow = Int.MAX_VALUE
-        var totalSum = 0
-        var totalCount = 0
+        var high = 0; var low = Int.MAX_VALUE; var sum = 0; var count = 0
 
         metricsData.forEach { metric ->
             val validData = metric.values.filter { it > 0 }
             if (validData.isNotEmpty()) {
                 allValues.addAll(validData)
-                totalHigh = maxOf(totalHigh, validData.maxOrNull() ?: 0)
-                totalLow = minOf(totalLow, validData.minOrNull() ?: Int.MAX_VALUE)
-                totalSum += validData.sum()
-                totalCount += validData.size
+                high = maxOf(high, validData.maxOrNull() ?: 0)
+                low = minOf(low, validData.minOrNull() ?: Int.MAX_VALUE)
+                sum += validData.sum()
+                count += validData.size
             }
         }
 
-        if (totalCount == 0) {
-            clearData()
-            return
-        }
-
-        val avg = totalSum / totalCount
-        if (totalLow == Int.MAX_VALUE) totalLow = 0
+        if (count == 0) { clearData(); return }
+        if (low == Int.MAX_VALUE) low = 0
 
         _stats.value = StressStats(
-            rangeMin = totalLow,
-            rangeMax = totalHigh,
+            rangeMin = low, rangeMax = high,
             currentVal = allValues.lastOrNull() ?: 0,
-            currentTime = "",
-            high = totalHigh,
-            avg = avg,
-            low = totalLow
+            high = high, avg = sum / count, low = low
         )
-
-        // Generate weekly curve - average per day
         _chartPoints.value = metricsData.mapIndexed { index, metric ->
-            val validData = metric.values.filter { it > 0 }
-            val dayAvg = if (validData.isNotEmpty()) validData.average().toInt() else 0
-            val xRatio = (index + 1).toFloat() / metricsData.size
-            StressPoint(xRatio, dayAvg)
-        }.filter { it.value > 0 }
-    }
-
-    private fun processMonthlyStress(metricsData: List<MetricData>) {
-        // Same logic as weekly
-        processWeeklyStress(metricsData)
+            val dayAvg = metric.values.filter { it > 0 }.average().toInt().takeIf { it > 0 } ?: return@mapIndexed null
+            StressPoint((index + 1).toFloat() / metricsData.size, dayAvg)
+        }.filterNotNull()
     }
 
     private fun convertToCurvePoints(stressData: List<Int>): List<StressPoint> {
         if (stressData.isEmpty()) return emptyList()
-
-        val points = mutableListOf<StressPoint>()
-
-        // Sample every N minutes to get smooth curve (~20 points)
         val sampleInterval = maxOf(1, stressData.size / 20)
-
+        val points = mutableListOf<StressPoint>()
         for (i in stressData.indices step sampleInterval) {
             val value = stressData[i]
-            if (value > 0) {
-                val xRatio = i.toFloat() / stressData.size
-                points.add(StressPoint(xRatio, value))
-            }
+            if (value > 0) points.add(StressPoint(i.toFloat() / stressData.size, value))
         }
-
-        // Ensure last point is included
-        if (points.isNotEmpty() && points.lastOrNull()?.xRatio != 1.0f) {
-            val lastValue = stressData.lastOrNull { it > 0 } ?: 0
-            if (lastValue > 0) {
-                points.add(StressPoint(1.0f, lastValue))
-            }
+        val lastValue = stressData.lastOrNull { it > 0 } ?: 0
+        if (lastValue > 0 && points.lastOrNull()?.xRatio != 1.0f) {
+            points.add(StressPoint(1.0f, lastValue))
         }
-
         return points
     }
 
-    // ============ Device Fallback ============
+    // ── Device fallback ───────────────────────────────────────────────────────
 
     private fun loadStressFromDevice(offset: Int) {
         viewModelScope.launch {
             try {
                 val result = deviceManager.getRecordData(offset)
-
                 if (result is RecordDataResult.Success) {
-                    result.stress?.stressSource?.let { stressData ->
-                        val validData = stressData.filter { it > 0 }
+                    val stressData = result.stress?.stressSource ?: return@launch
+                    val validData = stressData.filter { it > 0 }
+                    if (validData.isEmpty()) { clearData(); return@launch }
 
-                        if (validData.isEmpty()) {
-                            Timber.w("No stress data for day $offset")
-                            clearData()
-                            return@let
-                        }
-
-                        val high = validData.maxOrNull() ?: 0
-                        val low = validData.minOrNull() ?: 0
-                        val avg = validData.average().toInt()
-                        val current = validData.lastOrNull() ?: 0
-
-                        val currentTime = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
-
-                        _stats.value = StressStats(
-                            rangeMin = low,
-                            rangeMax = high,
-                            currentVal = current,
-                            currentTime = currentTime,
-                            high = high,
-                            avg = avg,
-                            low = low
-                        )
-
-                        _chartPoints.value = convertToCurvePoints(stressData)
-
-                        Timber.i("✅ Stress loaded from device: avg=$avg, range=$low-$high")
-                    }
+                    _stats.value = StressStats(
+                        rangeMin = validData.minOrNull() ?: 0,
+                        rangeMax = validData.maxOrNull() ?: 0,
+                        currentVal = validData.lastOrNull() ?: 0,
+                        currentTime = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm")),
+                        high = validData.maxOrNull() ?: 0,
+                        avg = validData.average().toInt(),
+                        low = validData.minOrNull() ?: 0
+                    )
+                    _chartPoints.value = convertToCurvePoints(stressData)
+                    Timber.i("✅ Stress from device")
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Error loading stress from device")
@@ -340,23 +270,18 @@ class StressDetailViewModel @Inject constructor(
         }
     }
 
-    // ============ Clear Data ============
+    // ── Clear ─────────────────────────────────────────────────────────────────
 
     private fun clearData() {
         _stats.value = StressStats()
         _chartPoints.value = emptyList()
     }
 
-    // ============ Helper ============
-
-    fun getStressLevelLabel(): String {
-        val avg = _stats.value.avg
-        return when {
-            avg == 0 -> ""
-            avg <= 25 -> "آرام"
-            avg <= 50 -> "عادی"
-            avg <= 75 -> "متوسط"
-            else -> "بالا"
-        }
+    fun getStressLevelLabel(): String = when {
+        _stats.value.avg == 0 -> ""
+        _stats.value.avg <= 25 -> "آرام"
+        _stats.value.avg <= 50 -> "عادی"
+        _stats.value.avg <= 75 -> "متوسط"
+        else -> "بالا"
     }
 }

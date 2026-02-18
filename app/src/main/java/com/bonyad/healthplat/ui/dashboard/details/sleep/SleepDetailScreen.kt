@@ -4,13 +4,33 @@ package com.bonyad.healthplat.ui.dashboard.details.sleep
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -19,19 +39,14 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.bonyad.healthplat.R
-import com.bonyad.healthplat.ui.dashboard.TextGray
-import com.bonyad.healthplat.ui.dashboard.details.heart_rate.CustomDetailTopBar
+import com.bonyad.healthplat.ui.dashboard.details.CustomDetailTopBar
 import com.bonyad.healthplat.ui.dashboard.details.heart_rate.DateStrip
 import com.bonyad.healthplat.ui.dashboard.details.heart_rate.TimeRangeSelector
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
@@ -144,10 +159,21 @@ fun SleepDetailScreen(
 
             // 3. Timeline Chart (only for daily view) - Always show structure
             if (selectedRange == "روزانه") {
-                SleepTimelineChart(
-                    data = timelineData,
-                    showEmptyState = timelineData.isEmpty() && !isLoading
-                )
+                if (isLoading) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = Color(0xFF9747FF))
+                    }
+                } else {
+                    SleepTimelineChart(
+                        data = timelineData,
+                        showEmptyState = timelineData.isEmpty()
+                    )
+                }
             }
 
             // 4. Quality Donut Card
@@ -166,6 +192,7 @@ fun SleepDetailScreen(
 @Composable
 fun SleepTimelineChart(
     data: List<SleepDetailViewModel.SleepSegment>,
+    isLoading: Boolean = false,
     showEmptyState: Boolean = false
 ) {
     Card(
@@ -173,104 +200,136 @@ fun SleepTimelineChart(
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(0.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // Label Row
-            Text("بیدار", fontSize = 12.sp, color = Color.Gray)
-            HorizontalDivider(
-                thickness = 0.5.dp,
-                color = Color.LightGray.copy(alpha = 0.5f),
-                modifier = Modifier.padding(vertical = 12.dp)
-            )
-
-            // Chart Area
+        // Loading state
+        if (isLoading) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(150.dp)
+                    .height(200.dp),
+                contentAlignment = Alignment.Center
             ) {
-                // Always draw the chart canvas with grid
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val w = size.width
-                    val h = size.height
-                    val rowHeight = h / 3
+                CircularProgressIndicator(color = Color(0xFF4FA8A6))
+            }
+            return@Card
+        }
 
-                    // Grid Lines (Vertical Time) - Always drawn
-                    val pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
-                    listOf(0.25f, 0.5f, 0.75f).forEach { r ->
-                        drawLine(
-                            color = Color.LightGray.copy(alpha = 0.5f),
-                            start = Offset(w * r, 0f),
-                            end = Offset(w * r, h),
-                            pathEffect = pathEffect
-                        )
-                    }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(260.dp)
+                .padding(16.dp)
+        ) {
+            // Same Row { Y-axis labels | Chart } pattern as HeartRate
+            Row(modifier = Modifier.fillMaxSize()) {
 
-                    // Draw Segments - Only if we have data
-                    if (data.isNotEmpty()) {
-                        data.forEach { segment ->
-                            val x = segment.startRatio * w
-                            val width = (segment.widthRatio * w).coerceAtLeast(4f)
+                // Y-axis — 4 stage names, top to bottom: بیدار / سبک / عمیق / REM
+                Column(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .padding(end = 8.dp, bottom = 20.dp),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("بیدار", fontSize = 10.sp, color = Color(0xFF6B6B6B))
+                    Text("سبک",  fontSize = 10.sp, color = Color(0xFF6B6B6B))
+                    Text("عمیق", fontSize = 10.sp, color = Color(0xFF6B6B6B))
+                    Text("REM",  fontSize = 10.sp, color = Color(0xFF6B6B6B))
+                }
 
-                            val (color, yTop) = when (segment.stage) {
-                                SleepDetailViewModel.SleepStage.LIGHT -> Color(0xFF66BB6A) to 0f
-                                SleepDetailViewModel.SleepStage.DEEP -> Color(0xFF42A5F5) to rowHeight
-                                SleepDetailViewModel.SleepStage.REM -> Color(0xFFAB47BC) to rowHeight * 2
-                                else -> Color.Transparent to 0f
-                            }
+                // Chart area
+                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
 
-                            if (color != Color.Transparent) {
-                                drawRoundRect(
-                                    color = color,
-                                    topLeft = Offset(x, yTop + 10f),
-                                    size = Size(width, rowHeight - 20f),
-                                    cornerRadius = CornerRadius(8f, 8f)
-                                )
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(bottom = 20.dp) // space for X-axis labels
+                    ) {
+                        val w = size.width
+                        val h = size.height
+                        val rowHeight = h / 4f  // 4 stages now
+
+                        // Vertical grid lines
+                        val pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                        listOf(0.25f, 0.5f, 0.75f).forEach { r ->
+                            drawLine(
+                                color = Color.LightGray.copy(alpha = 0.5f),
+                                start = Offset(w * r, 0f),
+                                end = Offset(w * r, h),
+                                pathEffect = pathEffect
+                            )
+                        }
+
+                        // Horizontal dividers between 4 rows
+                        listOf(1f, 2f, 3f).forEach { row ->
+                            drawLine(
+                                color = Color.LightGray.copy(alpha = 0.3f),
+                                start = Offset(0f, rowHeight * row),
+                                end = Offset(w, rowHeight * row),
+                                strokeWidth = 1.dp.toPx()
+                            )
+                        }
+
+                        // Sleep segments — AWAKE=0, LIGHT=1, DEEP=2, REM=3
+                        if (data.isNotEmpty()) {
+                            data.forEach { segment ->
+                                val x = segment.startRatio * w
+                                val segWidth = (segment.widthRatio * w).coerceAtLeast(4f)
+
+                                val (color, rowIndex) = when (segment.stage) {
+                                    SleepDetailViewModel.SleepStage.AWAKE -> Color.Transparent to 0  // no bars for awake
+                                    SleepDetailViewModel.SleepStage.LIGHT -> Color(0xFF66BB6A) to 1
+                                    SleepDetailViewModel.SleepStage.DEEP  -> Color(0xFF4FC3F7) to 2
+                                    SleepDetailViewModel.SleepStage.REM   -> Color(0xFFAB47BC) to 3
+                                    else -> Color.Transparent to 0
+                                }
+
+                                if (color != Color.Transparent) {
+                                    val yTop = rowIndex * rowHeight
+                                    drawRoundRect(
+                                        color = color,
+                                        topLeft = Offset(x, yTop + 4f),
+                                        size = Size(segWidth, rowHeight - 8f),
+                                        cornerRadius = CornerRadius(4f, 4f)
+                                    )
+                                }
                             }
                         }
                     }
-                }
 
-                // Labels Overlay - Always shown
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.SpaceAround
-                ) {
-                    Text("سبک", fontSize = 12.sp, color = Color.Gray)
-                    Text("عمیق", fontSize = 12.sp, color = Color.Gray)
-                    Text("REM", fontSize = 12.sp, color = Color.Gray)
-                }
+                    // X-axis labels — LTR
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .align(Alignment.BottomCenter),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("۲۱:۰۰", fontSize = 10.sp, color = Color.Gray)
+                            Text("۰۰:۰۰", fontSize = 10.sp, color = Color.Gray)
+                            Text("۰۳:۰۰", fontSize = 10.sp, color = Color.Gray)
+                            Text("۰۶:۰۰", fontSize = 10.sp, color = Color.Gray)
+                            Text("۰۹:۰۰", fontSize = 10.sp, color = Color.Gray)
+                        }
+                    }
 
-                // Empty State Overlay - Only shown when there's no data
-                if (showEmptyState) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.White.copy(alpha = 0.7f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "داده خوابی موجود نیست",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color.Gray
-                        )
+                    // Empty state overlay
+                    if (showEmptyState) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.White.copy(alpha = 0.8f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "داده خوابی موجود نیست",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.Gray
+                            )
+                        }
                     }
                 }
-            }
-
-            // X-Axis - Always shown
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text("۲۱:۰۰", fontSize = 10.sp, color = Color.Gray)
-                Text("۰۰:۰۰", fontSize = 10.sp, color = Color.Gray)
-                Text("۰۳:۰۰", fontSize = 10.sp, color = Color.Gray)
-                Text("۰۶:۰۰", fontSize = 10.sp, color = Color.Gray)
-                Text("۰۹:۰۰", fontSize = 10.sp, color = Color.Gray)
             }
         }
     }
@@ -324,9 +383,11 @@ fun SleepQualityCard(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier.size(135.dp)
                 ) {
-                    Canvas(modifier = Modifier
-                        .fillMaxSize()
-                        .padding(8.dp)) {
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(8.dp)
+                    ) {
                         val strokeWidth = 16.dp.toPx()
 
                         // Background Track (The gray circle behind the segments)
@@ -347,21 +408,39 @@ fun SleepQualityCard(
                             // REM - Purple
                             val sweepREM = 360f * (percentages.third / 100f)
                             if (sweepREM > 0) {
-                                drawArc(Color(0xFFAB47BC), startAngle, sweepREM, false, style = capStyle)
+                                drawArc(
+                                    Color(0xFFAB47BC),
+                                    startAngle,
+                                    sweepREM,
+                                    false,
+                                    style = capStyle
+                                )
                                 startAngle += sweepREM
                             }
 
                             // Light - Green
                             val sweepLight = 360f * (percentages.second / 100f)
                             if (sweepLight > 0) {
-                                drawArc(Color(0xFF66BB6A), startAngle, sweepLight, false, style = capStyle)
+                                drawArc(
+                                    Color(0xFF66BB6A),
+                                    startAngle,
+                                    sweepLight,
+                                    false,
+                                    style = capStyle
+                                )
                                 startAngle += sweepLight
                             }
 
                             // Deep - Yellow/Amber
                             val sweepDeep = 360f * (percentages.first / 100f)
                             if (sweepDeep > 0) {
-                                drawArc(Color(0xFFFFCA28), startAngle, sweepDeep, false, style = capStyle)
+                                drawArc(
+                                    Color(0xFFFFCA28),
+                                    startAngle,
+                                    sweepDeep,
+                                    false,
+                                    style = capStyle
+                                )
                             }
                         }
                     }

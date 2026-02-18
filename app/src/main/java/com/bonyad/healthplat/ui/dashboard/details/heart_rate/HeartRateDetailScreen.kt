@@ -6,24 +6,39 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -40,13 +55,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.graphics.component1
-import androidx.core.graphics.component2
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.bonyad.healthplat.R
+import com.bonyad.healthplat.ui.dashboard.details.CustomDetailTopBar
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
 import saman.zamani.persiandate.PersianDate
-import kotlin.math.min
 
 
 @Composable
@@ -529,70 +542,6 @@ fun RecommendationsCard(
     }
 }
 
-@Composable
-fun CustomDetailTopBar(
-    title: String,
-    onBack: () -> Unit,
-    onSync: () -> Unit,
-    onInfo: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 16.dp)
-    ) {
-        // Title - Absolutely centered on screen
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-            color = Color.Black,
-            modifier = Modifier.align(Alignment.Center)
-        )
-
-        // Left icons
-        Row(
-            modifier = Modifier.align(Alignment.CenterStart),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            IconButton(
-                onClick = onInfo,
-                modifier = Modifier.size(24.dp)
-            ) {
-                Icon(
-                    painterResource(R.drawable.info_circle),
-                    contentDescription = "Info",
-                    tint = Color.Gray
-                )
-            }
-
-            IconButton(
-                onClick = onSync,
-                modifier = Modifier.size(24.dp)
-            ) {
-                Icon(
-                    painterResource(R.drawable.refresh_square),
-                    contentDescription = "Sync",
-                    tint = Color.Gray
-                )
-            }
-        }
-
-        // Right icon
-        IconButton(
-            onClick = onBack,
-            modifier = Modifier
-                .size(24.dp)
-                .align(Alignment.CenterEnd)
-        ) {
-            Icon(
-                painterResource(R.drawable.close_square),
-                contentDescription = "Close",
-                tint = Color.Gray
-            )
-        }
-    }
-}
 
 @Composable
 fun TimeRangeSelector(
@@ -653,27 +602,28 @@ fun DateStrip(
         6 to "ج"   // Friday
     )
 
-    // Generate last 7 days: today (offset=0) to 6 days ago (offset=-6)
-    // But display order: oldest first (left) to newest/today (right)
+    // Generate last 7 days: -6 (oldest) to 0 (today)
+    // Reversed so today appears on the right (RTL)
     val days = (-6..0).map { offset ->
         val date = PersianDate(today.time).apply {
             if (offset < 0) subDays(-offset)
         }
         Pair(offset, date)
-    }
+    }.reversed() // Reversed: today first (right side in RTL Row)
 
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        reverseLayout = true  // RTL: today on right
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        items(days) { (offset, date) ->
+        days.forEach { (offset, date) ->
             val isSelected = offset == selectedOffset
-            val dayOfWeek = date.dayOfWeek()  // 0=Saturday, 1=Sunday, etc.
+            val dayOfWeek = date.dayOfWeek()
 
             Column(
                 modifier = Modifier
-                    .width(50.dp)
+                    .weight(1f)
                     .height(70.dp)
                     .background(
                         if (isSelected) Color(0xFF4FA8A6) else Color.White,
@@ -693,7 +643,8 @@ fun DateStrip(
                 Text(
                     text = date.shDay.toString().toFarsiDigits(),
                     color = if (isSelected) Color.White else Color.Gray,
-                    fontSize = 18.sp
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
                 )
                 Text(
                     text = weekDayNames[dayOfWeek] ?: "",
@@ -839,7 +790,7 @@ fun HeartRateRangeChart(
                                 .align(Alignment.BottomCenter),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            listOf("00:00", "07:59", "15:59", "23:59").forEach { label ->
+                            listOf("00:00", "08:00", "16:00", "24:00").forEach { label ->
                                 Text(
                                     text = label,
                                     style = MaterialTheme.typography.bodySmall,

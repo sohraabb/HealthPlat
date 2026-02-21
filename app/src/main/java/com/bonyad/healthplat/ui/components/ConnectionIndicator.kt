@@ -52,21 +52,17 @@ fun ConnectionIndicatorButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Box(
+    IconButton(
+        onClick = onClick,
         modifier = modifier
-            .clip(CircleShape)
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center
     ) {
         when (connectionState) {
             is DeviceConnectionState.Disconnected -> {
-                IconButton(onClick = onClick, modifier = modifier) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.disconnect),
-                        contentDescription = "دستگاه متصل نیست",
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
+                Icon(
+                    painter = painterResource(id = R.drawable.disconnect),
+                    contentDescription = "دستگاه متصل نیست",
+                    modifier = Modifier.size(24.dp)
+                )
             }
             is DeviceConnectionState.Connected -> {
                 ConnectedIndicator(batteryLevel = connectionState.batteryLevel)
@@ -79,9 +75,8 @@ fun ConnectionIndicatorButton(
 
 @Composable
 private fun ConnectedIndicator(batteryLevel: Int) {
-    val isLowBattery = batteryLevel <= 20
+    val isLowBattery = batteryLevel <= 15
 
-    // Animate the sweep angle based on battery (full circle = 360°)
     val targetSweep = (batteryLevel / 100f) * 360f
     val animatedSweep by animateFloatAsState(
         targetValue = targetSweep,
@@ -89,7 +84,6 @@ private fun ConnectedIndicator(batteryLevel: Int) {
         label = "battery_sweep"
     )
 
-    // Color transitions: teal when healthy, red when low
     val arcColor by animateColorAsState(
         targetValue = if (isLowBattery) RedAccent else TealPrimary,
         animationSpec = tween(durationMillis = 400),
@@ -98,20 +92,17 @@ private fun ConnectedIndicator(batteryLevel: Int) {
 
     val trackColor = if (isLowBattery) RedAccent.copy(alpha = 0.15f) else TealPrimary.copy(alpha = 0.15f)
 
-    // Slightly larger when low battery to accommodate badge
-    val indicatorSize = if (isLowBattery) 40.dp else 32.dp
-    val canvasSize = if (isLowBattery) 28.dp else 32.dp
-
+    // Outer box: larger to hold badge, no clipping
     Box(
-        modifier = Modifier.size(indicatorSize),
+        modifier = Modifier.size(36.dp),
         contentAlignment = Alignment.Center
     ) {
-        Canvas(modifier = Modifier.size(canvasSize)) {
-            val strokeWidth = 3.dp.toPx()
+        // The circle itself stays at 24dp
+        Canvas(modifier = Modifier.size(24.dp)) {
+            val strokeWidth = 2.5.dp.toPx()
             val arcSize = Size(size.width - strokeWidth, size.height - strokeWidth)
             val arcOffset = Offset(strokeWidth / 2, strokeWidth / 2)
 
-            // Background track (full circle)
             drawArc(
                 color = trackColor,
                 startAngle = -90f,
@@ -122,7 +113,6 @@ private fun ConnectedIndicator(batteryLevel: Int) {
                 size = arcSize
             )
 
-            // Battery progress arc
             drawArc(
                 color = arcColor,
                 startAngle = -90f,
@@ -133,36 +123,34 @@ private fun ConnectedIndicator(batteryLevel: Int) {
                 size = arcSize
             )
 
-            // Inner filled circle
             val radius = (size.minDimension - strokeWidth) / 2
             drawCircle(
                 color = arcColor.copy(alpha = 0.2f),
-                radius = radius * 0.5f,
+                radius = radius * 0.4f,
                 center = center
             )
 
-            // Center dot
             drawCircle(
                 color = arcColor,
-                radius = radius * 0.25f,
+                radius = radius * 0.2f,
                 center = center
             )
         }
 
-        // Battery badge for low battery
+        // Low battery badge — only shows when <= 15%
         if (isLowBattery) {
             Box(
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .offset(x = 4.dp, y = 4.dp)
-                    .background(RedAccent, RoundedCornerShape(6.dp))
-                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                    .align(Alignment.BottomStart)
+                    .offset(y = (-2).dp, x = 4.dp)
+                    .background(RedAccent, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 2.dp, vertical = 1.dp)
             ) {
                 Text(
                     text = "${batteryLevel}%".toFarsiDigits(),
                     color = Color.White,
                     fontSize = 8.sp,
-                    fontWeight = FontWeight.Bold
+                    lineHeight = 4.sp
                 )
             }
         }
@@ -220,6 +208,7 @@ fun ConnectivityBottomSheet(
     connectionState: DeviceConnectionState,
     onDismiss: () -> Unit,
     onConnectClick: () -> Unit,
+    onDisconnectClick: () -> Unit = {},
     sheetState: SheetState = rememberModalBottomSheetState()
 ) {
     ModalBottomSheet(
@@ -259,7 +248,10 @@ fun ConnectivityBottomSheet(
                     DisconnectedBottomSheetContent(onConnectClick = onConnectClick)
                 }
                 is DeviceConnectionState.Connected -> {
-                    ConnectedBottomSheetContent(batteryLevel = connectionState.batteryLevel)
+                    ConnectedBottomSheetContent(
+                        batteryLevel = connectionState.batteryLevel,
+                        onDisconnectClick = onDisconnectClick
+                    )
                 }
             }
         }
@@ -327,7 +319,10 @@ private fun DisconnectedBottomSheetContent(onConnectClick: () -> Unit) {
 }
 
 @Composable
-private fun ConnectedBottomSheetContent(batteryLevel: Int) {
+private fun ConnectedBottomSheetContent(
+    batteryLevel: Int,
+    onDisconnectClick: () -> Unit
+) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -362,15 +357,14 @@ private fun ConnectedBottomSheetContent(batteryLevel: Int) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Battery Level Row
+        // Battery Level Row — just percentage + label (NO estimated days)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top // Changed to Top to align with the multiline label on the right
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Battery Info (Now just the percentage)
             Text(
                 text = "${batteryLevel}%".toFarsiDigits(),
                 color = TextDark,
@@ -378,41 +372,11 @@ private fun ConnectedBottomSheetContent(batteryLevel: Int) {
                 fontWeight = FontWeight.Bold
             )
 
-            // Right Side: Label + Estimated Days
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = "میزان باتری",
-                    color = TextGray,
-                    fontSize = 14.sp
-                )
-
-                // Estimated days remaining (rough calculation: 1% ≈ 0.2 days for a ring)
-                val estimatedDays = (batteryLevel * 0.2f).toInt().coerceAtLeast(1)
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-
-                    Text(
-                        text = "روز",
-                        color = TextGray,
-                        fontSize = 12.sp
-                    )
-
-                    Text(
-                        text = estimatedDays.toString().toFarsiDigits(),
-                        color = TextGray,
-                        fontSize = 12.sp
-                    )
-
-                    Icon(
-                        painter = painterResource(id = R.drawable.time_mini),
-                        contentDescription = null,
-                        tint = TextGray,
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
-            }
+            Text(
+                text = "میزان باتری",
+                color = TextGray,
+                fontSize = 14.sp
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -424,6 +388,27 @@ private fun ConnectedBottomSheetContent(batteryLevel: Int) {
                 .fillMaxWidth()
                 .height(16.dp)
         )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Disconnect Button
+        OutlinedButton(
+            onClick = onDisconnectClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, RedAccent),
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = RedAccent
+            )
+        ) {
+            Text(
+                text = "قطع اتصال",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
     }
 }
 

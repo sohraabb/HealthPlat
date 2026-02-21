@@ -19,6 +19,7 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.GregorianCalendar
 import javax.inject.Inject
+import kotlin.math.abs
 
 @HiltViewModel
 class StepsDetailViewModel @Inject constructor(
@@ -74,8 +75,20 @@ class StepsDetailViewModel @Inject constructor(
         loadStepsFromApi()
     }
 
+    // ============ Sync: Ring → Server → API fetch → Display ============
+
     fun refreshData() {
-        loadStepsFromApi()
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val syncDay = abs(_selectedDayOffset.value)
+                healthRepository.syncDashboardData(syncDay)
+                Timber.i("✅ Ring steps data synced to server for day $syncDay")
+            } catch (e: Exception) {
+                Timber.e(e, "⚠️ Ring→Server sync failed, loading from API anyway")
+            }
+            loadStepsFromApi()
+        }
     }
 
     fun setTimeRange(range: String) {
@@ -90,7 +103,55 @@ class StepsDetailViewModel @Inject constructor(
         }
     }
 
-    // ============ API Integration ============
+    // ============ Date Range ============
+
+    private fun getDateRange(): Pair<String, String> {
+        val today = LocalDate.now()
+        val formatter = DateTimeFormatter.ISO_LOCAL_DATE
+
+        return when (_selectedTimeRange.value) {
+            "روزانه" -> {
+                val targetDate = today.plusDays(_selectedDayOffset.value.toLong())
+                val dateStr = targetDate.format(formatter)
+                updateDateLabel(targetDate)
+                Pair(dateStr, dateStr)
+            }
+            "هفتگی" -> {
+                val dateFrom = today.minusDays(6).format(formatter)
+                val dateTo = today.format(formatter)
+                _dateLabel.value = "هفته گذشته"
+                Pair(dateFrom, dateTo)
+            }
+            "ماهانه" -> {
+                val dateFrom = today.minusDays(29).format(formatter)
+                val dateTo = today.format(formatter)
+                _dateLabel.value = "ماه گذشته"
+                Pair(dateFrom, dateTo)
+            }
+            else -> {
+                val dateStr = today.format(formatter)
+                Pair(dateStr, dateStr)
+            }
+        }
+    }
+
+    // ============ Standardized Date Label ============
+
+    private fun updateDateLabel(date: LocalDate) {
+        val today = LocalDate.now()
+        val calendar = GregorianCalendar(date.year, date.monthValue - 1, date.dayOfMonth)
+        val pDate = PersianDate(calendar.time)
+        val dayOfMonth = pDate.shDay.toString().toFarsiDigits()
+        val monthName = pDate.monthName
+
+        _dateLabel.value = when {
+            date == today -> "امروز $dayOfMonth $monthName"
+            date == today.minusDays(1) -> "دیروز $dayOfMonth $monthName"
+            else -> "$dayOfMonth $monthName"
+        }
+    }
+
+    // ============ PRIMARY: Load from API ============
 
     private fun loadStepsFromApi() {
         viewModelScope.launch {
@@ -117,7 +178,6 @@ class StepsDetailViewModel @Inject constructor(
                     },
                     onFailure = { error ->
                         Timber.e(error, "❌ Steps API error")
-                        // Fallback to device
                         loadStepsFromDevice(_selectedDayOffset.value)
                     }
                 )
@@ -127,59 +187,6 @@ class StepsDetailViewModel @Inject constructor(
                 loadStepsFromDevice(_selectedDayOffset.value)
             } finally {
                 _isLoading.value = false
-            }
-        }
-    }
-
-    /**
-     * Get date range based on selected time range
-     * - روزانه: Single day
-     * - هفتگی: Last 7 days
-     * - ماهانه: Last 30 days
-     */
-    private fun getDateRange(): Pair<String, String> {
-        val today = LocalDate.now()
-        val formatter = DateTimeFormatter.ISO_LOCAL_DATE // yyyy-MM-dd
-
-        return when (_selectedTimeRange.value) {
-            "روزانه" -> {
-                val targetDate = today.plusDays(_selectedDayOffset.value.toLong())
-                val dateStr = targetDate.format(formatter)
-                updateDateLabel(targetDate)
-                Pair(dateStr, dateStr)
-            }
-            "هفتگی" -> {
-                // Last 7 days
-                val dateFrom = today.minusDays(6).format(formatter)
-                val dateTo = today.format(formatter)
-                _dateLabel.value = "هفته گذشته"
-                Pair(dateFrom, dateTo)
-            }
-            "ماهانه" -> {
-                // Last 30 days
-                val dateFrom = today.minusDays(29).format(formatter)
-                val dateTo = today.format(formatter)
-                _dateLabel.value = "ماه گذشته"
-                Pair(dateFrom, dateTo)
-            }
-            else -> {
-                val dateStr = today.format(formatter)
-                Pair(dateStr, dateStr)
-            }
-        }
-    }
-
-    private fun updateDateLabel(date: LocalDate) {
-        val today = LocalDate.now()
-        _dateLabel.value = when {
-            date == today -> "امروز"
-            date == today.minusDays(1) -> "دیروز"
-            else -> {
-                val calendar = GregorianCalendar(date.year, date.monthValue - 1, date.dayOfMonth)
-                val pDate = PersianDate(calendar.time)
-                val dayOfMonth = pDate.shDay.toString().toFarsiDigits()
-                val monthName = pDate.monthName
-                "$dayOfMonth $monthName"
             }
         }
     }
@@ -202,15 +209,12 @@ class StepsDetailViewModel @Inject constructor(
             return
         }
 
-        // Total is the max value (cumulative steps)
         val total = allValues.maxOrNull() ?: 0
         _totalSteps.value = total
         _todaySteps.value = total
 
-        // Convert to hourly bars
         _barChartData.value = convertToHourlyBars(allValues)
 
-        // Load comparison data
         loadComparisonDataFromApi()
     }
 
@@ -220,7 +224,6 @@ class StepsDetailViewModel @Inject constructor(
             return
         }
 
-        // Get daily totals
         val dailyTotals = metricsData.map { metric ->
             metric.values.maxOrNull() ?: 0
         }
@@ -232,7 +235,6 @@ class StepsDetailViewModel @Inject constructor(
         _averageSteps.value = average
         _weeklySteps.value = dailyTotals
 
-        // Convert to daily bars for weekly view
         _barChartData.value = metricsData.mapIndexed { index, metric ->
             val dayTotal = metric.values.maxOrNull() ?: 0
             val dayLabel = try {
@@ -249,7 +251,6 @@ class StepsDetailViewModel @Inject constructor(
             )
         }
 
-        // Update comparison
         updateWeeklyComparison(dailyTotals)
     }
 
@@ -269,7 +270,6 @@ class StepsDetailViewModel @Inject constructor(
         _totalSteps.value = total
         _averageSteps.value = average
 
-        // Group by week for monthly view
         val weeklyGroups = dailyTotals.chunked(7)
         _barChartData.value = weeklyGroups.mapIndexed { index, weekData ->
             StepBarPoint(
@@ -291,9 +291,7 @@ class StepsDetailViewModel @Inject constructor(
             val endIdx = minOf(startIdx + 60, stepsData.size)
 
             if (startIdx < stepsData.size) {
-                // Get cumulative value at end of hour
                 val hourEndValue = stepsData.subList(startIdx, endIdx).maxOrNull() ?: 0
-                // Steps for this hour = current - previous
                 val hourSteps = (hourEndValue - previousTotal).coerceAtLeast(0)
                 previousTotal = hourEndValue
 
@@ -309,7 +307,6 @@ class StepsDetailViewModel @Inject constructor(
             }
         }
 
-        // Mark the highest bar as selected (for tooltip)
         if (bars.isNotEmpty()) {
             val maxIndex = bars.indices.maxByOrNull { bars[it].steps } ?: 0
             return bars.mapIndexed { index, point ->
@@ -328,7 +325,6 @@ class StepsDetailViewModel @Inject constructor(
                 val today = LocalDate.now()
                 val formatter = DateTimeFormatter.ISO_LOCAL_DATE
 
-                // Get last 7 days for average
                 val dateFrom = today.minusDays(7).format(formatter)
                 val dateTo = today.minusDays(1).format(formatter)
 
@@ -342,7 +338,6 @@ class StepsDetailViewModel @Inject constructor(
                         val avgTotal = if (avgData.isNotEmpty()) avgData.average().toInt() else 0
                         _averageSteps.value = avgTotal
 
-                        // Generate comparison points
                         val todayTotal = _todaySteps.value
                         _comparisonData.value = listOf(
                             ComparisonPoint(0f, 0, 0),
@@ -363,7 +358,6 @@ class StepsDetailViewModel @Inject constructor(
     }
 
     private fun updateWeeklyComparison(dailyTotals: List<Int>) {
-        val total = dailyTotals.sum()
         val avg = if (dailyTotals.isNotEmpty()) dailyTotals.average().toInt() else 0
 
         _comparisonData.value = dailyTotals.mapIndexed { index, steps ->
@@ -373,10 +367,8 @@ class StepsDetailViewModel @Inject constructor(
     }
 
     private fun updateMonthlyComparison(dailyTotals: List<Int>) {
-        val total = dailyTotals.sum()
         val avg = if (dailyTotals.isNotEmpty()) dailyTotals.average().toInt() else 0
 
-        // Sample points for month
         val sampleIndices = listOf(0, 7, 14, 21, dailyTotals.lastIndex).filter { it < dailyTotals.size }
         _comparisonData.value = sampleIndices.map { index ->
             val ratio = (index + 1).toFloat() / dailyTotals.size
@@ -420,7 +412,6 @@ class StepsDetailViewModel @Inject constructor(
 
                         _barChartData.value = convertToHourlyBars(validData)
 
-                        // Load comparison from device
                         loadComparisonDataFromDevice(offset)
 
                         Timber.i("✅ Steps loaded from device: $total steps")

@@ -45,26 +45,24 @@ fun DeviceScanningScreen(
         onBack?.invoke()
     }
 
-    LaunchedEffect(scannedDevices.size) {
-        Timber.d("UI: Scanned devices count changed: ${scannedDevices.size}")
-    }
-
-    // Navigate on success
+    // ─────────────────────────────────────────────────────────────────────────
+    // CHANGE D (UI side): Navigate on ReadyToNavigate, not Connected.
+    //
+    // BEFORE: We navigated immediately on Connected — zero visual feedback.
+    // AFTER:  Connected shows a success indicator. ReadyToNavigate triggers
+    //         the actual navigation after the 1.2s delay in the ViewModel.
+    // ─────────────────────────────────────────────────────────────────────────
     LaunchedEffect(uiState) {
-        if (uiState is DeviceConnectionUiState.Connected) {
-            onDeviceConnected()
+        when (uiState) {
+            is DeviceConnectionUiState.ReadyToNavigate -> onDeviceConnected()
+            is DeviceConnectionUiState.Error -> {
+                snackbarHostState.showSnackbar((uiState as DeviceConnectionUiState.Error).message)
+                viewModel.resetError()
+            }
+            else -> Unit
         }
     }
 
-    // Show errors
-    LaunchedEffect(uiState) {
-        if (uiState is DeviceConnectionUiState.Error) {
-            snackbarHostState.showSnackbar((uiState as DeviceConnectionUiState.Error).message)
-            viewModel.resetError()
-        }
-    }
-
-    // Start scan on mount
     LaunchedEffect(Unit) {
         viewModel.startScan()
     }
@@ -78,7 +76,6 @@ fun DeviceScanningScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Back button
             if (onBack != null) {
                 IconButton(
                     onClick = { onBack() },
@@ -104,7 +101,6 @@ fun DeviceScanningScreen(
             ) {
                 Spacer(modifier = Modifier.height(80.dp))
 
-                // Title
                 Text(
                     text = "جستجو برای حلقه شما",
                     style = MaterialTheme.typography.headlineSmall.copy(
@@ -116,50 +112,53 @@ fun DeviceScanningScreen(
 
                 Spacer(modifier = Modifier.height(40.dp))
 
-                // Compact iOS-style spinner
+                // ─────────────────────────────────────────────────────────
+                // CHANGE D (UI): Add Connected state visual indicator
+                // ─────────────────────────────────────────────────────────
                 when (uiState) {
                     is DeviceConnectionUiState.Scanning,
-                    is DeviceConnectionUiState.Idle -> {
-                        CompactSpinner()
-                    }
+                    is DeviceConnectionUiState.Idle -> CompactSpinner()
+
                     is DeviceConnectionUiState.Connecting,
                     is DeviceConnectionUiState.WaitingForPairing,
-                    is DeviceConnectionUiState.Initializing -> {
-                        // Teal colored spinner when connecting
-                        CompactSpinner(color = Color(0xFF5BA3A3))
-                    }
-                    is DeviceConnectionUiState.Connected -> {
-                        // Checkmark or success indicator
+                    is DeviceConnectionUiState.Initializing -> CompactSpinner(color = Color(0xFF5BA3A3))
+
+                    is DeviceConnectionUiState.Connected,
+                    is DeviceConnectionUiState.ReadyToNavigate -> {
+                        // Success checkmark with green circle
                         Box(
                             modifier = Modifier
-                                .size(40.dp)
-                                .background(Color(0xFF4CAF50).copy(alpha = 0.1f), CircleShape),
+                                .size(64.dp)
+                                .background(Color(0xFF4CAF50).copy(alpha = 0.12f), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = "✓",
-                                fontSize = 20.sp,
+                                fontSize = 28.sp,
                                 color = Color(0xFF4CAF50),
                                 fontWeight = FontWeight.Bold
                             )
                         }
                     }
+
                     else -> CompactSpinner()
                 }
 
-                Spacer(modifier = Modifier.height(40.dp))
+                Spacer(modifier = Modifier.height(24.dp))
 
-                // Status message
-                val statusText = when (uiState) {
+                // ─────────────────────────────────────────────────────────
+                // CHANGE D (UI): Status text now covers the Connected state
+                // ─────────────────────────────────────────────────────────
+                val statusText: String? = when (uiState) {
                     is DeviceConnectionUiState.Connecting -> "در حال برقراری ارتباط..."
                     is DeviceConnectionUiState.WaitingForPairing -> "درخواست جفت‌سازی را تایید کنید"
                     is DeviceConnectionUiState.Initializing -> "در حال آماده‌سازی دستگاه..."
-                    is DeviceConnectionUiState.Connected -> "اتصال برقرار شد"
-                    else -> {
-                        if (scanDuration > 15) {
-                            "جستجو بیش از حد طول کشید؟"
-                        } else null
+                    is DeviceConnectionUiState.Connected,
+                    is DeviceConnectionUiState.ReadyToNavigate -> "دستگاه متصل شد ✓"
+                    is DeviceConnectionUiState.Scanning -> {
+                        if (scanDuration > 15) "جستجو بیش از حد طول کشید؟" else null
                     }
+                    else -> null
                 }
 
                 statusText?.let {
@@ -170,11 +169,13 @@ fun DeviceScanningScreen(
                             textAlign = TextAlign.Center,
                             lineHeight = 22.sp
                         ),
-                        color = Color(0xFF666666)
+                        // Green text for connected confirmation
+                        color = if (uiState is DeviceConnectionUiState.Connected ||
+                            uiState is DeviceConnectionUiState.ReadyToNavigate
+                        ) Color(0xFF4CAF50) else Color(0xFF666666)
                     )
                 }
 
-                // Secondary hint when scanning takes long
                 if (uiState is DeviceConnectionUiState.Scanning && scanDuration > 15) {
                     Text(
                         text = "حلقه خود را به شارژر وصل کنید.",
@@ -187,7 +188,6 @@ fun DeviceScanningScreen(
                     )
                 }
 
-                // Pairing hint
                 if (uiState is DeviceConnectionUiState.WaitingForPairing) {
                     Text(
                         text = "یک پیام در بخش اعلان‌ها ظاهر می‌شود",
@@ -202,8 +202,11 @@ fun DeviceScanningScreen(
 
                 Spacer(modifier = Modifier.height(32.dp))
 
-                // Device list
-                if (scannedDevices.isNotEmpty()) {
+                // Device list — hide during connecting/initializing/connected
+                val showDeviceList = uiState is DeviceConnectionUiState.Scanning ||
+                        uiState is DeviceConnectionUiState.Idle
+
+                if (scannedDevices.isNotEmpty() && showDeviceList) {
                     Text(
                         text = "دستگاه‌های یافت شده:",
                         style = MaterialTheme.typography.titleSmall.copy(
@@ -235,17 +238,19 @@ fun DeviceScanningScreen(
                     Spacer(modifier = Modifier.weight(1f))
                 }
 
-                // Troubleshoot button
-                if (uiState !is DeviceConnectionUiState.Connecting &&
-                    uiState !is DeviceConnectionUiState.WaitingForPairing &&
-                    uiState !is DeviceConnectionUiState.Initializing
-                ) {
+                val showTroubleshoot = uiState !is DeviceConnectionUiState.Connecting &&
+                        uiState !is DeviceConnectionUiState.WaitingForPairing &&
+                        uiState !is DeviceConnectionUiState.Initializing &&
+                        uiState !is DeviceConnectionUiState.Connected &&
+                        uiState !is DeviceConnectionUiState.ReadyToNavigate
+
+                if (showTroubleshoot) {
                     TextButton(
                         onClick = onTroubleshoot,
                         modifier = Modifier.padding(vertical = 16.dp)
                     ) {
                         Text(
-                            text = "مشکل در اتصال ؟",
+                            text = "مشکل در اتصال؟",
                             style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                             color = Color(0xFF5BA3A3)
                         )
@@ -283,9 +288,7 @@ fun CompactSpinner(
     ) {
         for (i in 0 until lineCount) {
             val angle = i * (360f / lineCount)
-            // Opacity decreases as we go around (creates the spinning trail effect)
             val alpha = 1f - (i * (0.85f / lineCount))
-
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -294,9 +297,9 @@ fun CompactSpinner(
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(top = 2.dp) // Small gap from edge
-                        .width(4.dp)   // Fixed line width
-                        .height(10.dp) // Fixed line height
+                        .padding(top = 2.dp)
+                        .width(4.dp)
+                        .height(10.dp)
                         .background(
                             color = color.copy(alpha = alpha.coerceIn(0.15f, 1f)),
                             shape = RoundedCornerShape(2.dp)
@@ -314,6 +317,20 @@ fun DeviceListItem(
     isConnecting: Boolean,
     onClick: () -> Unit
 ) {
+    val deviceName = device.bluetoothDevice?.name
+    val deviceAddress = device.bluetoothDevice?.address
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CHANGE C (UI side): Since we now show ALL devices in scan results,
+    // we visually distinguish likely-ring devices from unknowns.
+    // The user can still tap any device — we just give them a hint.
+    // ─────────────────────────────────────────────────────────────────────────
+    val looksLikeRing = !deviceName.isNullOrBlank() && (
+            deviceName.contains("ring", ignoreCase = true) ||
+                    deviceName.contains("bonlala", ignoreCase = true) ||
+                    deviceName.startsWith("W", ignoreCase = false)
+            )
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -330,13 +347,12 @@ fun DeviceListItem(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Device info
             Column(
                 modifier = Modifier.weight(1f),
                 horizontalAlignment = Alignment.End
             ) {
                 Text(
-                    text = device.bluetoothDevice?.name ?: "دستگاه ناشناس",
+                    text = deviceName ?: "دستگاه ناشناس",
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp
@@ -345,21 +361,31 @@ fun DeviceListItem(
                 )
 
                 Text(
-                    text = device.bluetoothDevice?.address ?: "",
+                    text = deviceAddress ?: "",
                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                     color = Color(0xFF999999),
-                    modifier = Modifier.padding(top = 4.dp)
+                    modifier = Modifier.padding(top = 2.dp)
                 )
+
+                // Hint label for non-ring-looking devices
+                if (!looksLikeRing) {
+                    Text(
+                        text = "ممکن است حلقه نباشد",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        color = Color(0xFFBBBBBB),
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(16.dp))
 
-            // Ring icon
             Box(
                 modifier = Modifier
                     .size(48.dp)
                     .background(
-                        color = Color(0xFF5BA3A3).copy(alpha = 0.1f),
+                        color = if (looksLikeRing) Color(0xFF5BA3A3).copy(alpha = 0.1f)
+                        else Color(0xFFBBBBBB).copy(alpha = 0.1f),
                         shape = CircleShape
                     ),
                 contentAlignment = Alignment.Center
@@ -367,7 +393,7 @@ fun DeviceListItem(
                 Icon(
                     painter = painterResource(id = R.drawable.ring_img),
                     contentDescription = null,
-                    tint = Color(0xFF5BA3A3),
+                    tint = if (looksLikeRing) Color(0xFF5BA3A3) else Color(0xFFBBBBBB),
                     modifier = Modifier.size(24.dp)
                 )
             }

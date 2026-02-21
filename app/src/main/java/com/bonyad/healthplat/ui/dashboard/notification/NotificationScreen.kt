@@ -142,7 +142,8 @@ private fun NotificationTopBar(onBack: () -> Unit) {
             Icon(
                 painter = painterResource(id = R.drawable.back_arrow),
                 contentDescription = "بازگشت",
-                tint = Color.Gray
+                tint = ItemBorderColor,
+                modifier = Modifier.size(24.dp)
             )
         }
     }

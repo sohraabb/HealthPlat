@@ -20,6 +20,7 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.GregorianCalendar
 import javax.inject.Inject
+import kotlin.math.abs
 
 @HiltViewModel
 class StressDetailViewModel @Inject constructor(
@@ -37,7 +38,6 @@ class StressDetailViewModel @Inject constructor(
         val low: Int = 0
     )
 
-    // Points for the curve
     data class StressPoint(val xRatio: Float, val value: Int)
 
     private val _chartPoints = MutableStateFlow<List<StressPoint>>(emptyList())
@@ -64,8 +64,20 @@ class StressDetailViewModel @Inject constructor(
         loadStressFromApi()
     }
 
+    // ============ Sync: Ring → Server → API fetch → Display ============
+
     fun refreshData() {
-        loadStressFromApi()
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val syncDay = abs(_selectedDayOffset.value)
+                healthRepository.syncDashboardData(syncDay)
+                Timber.i("✅ Ring stress data synced to server for day $syncDay")
+            } catch (e: Exception) {
+                Timber.e(e, "⚠️ Ring→Server sync failed, loading from API anyway")
+            }
+            loadStressFromApi()
+        }
     }
 
     fun setTimeRange(range: String) {
@@ -80,50 +92,8 @@ class StressDetailViewModel @Inject constructor(
         }
     }
 
-    // ============ API Integration ============
+    // ============ Date Range (consistent with all other VMs) ============
 
-    private fun loadStressFromApi() {
-        viewModelScope.launch {
-            _isLoading.value = true
-
-            try {
-                val (dateFrom, dateTo) = getDateRange()
-
-                Timber.i("📡 Fetching stress: $dateFrom to $dateTo")
-
-                healthRepository.getMetricData(
-                    metricType = MetricType.STRESS,
-                    dateFrom = dateFrom,
-                    dateTo = dateTo
-                ).fold(
-                    onSuccess = { metricsData ->
-                        if (metricsData.isNotEmpty()) {
-                            processStressData(metricsData)
-                            Timber.i("✅ Stress loaded: ${metricsData.size} records")
-                        } else {
-                            Timber.w("⚠️ No stress data from API")
-                            clearData()
-                        }
-                    },
-                    onFailure = { error ->
-                        Timber.e(error, "❌ Stress API error")
-                        // Fallback to device
-                        loadStressFromDevice(_selectedDayOffset.value)
-                    }
-                )
-
-            } catch (e: Exception) {
-                Timber.e(e, "❌ Failed to load stress from API")
-                loadStressFromDevice(_selectedDayOffset.value)
-            } finally {
-                _isLoading.value = false
-            }
-        }
-    }
-
-    /**
-     * Get date range based on selected time range
-     */
     private fun getDateRange(): Pair<String, String> {
         val today = LocalDate.now()
         val formatter = DateTimeFormatter.ISO_LOCAL_DATE
@@ -154,17 +124,58 @@ class StressDetailViewModel @Inject constructor(
         }
     }
 
+    // ============ Standardized Date Label ============
+
     private fun updateDateLabel(date: LocalDate) {
         val today = LocalDate.now()
+        val calendar = GregorianCalendar(date.year, date.monthValue - 1, date.dayOfMonth)
+        val pDate = PersianDate(calendar.time)
+        val dayOfMonth = pDate.shDay.toString().toFarsiDigits()
+        val monthName = pDate.monthName
+
         _dateLabel.value = when {
-            date == today -> "امروز"
-            date == today.minusDays(1) -> "دیروز"
-            else -> {
-                val calendar = GregorianCalendar(date.year, date.monthValue - 1, date.dayOfMonth)
-                val pDate = PersianDate(calendar.time)
-                val dayOfMonth = pDate.shDay.toString().toFarsiDigits()
-                val monthName = pDate.monthName
-                "$monthName $dayOfMonth"
+            date == today -> "امروز $dayOfMonth $monthName"
+            date == today.minusDays(1) -> "دیروز $dayOfMonth $monthName"
+            else -> "$dayOfMonth $monthName"
+        }
+    }
+
+    // ============ PRIMARY: Load from API ============
+
+    private fun loadStressFromApi() {
+        viewModelScope.launch {
+            _isLoading.value = true
+
+            try {
+                val (dateFrom, dateTo) = getDateRange()
+
+                Timber.i("📡 Fetching stress: $dateFrom to $dateTo")
+
+                healthRepository.getMetricData(
+                    metricType = MetricType.STRESS,
+                    dateFrom = dateFrom,
+                    dateTo = dateTo
+                ).fold(
+                    onSuccess = { metricsData ->
+                        if (metricsData.isNotEmpty()) {
+                            processStressData(metricsData)
+                            Timber.i("✅ Stress loaded: ${metricsData.size} records")
+                        } else {
+                            Timber.w("⚠️ No stress data from API")
+                            clearData()
+                        }
+                    },
+                    onFailure = { error ->
+                        Timber.e(error, "❌ Stress API error")
+                        loadStressFromDevice(_selectedDayOffset.value)
+                    }
+                )
+
+            } catch (e: Exception) {
+                Timber.e(e, "❌ Failed to load stress from API")
+                loadStressFromDevice(_selectedDayOffset.value)
+            } finally {
+                _isLoading.value = false
             }
         }
     }
@@ -188,13 +199,11 @@ class StressDetailViewModel @Inject constructor(
             return
         }
 
-        // Calculate stats
         val high = validData.maxOrNull() ?: 0
         val low = validData.minOrNull() ?: 0
         val avg = validData.average().toInt()
         val current = validData.lastOrNull() ?: 0
 
-        // Get current time for last measurement
         val currentTime = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
 
         _stats.value = StressStats(
@@ -207,7 +216,6 @@ class StressDetailViewModel @Inject constructor(
             low = low
         )
 
-        // Convert to curve points
         _chartPoints.value = convertToCurvePoints(allValues)
     }
 
@@ -217,7 +225,6 @@ class StressDetailViewModel @Inject constructor(
             return
         }
 
-        // Aggregate all values from the week
         val allValues = mutableListOf<Int>()
         var totalHigh = 0
         var totalLow = Int.MAX_VALUE
@@ -253,7 +260,6 @@ class StressDetailViewModel @Inject constructor(
             low = totalLow
         )
 
-        // Generate weekly curve - average per day
         _chartPoints.value = metricsData.mapIndexed { index, metric ->
             val validData = metric.values.filter { it > 0 }
             val dayAvg = if (validData.isNotEmpty()) validData.average().toInt() else 0
@@ -263,7 +269,6 @@ class StressDetailViewModel @Inject constructor(
     }
 
     private fun processMonthlyStress(metricsData: List<MetricData>) {
-        // Same logic as weekly
         processWeeklyStress(metricsData)
     }
 
@@ -272,7 +277,6 @@ class StressDetailViewModel @Inject constructor(
 
         val points = mutableListOf<StressPoint>()
 
-        // Sample every N minutes to get smooth curve (~20 points)
         val sampleInterval = maxOf(1, stressData.size / 20)
 
         for (i in stressData.indices step sampleInterval) {
@@ -283,7 +287,6 @@ class StressDetailViewModel @Inject constructor(
             }
         }
 
-        // Ensure last point is included
         if (points.isNotEmpty() && points.lastOrNull()?.xRatio != 1.0f) {
             val lastValue = stressData.lastOrNull { it > 0 } ?: 0
             if (lastValue > 0) {

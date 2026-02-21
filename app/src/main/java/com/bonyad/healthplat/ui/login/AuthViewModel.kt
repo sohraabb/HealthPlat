@@ -297,6 +297,11 @@ class AuthViewModel @Inject constructor(
     }
 
     fun isValidPersianPhoneNumber(phone: String): Boolean {
+        val regex = "^09\\d{9}$".toRegex()
+        return regex.matches(phone)
+    }
+
+    fun isValidPersianPhoneNumberLegacy(phone: String): Boolean {
         // Persian phone numbers: 09xx xxx xxxx with valid operator codes
         // Valid prefixes in Iran (as of 2024):
         // - Hamrah-e Aval (MCI): 0910-0919

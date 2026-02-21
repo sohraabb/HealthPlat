@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -32,12 +33,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.bonyad.healthplat.ui.dashboard.details.heart_rate.CustomDetailTopBar
+import com.bonyad.healthplat.ui.dashboard.details.CustomDetailTopBar
 import com.bonyad.healthplat.ui.dashboard.details.heart_rate.DateStrip
 import com.bonyad.healthplat.ui.dashboard.details.heart_rate.TimeRangeSelector
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
@@ -96,6 +96,7 @@ fun SpO2DetailScreen(
                 rangeText = rangeText,
                 dateLabel = dateLabel,
                 selectedRange = selectedRange,
+                isLoading = isLoading,
                 showEmptyState = chartData.isEmpty() && !isLoading
             )
 
@@ -120,6 +121,7 @@ fun SpO2ChartSection(
     rangeText: String,
     dateLabel: String,
     selectedRange: String,
+    isLoading: Boolean = false,
     showEmptyState: Boolean = false
 ) {
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
@@ -185,125 +187,138 @@ fun SpO2ChartSection(
             shape = RoundedCornerShape(16.dp),
             elevation = CardDefaults.cardElevation(0.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(240.dp)
-                    .padding(top = 16.dp, bottom = 24.dp)
-            ) {
-                Row(modifier = Modifier.fillMaxSize()) {
-                    // Y-Axis Labels
-                    Column(
-                        modifier = Modifier
-                            .width(32.dp)
-                            .fillMaxHeight()
-                            .padding(end = 4.dp, top = 8.dp, bottom = 16.dp),
-                        verticalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("۱۰۰", fontSize = 10.sp, color = Color.Gray)
-                        Text("۹۵", fontSize = 10.sp, color = Color.Gray)
-                        Text("۹۰", fontSize = 10.sp, color = Color.Gray)
-                        Text("۸۵", fontSize = 10.sp, color = Color.Gray)
+
+            if (isLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(240.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = Color(0xFF4DD0E1))
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(240.dp)
+                        .padding(16.dp)
+                ) {
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        // Y-Axis Labels
+                        Column(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .padding(end = 8.dp, bottom = 20.dp),
+                            verticalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("۱۰۰", fontSize = 10.sp, color = Color.Gray)
+                            Text("۹۵", fontSize = 10.sp, color = Color.Gray)
+                            Text("۹۰", fontSize = 10.sp, color = Color.Gray)
+                            Text("۸۵", fontSize = 10.sp, color = Color.Gray)
+                        }
+
+                        // Chart Area
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                        ) {
+                            Canvas(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(bottom = 20.dp)
+                            ) {
+                                val w = size.width
+                                val h = size.height
+
+                                val minVal = 85f
+                                val maxVal = 100f
+                                val range = maxVal - minVal
+
+                                // Horizontal Grid Lines
+                                val pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f)
+                                val steps = 3
+
+                                for (i in 0..steps) {
+                                    val y = h * (i.toFloat() / steps)
+                                    drawLine(
+                                        color = Color.LightGray.copy(alpha = 0.5f),
+                                        start = Offset(0f, y),
+                                        end = Offset(w, y),
+                                        strokeWidth = 1.dp.toPx(),
+                                        pathEffect = pathEffect
+                                    )
+                                }
+
+                                // Vertical Grid Lines
+                                val verticalLines = listOf(0f, 0.25f, 0.5f, 0.75f, 1f)
+                                verticalLines.forEach { ratio ->
+                                    val x = w * ratio
+                                    drawLine(
+                                        color = Color.LightGray.copy(alpha = 0.3f),
+                                        start = Offset(x, 0f),
+                                        end = Offset(x, h),
+                                        strokeWidth = 1.dp.toPx(),
+                                        pathEffect = pathEffect
+                                    )
+                                }
+
+                                // Draw Scatter Points
+                                if (data.isNotEmpty()) {
+                                    val dotColor = Color(0xFF4DD0E1)
+
+                                    data.forEach { point ->
+                                        val x = w * point.timeRatio
+                                        val y = (h - ((point.value - minVal) / range) * h).coerceIn(
+                                            0f,
+                                            h
+                                        )
+
+                                        drawCircle(
+                                            color = dotColor,
+                                            radius = 4.dp.toPx(),
+                                            center = Offset(x, y)
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Time Labels at bottom - LTR for correct ordering
+                            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .align(Alignment.BottomCenter),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    listOf("00:00", "08:00", "16:00", "24:00").forEach { label ->
+                                        Text(
+                                            text = label.toFarsiDigits(),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color.Gray,
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
 
-                    // Chart Area
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                    ) {
-                        Canvas(
+                    // Empty State Overlay
+                    if (showEmptyState) {
+                        Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(top = 8.dp, bottom = 16.dp, end = 8.dp)
+                                .background(Color.White.copy(alpha = 0.7f)),
+                            contentAlignment = Alignment.Center
                         ) {
-                            val w = size.width
-                            val h = size.height
-
-                            val minVal = 85f
-                            val maxVal = 100f
-                            val range = maxVal - minVal
-
-                            // Horizontal Grid Lines
-                            val pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f)
-                            val steps = 3
-
-                            for (i in 0..steps) {
-                                val y = h * (i.toFloat() / steps)
-                                drawLine(
-                                    color = Color.LightGray.copy(alpha = 0.5f),
-                                    start = Offset(0f, y),
-                                    end = Offset(w, y),
-                                    strokeWidth = 1.dp.toPx(),
-                                    pathEffect = pathEffect
-                                )
-                            }
-
-                            // Vertical Grid Lines
-                            val verticalLines = listOf(0f, 0.25f, 0.5f, 0.75f, 1f)
-                            verticalLines.forEach { ratio ->
-                                val x = w * ratio
-                                drawLine(
-                                    color = Color.LightGray.copy(alpha = 0.3f),
-                                    start = Offset(x, 0f),
-                                    end = Offset(x, h),
-                                    strokeWidth = 1.dp.toPx(),
-                                    pathEffect = pathEffect
-                                )
-                            }
-
-                            // Draw Scatter Points
-                            if (data.isNotEmpty()) {
-                                val dotColor = Color(0xFF4DD0E1)
-
-                                data.forEach { point ->
-                                    val x = w * point.timeRatio
-                                    val y = (h - ((point.value - minVal) / range) * h).coerceIn(0f, h)
-
-                                    drawCircle(
-                                        color = dotColor,
-                                        radius = 4.dp.toPx(),
-                                        center = Offset(x, y)
-                                    )
-                                }
-                            }
+                            Text(
+                                text = "داده‌ای موجود نیست",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color(0xFF6B6B6B)
+                            )
                         }
-
-                        // Time Labels at bottom - LTR for correct ordering
-                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .align(Alignment.BottomCenter)
-                                    .padding(end = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                listOf("۰۰:۰۰", "۰۷:۵۹", "۱۵:۵۹", "۲۳:۵۹").forEach { label ->
-                                    Text(
-                                        text = label,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Color.Gray,
-                                        fontSize = 10.sp
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Empty State Overlay
-                if (showEmptyState) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.White.copy(alpha = 0.7f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "داده‌ای موجود نیست",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color(0xFF6B6B6B)
-                        )
                     }
                 }
             }

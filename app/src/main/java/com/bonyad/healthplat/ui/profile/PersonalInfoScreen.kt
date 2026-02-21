@@ -44,9 +44,11 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -587,7 +589,12 @@ fun PersianDatePickerBottomSheet(
     onDismiss: () -> Unit,
     onDateSelected: (Int, Int, Int) -> Unit
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = { newValue ->
+            newValue == SheetValue.Expanded
+        }
+    )
     val scope = rememberCoroutineScope()
 
     var selectedYear by remember { mutableStateOf(initialYear) }
@@ -681,6 +688,17 @@ fun PersianDatePickerBottomSheet(
                 )
             }
 
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "انصراف",
+                    color = TextGray,
+                    fontSize = 14.sp
+                )
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
         }
     }
@@ -708,9 +726,18 @@ fun ImprovedDateColumn(
     // Update selection when scrolling stops
     LaunchedEffect(listState.isScrollInProgress) {
         if (!listState.isScrollInProgress) {
-            val centerIndex = listState.firstVisibleItemIndex
-            if (centerIndex in range.indices) {
-                onValueChange(range[centerIndex])
+            // Use the item closest to the center of the visible area
+            val layoutInfo = listState.layoutInfo
+            val viewportCenter = layoutInfo.viewportStartOffset +
+                    (layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset) / 2
+
+            val centerItem = layoutInfo.visibleItemsInfo.minByOrNull { item ->
+                val itemCenter = item.offset + item.size / 2
+                kotlin.math.abs(itemCenter - viewportCenter)
+            }
+
+            if (centerItem != null && centerItem.index in range.indices) {
+                onValueChange(range[centerItem.index])
             }
         }
     }

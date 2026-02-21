@@ -1,6 +1,11 @@
 package com.bonyad.healthplat.ui.dashboard
 
 import android.annotation.SuppressLint
+import android.app.Activity
+import android.bluetooth.BluetoothAdapter
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -48,10 +53,12 @@ import com.bonyad.healthplat.ui.navigation.HealthDetailRoutes
 import com.bonyad.healthplat.ui.navigation.NavRoutes
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import kotlin.math.sin
 
 // Define custom colors from design
 val TealPrimary = Color(0xFF5BA3A3)
-val OrangeAccent = Color(0xFFFF9800)
+val OrangeAccent = Color(0xFFF2994A)
 val RedAccent = Color(0xFFE53935)
 val BlueAccent = Color(0xFF2196F3)
 val TextDark = Color(0xFF000000)
@@ -92,6 +99,8 @@ fun HomeScreen(
     val readinessScore by viewModel.readinessScore.collectAsState()
     val insights by viewModel.healthInsights.collectAsState()
 
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
+
     // ==================== CONNECTIVITY STATE ====================
     var showConnectivitySheet by remember { mutableStateOf(false) }
     val connectivitySheetState = rememberModalBottomSheetState()
@@ -105,6 +114,23 @@ fun HomeScreen(
         }
     }
     // ============================================================
+
+    val bluetoothEnableLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            // Bluetooth was enabled, now connect
+            viewModel.onBluetoothEnabled()
+        }
+    }
+
+    // Observe bluetooth enable requests from ViewModel
+    LaunchedEffect(Unit) {
+        viewModel.requestBluetoothEnable.collect {
+            val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
+            bluetoothEnableLauncher.launch(enableBtIntent)
+        }
+    }
 
     // ==================== INFO BOTTOM SHEET STATE ====================
     var showInfoSheet by remember { mutableStateOf(false) }
@@ -133,10 +159,10 @@ fun HomeScreen(
                 value = healthOverview.steps.toString().toFarsiDigits(),
                 unit = "قدم",
                 statusText = when {
-                    healthOverview.steps == 0 -> "شروع کن!"
+                    healthOverview.steps == 0 -> "شروع کن"
                     healthOverview.steps < 5000 -> "بیشتر کن"
                     healthOverview.steps < 10000 -> "خوب پیش میری"
-                    else -> "عالی!"
+                    else -> "عالی"
                 },
                 iconRes = R.drawable.walk,
                 iconTint = OrangeAccent,
@@ -213,6 +239,10 @@ fun HomeScreen(
                 showConnectivitySheet = false
                 viewModel.connectDevice()
             },
+            onDisconnectClick = {
+                showConnectivitySheet = false
+                viewModel.disconnectDevice()
+            },
             sheetState = connectivitySheetState
         )
     }
@@ -254,7 +284,7 @@ fun HomeScreen(
                     navigationIcon = {
                         IconButton(
                             onClick =  onNavigateToNotifications ,
-                            modifier = Modifier.size(40.dp) // Smaller icon button
+                            modifier = Modifier.size(40.dp)
                         ) {
                             Icon(
                                 painterResource(R.drawable.notification),
@@ -266,7 +296,8 @@ fun HomeScreen(
                     actions = {
                         ConnectionIndicatorButton(
                             connectionState = connectionState,
-                            onClick = { showConnectivitySheet = true }
+                            onClick = { showConnectivitySheet = true },
+                            modifier = Modifier.size(40.dp)
                         )
 
                         IconButton(
@@ -284,8 +315,7 @@ fun HomeScreen(
                         containerColor = Color(0xFFF5F5F5)
                     ),
                     // Reduce vertical padding
-                    modifier = Modifier.height(60.dp), // Reduced from default ~64.dp
-                    expandedHeight = 60.dp // For Material 3
+                    windowInsets = WindowInsets(top = 8.dp)
                 )
             }
         },
@@ -302,83 +332,89 @@ fun HomeScreen(
             // Calculate card width: (screen width - padding on both sides - spacing between cards) / 2
             val cardWidth = (screenWidth - (horizontalPadding * 2) - cardSpacing) / 2
 
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = horizontalPadding)
-                    .padding(top = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = { viewModel.refreshData() },
+                modifier = Modifier.fillMaxSize()
             ) {
-                // Health Status Card
-                NewHealthStatusCard(
-                    score = readinessScore,
-                    insights = insights,
-                    navigateToAi = { onNavigateToAi(NavRoutes.AiScreen.route) }
-                )
-
-                // Health cards in horizontal pager style (2x2 grid per page)
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.fillMaxWidth()
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = horizontalPadding)
+                        .padding(top = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    val pages = healthCards.chunked(4)
-                    items(pages.size) { pageIndex ->
-                        val pageCards = pages[pageIndex]
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(cardSpacing),
-                            modifier = Modifier.width(screenWidth - (horizontalPadding * 2))
-                        ) {
-                            // Top row
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(cardSpacing),
-                                modifier = Modifier.fillMaxWidth()
+                    // Health Status Card
+                    NewHealthStatusCard(
+                        score = readinessScore,
+                        insights = insights,
+                        navigateToAi = { onNavigateToAi(NavRoutes.AiScreen.route) }
+                    )
+
+                    // Health cards in horizontal pager style (2x2 grid per page)
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        val pages = healthCards.chunked(4)
+                        items(pages.size) { pageIndex ->
+                            val pageCards = pages[pageIndex]
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(cardSpacing),
+                                modifier = Modifier.width(screenWidth - (horizontalPadding * 2))
                             ) {
-                                pageCards.getOrNull(0)?.let { card ->
-                                    HealthMetricCard(
-                                        data = card,
-                                        onClick = { onNavigateToDetail(card.route) },
-                                        cardWidth = cardWidth
-                                    )
+                                // Top row
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(cardSpacing),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    pageCards.getOrNull(0)?.let { card ->
+                                        HealthMetricCard(
+                                            data = card,
+                                            onClick = { onNavigateToDetail(card.route) },
+                                            cardWidth = cardWidth
+                                        )
+                                    }
+                                    pageCards.getOrNull(1)?.let { card ->
+                                        HealthMetricCard(
+                                            data = card,
+                                            onClick = { onNavigateToDetail(card.route) },
+                                            cardWidth = cardWidth
+                                        )
+                                    }
                                 }
-                                pageCards.getOrNull(1)?.let { card ->
-                                    HealthMetricCard(
-                                        data = card,
-                                        onClick = { onNavigateToDetail(card.route) },
-                                        cardWidth = cardWidth
-                                    )
-                                }
-                            }
-                            // Bottom row
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(cardSpacing),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                pageCards.getOrNull(2)?.let { card ->
-                                    HealthMetricCard(
-                                        data = card,
-                                        onClick = { onNavigateToDetail(card.route) },
-                                        cardWidth = cardWidth
-                                    )
-                                }
-                                pageCards.getOrNull(3)?.let { card ->
-                                    HealthMetricCard(
-                                        data = card,
-                                        onClick = { onNavigateToDetail(card.route) },
-                                        cardWidth = cardWidth
-                                    )
+                                // Bottom row
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(cardSpacing),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    pageCards.getOrNull(2)?.let { card ->
+                                        HealthMetricCard(
+                                            data = card,
+                                            onClick = { onNavigateToDetail(card.route) },
+                                            cardWidth = cardWidth
+                                        )
+                                    }
+                                    pageCards.getOrNull(3)?.let { card ->
+                                        HealthMetricCard(
+                                            data = card,
+                                            onClick = { onNavigateToDetail(card.route) },
+                                            cardWidth = cardWidth
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                // Bottom spacing for the floating navigation bar
-                Spacer(
-                    modifier = Modifier
-                        .height(96.dp)
-                        .navigationBarsPadding() // Adds extra space on devices with system nav bar
-                )
+                    // Bottom spacing for the floating navigation bar
+                    Spacer(
+                        modifier = Modifier
+                            .height(96.dp)
+                            .navigationBarsPadding() // Adds extra space on devices with system nav bar
+                    )
+                }
             }
         }
     }
@@ -429,8 +465,8 @@ fun NewHealthStatusCard(
             ) {
                 // Circle section
                 HealthScoreCircle(
-                    score = score,
-                    modifier = Modifier.size(100.dp) // Reduced from 120.dp
+                    score = 100,
+                    modifier = Modifier.size(124.dp)
                 )
 
                 Spacer(modifier = Modifier.width(12.dp)) // Reduced from 16.dp
@@ -476,72 +512,121 @@ fun HealthScoreCircle(
     score: Int,
     modifier: Modifier = Modifier
 ) {
+    val GreenPrimary = Color(0xFF6FCF97)
+
     Box(
-        modifier = modifier,
+        modifier = modifier.size(124.dp),
         contentAlignment = Alignment.Center
     ) {
-        // 1. The Dotted Ring (Canvas)
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val center = this.center
-            // Radius is half the size, minus a little padding so dots aren't cut off
-            val radius = (size.minDimension / 2) - 2.dp.toPx()
-            val dotRadius = 1.5.dp.toPx() // Size of the dots
-            val step = 10 // Degrees between dots (360 / 10 = 36 dots)
+            val cx = center.x
+            val cy = center.y
 
-            for (angle in 0 until 360 step step) {
+            // === 1. Dotted Ring (outermost) ===
+            val dotRadius = 1.5.dp.toPx()
+            val dotRingRadius = (size.minDimension / 2) - dotRadius - 1.dp.toPx()
+            val stepDeg = 10
+
+            for (angle in 0 until 360 step stepDeg) {
                 val rad = Math.toRadians(angle.toDouble())
-                val x = center.x + (radius * Math.cos(rad)).toFloat()
-                val y = center.y + (radius * Math.sin(rad)).toFloat()
+                val x = cx + dotRingRadius * Math.cos(rad).toFloat()
+                val y = cy + dotRingRadius * Math.sin(rad).toFloat()
 
                 drawCircle(
-                    color = TealPrimary.copy(alpha = 0.2f), // Faint dots
+                    color = GreenPrimary.copy(alpha = 0.25f),
                     radius = dotRadius,
                     center = Offset(x, y)
                 )
             }
+
+            // === 2. Progress Arc with vertical gradient (top=green, bottom=white) ===
+            val strokeWidth = 5.dp.toPx()
+            val arcPadding = 10.dp.toPx()
+            val arcRadius = size.minDimension / 2 - arcPadding
+
+            // Background track
+            drawCircle(
+                color = GreenPrimary.copy(alpha = 0.08f),
+                radius = arcRadius,
+                center = center,
+                style = Stroke(width = strokeWidth)
+            )
+
+            // Draw progress as many small segments, colored by Y position
+            val sweepDeg = (score / 100f) * 360f
+            val totalSegments = sweepDeg.toInt().coerceAtLeast(1)
+
+            for (i in 0 until totalSegments) {
+                val angleDeg = -90f + i // start from top
+                val angleRad = Math.toRadians(angleDeg.toDouble())
+
+                // Y position: -1 at top, +1 at bottom
+                val normalizedY = sin(angleRad).toFloat() // -1 top, +1 bottom
+                // Map to 0..1 range: 0 at top, 1 at bottom
+                val t = (normalizedY + 1f) / 2f
+
+                // Figma: green stays until 34.62%, then fades to white at 100%
+                val blendFactor = if (t < 0.3462f) {
+                    0f // pure green
+                } else {
+                    ((t - 0.3462f) / (1f - 0.3462f)).coerceIn(0f, 1f)
+                }
+
+                // Interpolate green → white
+                val r = lerp(111f, 255f, blendFactor)
+                val g = lerp(207f, 255f, blendFactor)
+                val b = lerp(151f, 255f, blendFactor)
+
+                val segColor = Color(r / 255f, g / 255f, b / 255f, 0.87f)
+
+                drawArc(
+                    color = segColor,
+                    startAngle = angleDeg,
+                    sweepAngle = 1.5f, // slight overlap to avoid gaps
+                    useCenter = false,
+                    topLeft = Offset(cx - arcRadius, cy - arcRadius),
+                    size = androidx.compose.ui.geometry.Size(arcRadius * 2, arcRadius * 2),
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                )
+            }
         }
 
-        // 2. The Progress Bar (with padding to sit inside the dots)
+        // === 3. Inner White Circle with Shadow ===
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(12.dp), // Push the circle inside the dots
+                .size(90.dp)
+                .shadow(
+                    elevation = 5.dp,
+                    shape = CircleShape,
+                    ambientColor = Color.Black.copy(alpha = 0.25f),
+                    spotColor = Color.Black.copy(alpha = 0.25f)
+                )
+                .clip(CircleShape)
+                .background(Color.White),
             contentAlignment = Alignment.Center
         ) {
-            // Background Track
-            CircularProgressIndicator(
-                progress = { 1f },
-                modifier = Modifier.fillMaxSize(),
-                color = TealPrimary.copy(alpha = 0.1f),
-                strokeWidth = 5.dp, // Thinner
-            )
-            // Actual Progress
-            CircularProgressIndicator(
-                progress = { score / 100f },
-                modifier = Modifier.fillMaxSize(),
-                color = TealPrimary,
-                strokeWidth = 5.dp, // Thinner
-                strokeCap = StrokeCap.Round,
-            )
-        }
-
-        // 3. The Text
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = score.toString().toFarsiDigits(),
-                style = MaterialTheme.typography.headlineLarge.copy(
-                    fontWeight = FontWeight.Bold,
-                    color = TextDark,
-                    fontSize = 32.sp
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = score.toString().toFarsiDigits(),
+                    style = MaterialTheme.typography.headlineLarge.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = TextDark,
+                        fontSize = 32.sp
+                    )
                 )
-            )
-            Text(
-                text = "/۱۰۰",
-                style = MaterialTheme.typography.bodySmall,
-                color = TextGray
-            )
+                Text(
+                    text = "/۱۰۰",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextGray
+                )
+            }
         }
     }
+}
+
+// Simple linear interpolation helper
+private fun lerp(start: Float, end: Float, fraction: Float): Float {
+    return start + (end - start) * fraction
 }
 
 @Composable
@@ -579,7 +664,7 @@ fun HealthMetricCard(
     Card(
         modifier = Modifier
             .width(cardWidth)
-            .height(180.dp)
+            .height(170.dp)
             .padding(1.dp)
             .clickable { onClick() },
         shape = RoundedCornerShape(20.dp),
@@ -738,6 +823,13 @@ fun HeartRateChart(color: Color) {
 
 @Composable
 fun StepsChart(color: Color) {
+    val stepsGradient = Brush.horizontalGradient(
+        colors = listOf(
+            Color(0xFFF2994A), // #F2994A
+            Color(0xFFA86F3C)  // #A86F3C
+        )
+    )
+
     Row(
         modifier = Modifier.fillMaxSize(),
         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -750,7 +842,7 @@ fun StepsChart(color: Color) {
                     .width(6.dp)
                     .fillMaxHeight(relativeHeight)
                     .clip(RoundedCornerShape(4.dp))
-                    .background(color.copy(alpha = 0.7f))
+                    .background(stepsGradient)
             )
         }
     }
@@ -758,60 +850,61 @@ fun StepsChart(color: Color) {
 
 @Composable
 fun SpO2Chart(color: Color) {
+    val spo2Blue = Color(0xFF56CCF2) // Figma border color
+
     Canvas(
         modifier = Modifier
             .fillMaxSize()
-            .padding(vertical = 8.dp)
+            .padding(vertical = 4.dp) // less vertical padding = taller chart
     ) {
         val w = size.width
         val h = size.height
 
         // Step line path
         val linePath = Path().apply {
-            moveTo(0f, h * 0.6f)
-            lineTo(w * 0.25f, h * 0.6f)
-            lineTo(w * 0.25f, h * 0.3f)
-            lineTo(w * 0.5f, h * 0.3f)
-            lineTo(w * 0.5f, h * 0.5f)
-            lineTo(w * 0.75f, h * 0.5f)
-            lineTo(w * 0.75f, h * 0.4f)
-            lineTo(w, h * 0.4f)
+            moveTo(0f, h * 0.5f)          // ① START here (50% down)
+            lineTo(w * 0.20f, h * 0.5f)   // ② → flat line to 20% width (same Y)
+            lineTo(w * 0.20f, h * 0.8f)   // ③ ↓ drop down to 70% height
+            lineTo(w * 0.40f, h * 0.8f)   // ④ → flat line to 40% width
+            lineTo(w * 0.40f, h * 0.2f)   // ⑤ ↑ big jump up to 20% height
+            lineTo(w * 0.70f, h * 0.2f)   // ⑥ → long flat line to 70% width
+            lineTo(w * 0.70f, h * 0.8f)   // ⑦ ↓ drop back to 50%
+            lineTo(w, h * 0.8f)           // ⑧ → flat line to end
         }
 
-        // Filled area path (same as line but closed at bottom)
+        // Filled area path
         val fillPath = Path().apply {
-            moveTo(0f, h * 0.6f)
-            lineTo(w * 0.25f, h * 0.6f)
-            lineTo(w * 0.25f, h * 0.3f)
-            lineTo(w * 0.5f, h * 0.3f)
-            lineTo(w * 0.5f, h * 0.5f)
-            lineTo(w * 0.75f, h * 0.5f)
-            lineTo(w * 0.75f, h * 0.4f)
-            lineTo(w, h * 0.4f)
-            // Close the path at the bottom
+            moveTo(0f, h * 0.5f)          // ① START here (50% down)
+            lineTo(w * 0.20f, h * 0.5f)   // ② → flat line to 20% width (same Y)
+            lineTo(w * 0.20f, h * 0.8f)   // ③ ↓ drop down to 70% height
+            lineTo(w * 0.40f, h * 0.8f)   // ④ → flat line to 40% width
+            lineTo(w * 0.40f, h * 0.2f)   // ⑤ ↑ big jump up to 20% height
+            lineTo(w * 0.70f, h * 0.2f)   // ⑥ → long flat line to 70% width
+            lineTo(w * 0.70f, h * 0.8f)   // ⑦ ↓ drop back to 50%
+            lineTo(w, h * 0.8f)           // ⑧ → flat line to end
             lineTo(w, h)
             lineTo(0f, h)
             close()
         }
 
-        // Draw gradient fill
+        // Gradient fill
         drawPath(
             path = fillPath,
             brush = Brush.verticalGradient(
                 colors = listOf(
-                    color.copy(alpha = 0.3f),
-                    color.copy(alpha = 0.05f)
+                    spo2Blue.copy(alpha = 0.3f),
+                    spo2Blue.copy(alpha = 0.05f)
                 ),
                 startY = 0f,
                 endY = h
             )
         )
 
-        // Draw the step line on top
+        // Step line on top
         drawPath(
             path = linePath,
-            color = color,
-            style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Square)
+            color = spo2Blue,
+            style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Square)
         )
     }
 }

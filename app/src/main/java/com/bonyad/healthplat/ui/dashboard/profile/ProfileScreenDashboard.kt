@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.compose.rememberNavController
 import com.bonyad.healthplat.R
@@ -43,11 +44,76 @@ fun ProfileScreenDashboard(
     val currentGoal by viewModel.currentGoal.collectAsState()
     val goalProgress by viewModel.goalProgress.collectAsState()
     val nightModeEnabled by viewModel.nightModeEnabled.collectAsState()
+    val showLogoutDialog by viewModel.showLogoutDialog.collectAsState()
 
     LaunchedEffect(Unit) {
         viewModel.navigationEvent.collect { event ->
             when (event) {
                 is ProfileNavigationEvent.NavigateToLogin -> onNavigateToLogin()
+            }
+        }
+    }
+
+    if (showLogoutDialog) {
+        Dialog(onDismissRequest = { viewModel.dismissLogoutDialog() }) {
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "خروج از حساب",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = Color(0xFF2C2C2C)
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "آیا مطمئن هستید که می‌خواهید از حساب خود خارج شوید؟",
+                        fontSize = 14.sp,
+                        color = Color(0xFF666666),
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
+                    ) {
+                        Button(
+                            onClick = { viewModel.dismissLogoutDialog() },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFF0F0F0),
+                                contentColor = Color(0xFF6B6B6B)
+                            )
+                        ) {
+                            Text("انصراف", fontSize = 14.sp)
+                        }
+
+                        Button(
+                            onClick = { viewModel.confirmLogout() },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFE53935),
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Text("بله، خروج", fontSize = 14.sp)
+                        }
+                    }
+                }
             }
         }
     }
@@ -78,7 +144,8 @@ fun ProfileScreenDashboard(
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color(0xFFF5F5F5)
-                )
+                ),
+                windowInsets = WindowInsets(top = 8.dp)
             )
         },
         containerColor = Color(0xFFF5F5F5)
@@ -212,7 +279,7 @@ fun ProfileScreenDashboard(
                 MenuItemRow(
                     icon = painterResource(R.drawable.logout),
                     title = "خروج",
-                    onClick = { viewModel.logout() },
+                    onClick = { viewModel.showLogoutConfirmation() },
                     iconTint = Color(0xFF6B6B6B)
                 )
             }

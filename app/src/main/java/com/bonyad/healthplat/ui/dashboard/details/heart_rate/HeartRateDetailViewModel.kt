@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bonyad.healthplat.blesdk.manager.HealthDeviceManager
 import com.bonyad.healthplat.data.local.UserPreferencesDataStore
-import com.bonyad.healthplat.data.network.HealthPlatApiService
 import com.bonyad.healthplat.data.repository.HealthDataRepository
 import com.bonyad.healthplat.data.repository.MetricType
 import com.bonyad.healthplat.domain.model.MetricData
@@ -22,6 +21,7 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.GregorianCalendar
 import javax.inject.Inject
+import kotlin.math.abs
 
 
 data class HeartRateRangePoint(
@@ -84,39 +84,36 @@ class HeartRateDetailViewModel @Inject constructor(
     private val _hrvChartData = MutableStateFlow<List<Int>>(emptyList())
     val hrvChartData: StateFlow<List<Int>> = _hrvChartData.asStateFlow()
 
-    // Add this function
-    private fun updateCurrentPersianDate(offset: Int = 0) {
-        val today = LocalDate.now()
-        val targetDate = today.plusDays(offset.toLong())
-        val calendar = GregorianCalendar(targetDate.year, targetDate.monthValue - 1, targetDate.dayOfMonth)
-        val pDate = PersianDate(calendar.time)
-        val dayOfMonth = pDate.shDay.toString().toFarsiDigits()
-        val monthName = pDate.monthName
-
-        _currentPersianDate.value = when (offset) {
-            0 -> "امروز $dayOfMonth $monthName"
-            -1 -> "دیروز $dayOfMonth $monthName"
-            else -> "$monthName $dayOfMonth"
-        }
-    }
-
     // Loading state
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     init {
-        updateCurrentPersianDate()
+        updateDateLabel(_selectedDayOffset.value)
         loadDataFromApi()
         observeRealTimeData()
     }
 
+    // ============ Sync: Ring → Server → API fetch → Display ============
+
     fun refreshData() {
-        loadDataFromApi()
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                // Step 1 & 2: Read from ring + upload to server
+                val syncDay = abs(_selectedDayOffset.value)
+                healthRepository.syncDashboardData(syncDay)
+                Timber.i("✅ Ring data synced to server for day $syncDay")
+            } catch (e: Exception) {
+                Timber.e(e, "⚠️ Ring→Server sync failed, loading from API anyway")
+            }
+            // Step 3: Fetch from server & display
+            loadDataFromApi()
+        }
     }
 
-    /**
-     * Load both Heart Rate and HRV data from API
-     */
+    // ============ PRIMARY: Load from API ============
+
     private fun loadDataFromApi() {
         viewModelScope.launch {
             _isLoading.value = true
@@ -178,18 +175,17 @@ class HeartRateDetailViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Get date range based on selected time range
-     */
+    // ============ Date Range ============
+
     private fun getDateRange(): Pair<String, String> {
         val today = LocalDate.now()
-        val formatter = DateTimeFormatter.ISO_LOCAL_DATE // yyyy-MM-dd
+        val formatter = DateTimeFormatter.ISO_LOCAL_DATE
 
         return when (_selectedTimeRange.value) {
             "روزانه" -> {
                 val targetDate = today.plusDays(_selectedDayOffset.value.toLong())
                 val dateStr = targetDate.format(formatter)
-                updateCurrentPersianDate(_selectedDayOffset.value)
+                updateDateLabel(_selectedDayOffset.value)
                 Pair(dateStr, dateStr)
             }
             "هفتگی" -> {
@@ -208,6 +204,23 @@ class HeartRateDetailViewModel @Inject constructor(
                 val dateStr = today.format(formatter)
                 Pair(dateStr, dateStr)
             }
+        }
+    }
+
+    // ============ Standardized Date Label ============
+
+    private fun updateDateLabel(offset: Int) {
+        val today = LocalDate.now()
+        val targetDate = today.plusDays(offset.toLong())
+        val calendar = GregorianCalendar(targetDate.year, targetDate.monthValue - 1, targetDate.dayOfMonth)
+        val pDate = PersianDate(calendar.time)
+        val dayOfMonth = pDate.shDay.toString().toFarsiDigits()
+        val monthName = pDate.monthName
+
+        _currentPersianDate.value = when (offset) {
+            0 -> "امروز $dayOfMonth $monthName"
+            -1 -> "دیروز $dayOfMonth $monthName"
+            else -> "$dayOfMonth $monthName"
         }
     }
 
@@ -364,7 +377,7 @@ class HeartRateDetailViewModel @Inject constructor(
         _minHrv.value = validData.minOrNull() ?: 0
         _maxHrv.value = validData.maxOrNull() ?: 0
         _currentHrv.value = validData.lastOrNull() ?: 0
-        _hrvChartData.value = validData // Store for chart
+        _hrvChartData.value = validData
 
         Timber.d("📊 HRV Stats - Avg: ${_avgHrv.value}, Min: ${_minHrv.value}, Max: ${_maxHrv.value}, Current: ${_currentHrv.value}")
     }
@@ -438,7 +451,7 @@ class HeartRateDetailViewModel @Inject constructor(
 
     fun selectDay(offset: Int) {
         _selectedDayOffset.value = offset
-        updateCurrentPersianDate(offset)
+        updateDateLabel(offset)
         if (_selectedTimeRange.value == "روزانه") {
             loadDataFromApi()
         }
@@ -463,7 +476,7 @@ class HeartRateDetailViewModel @Inject constructor(
         _hrvChartData.value = emptyList()
     }
 
-    // Real-time data observation (optional)
+    // Real-time data observation
     private fun observeRealTimeData() {
         viewModelScope.launch {
             deviceManager.realTimeData.collect { data ->

@@ -46,7 +46,7 @@ import kotlinx.coroutines.delay
 // Colors - Same as PersonalInfoScreen
 private val TealPrimary = Color(0xFF5BA3A3)
 private val TextDark = Color(0xFF2C2C2C)
-private val TextGray = Color(0xFF666666)
+private val TextGray = Color(0xFF6B6B6B)
 private val PlaceholderColor = Color(0xFFCCCCCC)
 private val InputBorder = Color(0xFFE0E0E0)
 private val InputBackground = Color.White
@@ -131,11 +131,11 @@ fun EditPersonalInfoScreen(
                         }
                     },
                     actions = {
-                        IconButton(onClick = onBack) {
+                        IconButton(onClick = onBack, modifier = Modifier.size(24.dp).padding(end = 8.dp)) {
                             Icon(
                                 painter = painterResource(id = R.drawable.back_arrow),
                                 contentDescription = "Back",
-                                tint = TextDark,
+                                tint = TextGray,
                                 modifier = Modifier.size(24.dp)
                             )
                         }
@@ -477,12 +477,15 @@ fun MultiDiseasePickerBottomSheet(
     viewModel: PersonalInfoViewModel,
     onDismiss: () -> Unit
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = { it != SheetValue.Hidden }
+    )
     val availableDiseases by viewModel.availableDiseases.collectAsState()
     val selectedDiseaseIds by viewModel.selectedDiseaseIds.collectAsState()
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {  } ,
         sheetState = sheetState,
         containerColor = Color.White,
         dragHandle = {
@@ -561,6 +564,17 @@ fun MultiDiseasePickerBottomSheet(
                         fontSize = 16.sp
                     ),
                     color = Color.White
+                )
+            }
+
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "انصراف",
+                    color = TextGray,
+                    fontSize = 14.sp
                 )
             }
 

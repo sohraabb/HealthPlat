@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,7 +32,7 @@ import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.bonyad.healthplat.domain.model.CarePermissions
 import com.bonyad.healthplat.domain.model.CaregiverUiModel
 import com.google.zxing.BarcodeFormat
@@ -63,6 +64,8 @@ fun CareScreen(
     // Patient overview state
     val showPatientOverview by viewModel.showPatientOverview.collectAsState()
     val selectedPatient by viewModel.selectedPatient.collectAsState()
+
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -155,7 +158,8 @@ fun CareScreen(
                     titleContentColor = ComposeColor(0xFF2C2C2C),
                     navigationIconContentColor = ComposeColor(0xFF666666),
                     actionIconContentColor = ComposeColor(0xFF5BA3A3)
-                )
+                ),
+                windowInsets = WindowInsets(top = 8.dp)
             )
         },
         floatingActionButton = {
@@ -170,79 +174,84 @@ fun CareScreen(
         },
         containerColor = ComposeColor(0xFFF5F5F5)
     ) { paddingValues ->
-        Box(
+
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = { viewModel.refresh() },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 24.dp)
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = 16.dp,
+                    bottom = 120.dp
+                ),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                CareTabSelector(
-                    selectedTab = selectedTab,
-                    onTabSelected = { viewModel.onTabSelected(it) }
-                )
+                // Tab selector as first item
+                item {
+                    CareTabSelector(
+                        selectedTab = selectedTab,
+                        onTabSelected = { viewModel.onTabSelected(it) }
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
 
-                Spacer(modifier = Modifier.height(16.dp))
-
+                // Content based on tab
                 when (selectedTab) {
                     CareTab.MY_CAREGIVERS -> {
                         if (myCaregivers.isEmpty() && !isLoading) {
-                            EmptyStateMessage(
-                                message = "هنوز کسی به عنوان تن‌بار شما ثبت نشده است.\nبرای افزودن، دکمه + را بزنید."
-                            )
+                            item {
+                                EmptyStateMessage(
+                                    message = "هنوز کسی به عنوان تن‌بار شما ثبت نشده است.\nبرای افزودن، دکمه + را بزنید."
+                                )
+                            }
                         } else {
-                            LazyColumn(
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
-                                contentPadding = PaddingValues(bottom = 120.dp)
-                            ) {
-                                items(myCaregivers) { caregiver ->
-                                    CaregiverCard(
-                                        caregiver = caregiver,
-                                        showAcceptButton = false,
-                                        onAccept = null,
-                                        onEdit = { viewModel.onEditCaregiver(caregiver) },
-                                        onDelete = { viewModel.onDeleteCaregiver(caregiver) },
-                                        onClick = null
-                                    )
-                                }
+                            items(myCaregivers) { caregiver ->
+                                CaregiverCard(
+                                    caregiver = caregiver,
+                                    showAcceptButton = false,
+                                    onAccept = null,
+                                    onEdit = { viewModel.onEditCaregiver(caregiver) },
+                                    onDelete = { viewModel.onDeleteCaregiver(caregiver) },
+                                    onClick = null
+                                )
                             }
                         }
                     }
 
                     CareTab.I_AM_CAREGIVER -> {
                         if (iAmCaregiverFor.isEmpty() && !isLoading) {
-                            EmptyStateMessage(
-                                message = "شما هنوز تن‌بار کسی نیستید.\nکسانی که شماره شما را ثبت کنند اینجا نمایش داده می‌شوند."
-                            )
+                            item {
+                                EmptyStateMessage(
+                                    message = "شما هنوز تن‌بار کسی نیستید.\nکسانی که شماره شما را ثبت کنند اینجا نمایش داده می‌شوند."
+                                )
+                            }
                         } else {
-                            LazyColumn(
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
-                                contentPadding = PaddingValues(bottom = 100.dp)
-                            ) {
-                                items(iAmCaregiverFor) { person ->
-                                    CaregiverCard(
-                                        caregiver = person,
-                                        showAcceptButton = person.isPending,
-                                        onAccept = { viewModel.onAcceptCaregiverRequest(person.id) },
-                                        onEdit = null,
-                                        onDelete = { viewModel.onRemoveCaregiverRole(person) },
-                                        onClick = {
-                                            if (!person.isPending) {
-                                                viewModel.onOpenPatientOverview(person)
-                                            }
+                            items(iAmCaregiverFor) { person ->
+                                CaregiverCard(
+                                    caregiver = person,
+                                    showAcceptButton = person.isPending,
+                                    onAccept = { viewModel.onAcceptCaregiverRequest(person.id) },
+                                    onEdit = null,
+                                    onDelete = { viewModel.onRemoveCaregiverRole(person) },
+                                    onClick = {
+                                        if (!person.isPending) {
+                                            viewModel.onOpenPatientOverview(person)
                                         }
-                                    )
-                                }
+                                    }
+                                )
                             }
                         }
                     }
                 }
             }
 
-            // Loading overlay
+            // Loading overlay stays outside LazyColumn, inside PullToRefreshBox
             if (isLoading) {
                 Box(
                     modifier = Modifier

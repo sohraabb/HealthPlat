@@ -102,6 +102,9 @@ class CareViewModel @Inject constructor(
     private val _uiEvents = MutableSharedFlow<CareUiEvent>()
     val uiEvents = _uiEvents.asSharedFlow()
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
     init {
         loadAllData()
     }
@@ -135,6 +138,19 @@ class CareViewModel @Inject constructor(
 
     fun loadCareData() {
         loadDataForCurrentTab()
+    }
+
+    fun refresh() {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            try {
+                loadCaregivers()
+                loadMyPatients()
+
+            } finally {
+                _isRefreshing.value = false
+            }
+        }
     }
 
     private suspend fun loadCaregivers() {

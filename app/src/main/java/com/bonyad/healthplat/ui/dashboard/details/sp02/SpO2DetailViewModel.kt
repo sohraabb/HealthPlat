@@ -16,10 +16,10 @@ import kotlinx.coroutines.launch
 import saman.zamani.persiandate.PersianDate
 import timber.log.Timber
 import java.time.LocalDate
-import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.GregorianCalendar
 import javax.inject.Inject
+import kotlin.math.abs
 
 @HiltViewModel
 class SpO2DetailViewModel @Inject constructor(
@@ -75,108 +75,160 @@ class SpO2DetailViewModel @Inject constructor(
     val rangeText: StateFlow<String> = _rangeText.asStateFlow()
 
     init {
-        loadSpO2Data(0)
+        loadSpO2Data()
     }
 
+    // ============ Sync: Ring → Server → API fetch → Display ============
+
     fun refreshData() {
-        loadSpO2Data(_selectedDayOffset.value)
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val syncDay = abs(_selectedDayOffset.value)
+                healthRepository.syncDashboardData(syncDay)
+                Timber.i("✅ Ring SpO2 data synced to server for day $syncDay")
+            } catch (e: Exception) {
+                Timber.e(e, "⚠️ Ring→Server sync failed, loading from API anyway")
+            }
+            loadSpO2Data()
+        }
     }
 
     fun setTimeRange(range: String) {
         _selectedTimeRange.value = range
-        loadSpO2Data(_selectedDayOffset.value)
+        loadSpO2Data()
     }
 
     fun selectDay(offset: Int) {
         _selectedDayOffset.value = offset
-        updateDateLabel(offset)
-        loadSpO2Data(offset)
+        if (_selectedTimeRange.value == "روزانه") {
+            loadSpO2Data()
+        }
     }
 
-    // ============ PRIMARY: Load from Ring ============
+    // ============ Date Range (consistent with all other VMs) ============
 
-    private fun loadSpO2Data(offset: Int) {
+    private fun getDateRange(): Pair<String, String> {
+        val today = LocalDate.now()
+        val formatter = DateTimeFormatter.ISO_LOCAL_DATE
+
+        return when (_selectedTimeRange.value) {
+            "روزانه" -> {
+                val targetDate = today.plusDays(_selectedDayOffset.value.toLong())
+                val dateStr = targetDate.format(formatter)
+                updateDateLabel(targetDate)
+                Pair(dateStr, dateStr)
+            }
+            "هفتگی" -> {
+                val dateFrom = today.minusDays(6).format(formatter)
+                val dateTo = today.format(formatter)
+                _dateLabel.value = "هفته گذشته"
+                Pair(dateFrom, dateTo)
+            }
+            "ماهانه" -> {
+                val dateFrom = today.minusDays(29).format(formatter)
+                val dateTo = today.format(formatter)
+                _dateLabel.value = "ماه گذشته"
+                Pair(dateFrom, dateTo)
+            }
+            else -> {
+                val dateStr = today.format(formatter)
+                Pair(dateStr, dateStr)
+            }
+        }
+    }
+
+    // ============ Standardized Date Label ============
+
+    private fun updateDateLabel(date: LocalDate) {
+        val today = LocalDate.now()
+        val calendar = GregorianCalendar(date.year, date.monthValue - 1, date.dayOfMonth)
+        val pDate = PersianDate(calendar.time)
+        val dayOfMonth = pDate.shDay.toString().toFarsiDigits()
+        val monthName = pDate.monthName
+
+        _dateLabel.value = when {
+            date == today -> "امروز $dayOfMonth $monthName"
+            date == today.minusDays(1) -> "دیروز $dayOfMonth $monthName"
+            else -> "$dayOfMonth $monthName"
+        }
+    }
+
+    // ============ PRIMARY: Load from API ============
+
+    private fun loadSpO2Data() {
         viewModelScope.launch {
             _isLoading.value = true
 
-            // Update date label based on time range
-            when (_selectedTimeRange.value) {
-                "هفتگی" -> _dateLabel.value = "هفته گذشته"
-                "ماهانه" -> _dateLabel.value = "ماه گذشته"
-                else -> updateDateLabel(offset)
-            }
-
             try {
-                // PRIMARY: Try ring first
-                val result = deviceManager.getRecordData(offset)
+                val (dateFrom, dateTo) = getDateRange()
+                Timber.i("📡 Fetching SpO2 from API: $dateFrom to $dateTo")
 
-                if (result is RecordDataResult.Success &&
-                    result.spo2?.sourceList?.any { it > 0 } == true) {
-
-                    val spo2List = result.spo2.sourceList
-                    Timber.i("📊 SpO2 from RING: ${spo2List.size} values")
-                    processSpO2Data(spo2List)
-
-                } else {
-                    // FALLBACK: Try API (but data might be corrupted)
-                    Timber.w("⚠️ No ring data, trying API fallback...")
-                    loadSpO2FromApi(offset)
-                }
-
+                healthRepository.getMetricData(
+                    metricType = MetricType.SPO2,
+                    dateFrom = dateFrom,
+                    dateTo = dateTo
+                ).fold(
+                    onSuccess = { metricsData ->
+                        if (metricsData.isNotEmpty()) {
+                            when (_selectedTimeRange.value) {
+                                "روزانه" -> {
+                                    val values = metricsData.first().values
+                                    val cleanedValues = if (values.size > 48 && values.size % 48 == 0) {
+                                        Timber.w("⚠️ API data duplicated (${values.size}), taking first 48")
+                                        values.take(48)
+                                    } else {
+                                        values
+                                    }
+                                    processSpO2Data(cleanedValues)
+                                }
+                                "هفتگی", "ماهانه" -> {
+                                    processMultiDaySpO2(metricsData)
+                                }
+                            }
+                            Timber.i("✅ SpO2 loaded from API: ${metricsData.size} records")
+                        } else {
+                            Timber.w("⚠️ No SpO2 data from API, trying ring fallback...")
+                            loadSpO2FromRing(_selectedDayOffset.value)
+                        }
+                    },
+                    onFailure = { error ->
+                        Timber.e(error, "❌ SpO2 API error, trying ring fallback...")
+                        loadSpO2FromRing(_selectedDayOffset.value)
+                    }
+                )
             } catch (e: Exception) {
-                Timber.e(e, "❌ Failed to load SpO2 from ring")
-                loadSpO2FromApi(offset)
+                Timber.e(e, "❌ Failed to load SpO2 from API")
+                loadSpO2FromRing(_selectedDayOffset.value)
             } finally {
                 _isLoading.value = false
             }
         }
     }
 
-    // ============ FALLBACK: Load from API ============
+    // ============ FALLBACK: Load from Ring ============
 
-    private suspend fun loadSpO2FromApi(offset: Int) {
+    private suspend fun loadSpO2FromRing(offset: Int) {
         try {
-            val today = LocalDate.now()
-            val targetDate = today.plusDays(offset.toLong())
-            val dateStr = targetDate.format(DateTimeFormatter.ISO_LOCAL_DATE)
+            val result = deviceManager.getRecordData(offset)
 
-            Timber.d("📡 SpO2 API fallback: $dateStr")
-
-            healthRepository.getMetricData(
-                metricType = MetricType.SPO2,
-                dateFrom = dateStr,
-                dateTo = dateStr
-            ).fold(
-                onSuccess = { metricsData ->
-                    if (metricsData.isNotEmpty()) {
-                        val values = metricsData.first().values
-
-                        // Backend bug: data is duplicated. Expected 48, got 768 (16x)
-                        // Take only first 48 values if data looks duplicated
-                        val cleanedValues = if (values.size > 48 && values.size % 48 == 0) {
-                            Timber.w("⚠️ API data duplicated (${values.size}), taking first 48")
-                            values.take(48)
-                        } else {
-                            values
-                        }
-
-                        processSpO2Data(cleanedValues)
-                    } else {
-                        clearData()
-                    }
-                },
-                onFailure = { error ->
-                    Timber.e(error, "❌ SpO2 API error")
-                    clearData()
-                }
-            )
+            if (result is RecordDataResult.Success &&
+                result.spo2?.sourceList?.any { it > 0 } == true
+            ) {
+                val spo2List = result.spo2.sourceList
+                Timber.i("✅ SpO2 loaded from ring fallback: ${spo2List.size} values")
+                processSpO2Data(spo2List)
+            } else {
+                Timber.w("⚠️ No SpO2 data from ring either")
+                clearData()
+            }
         } catch (e: Exception) {
-            Timber.e(e, "❌ SpO2 API fallback failed")
+            Timber.e(e, "❌ Ring fallback also failed")
             clearData()
         }
     }
 
-    // ============ Process Data (same for ring & API) ============
+    // ============ Process Single Day Data ============
 
     private fun processSpO2Data(spo2List: List<Int>) {
         val validData = spo2List.filter { it > 0 }
@@ -192,12 +244,10 @@ class SpO2DetailViewModel @Inject constructor(
         _minSpO2.value = validData.minOrNull() ?: 0
         _maxSpO2.value = validData.maxOrNull() ?: 0
 
-        // Convert to scatter points (pass full list to preserve indices)
         _chartData.value = convertToScatterPoints(spo2List)
 
         val avg = validData.average().toInt()
 
-        // Find last valid time
         val lastValidIndex = spo2List.indexOfLast { it > 0 }
         val lastTime = if (lastValidIndex >= 0) {
             indexToTimeLabel(lastValidIndex, spo2List.size)
@@ -216,12 +266,71 @@ class SpO2DetailViewModel @Inject constructor(
         Timber.i("✅ SpO2: ${validData.size} points, avg=$avg, range=${_minSpO2.value}-${_maxSpO2.value}")
     }
 
+    // ============ Process Multi-Day Data (weekly/monthly) ============
+
+    private fun processMultiDaySpO2(metricsData: List<MetricData>) {
+        val allValid = metricsData.flatMap { it.values }.filter { it > 0 }
+
+        if (allValid.isEmpty()) {
+            clearData()
+            return
+        }
+
+        _spo2Data.value = allValid
+        _currentSpO2.value = allValid.lastOrNull() ?: 0
+        _minSpO2.value = allValid.minOrNull() ?: 0
+        _maxSpO2.value = allValid.maxOrNull() ?: 0
+
+        val avg = allValid.average().toInt()
+
+        // Build scatter points distributed across days
+        val points = mutableListOf<SpO2Point>()
+        metricsData.forEachIndexed { dayIndex, metric ->
+            val dayValues = metric.values
+            val totalPointsInDay = dayValues.size
+
+            dayValues.forEachIndexed { pointIndex, value ->
+                if (value > 0) {
+                    // Distribute points across the full chart width
+                    val dayStart = dayIndex.toFloat() / metricsData.size
+                    val dayWidth = 1f / metricsData.size
+                    val withinDayRatio = pointIndex.toFloat() / totalPointsInDay.coerceAtLeast(1)
+                    val ratio = dayStart + (withinDayRatio * dayWidth)
+
+                    points.add(SpO2Point("", ratio.coerceIn(0f, 1f), value))
+                }
+            }
+        }
+        _chartData.value = points
+
+        // Find last measurement time from the last day with data
+        val lastDayWithData = metricsData.lastOrNull { it.values.any { v -> v > 0 } }
+        val lastTime = if (lastDayWithData != null) {
+            val lastValidIndex = lastDayWithData.values.indexOfLast { it > 0 }
+            if (lastValidIndex >= 0) {
+                indexToTimeLabel(lastValidIndex, lastDayWithData.values.size)
+            } else ""
+        } else ""
+
+        _stats.value = SpO2Stats(
+            high = _maxSpO2.value,
+            avg = avg,
+            low = _minSpO2.value,
+            lastValue = _currentSpO2.value,
+            lastTime = lastTime
+        )
+
+        _rangeText.value = "${_minSpO2.value} - ${_maxSpO2.value}"
+
+        Timber.i("✅ SpO2 multi-day: ${allValid.size} valid points, avg=$avg")
+    }
+
+    // ============ Helpers ============
+
     private fun convertToScatterPoints(spo2Data: List<Int>): List<SpO2Point> {
         val points = mutableListOf<SpO2Point>()
         val totalPoints = spo2Data.size
 
-        // SDK: SpO2 = 48 points per day (30 min intervals)
-        // Calculate dynamically in case of different sizes
         val minutesPerPoint = (24.0 * 60.0) / totalPoints
 
         Timber.d("📊 Converting: $totalPoints points, ${minutesPerPoint}min/point")
@@ -247,21 +356,7 @@ class SpO2DetailViewModel @Inject constructor(
         return String.format("%02d:%02d", hour, minute)
     }
 
-    private fun updateDateLabel(offset: Int) {
-        val today = LocalDate.now()
-        val targetDate = today.plusDays(offset.toLong())
-        val calendar =
-            GregorianCalendar(targetDate.year, targetDate.monthValue - 1, targetDate.dayOfMonth)
-        val pDate = PersianDate(calendar.time)
-        val dayOfMonth = pDate.shDay.toString().toFarsiDigits()
-        val monthName = pDate.monthName
-
-        _dateLabel.value = when (offset) {
-            0 -> "امروز $dayOfMonth $monthName"
-            -1 -> "دیروز $dayOfMonth $monthName"
-            else -> "$dayOfMonth $monthName"
-        }
-    }
+    // ============ Clear Data ============
 
     private fun clearData() {
         _currentSpO2.value = 0

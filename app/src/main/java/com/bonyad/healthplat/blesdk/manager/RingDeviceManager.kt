@@ -49,8 +49,10 @@ import kotlinx.coroutines.withTimeout
 import timber.log.Timber
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
+
 
 class RingDeviceManager(private val context: Context) : HealthDeviceManager {
 
@@ -427,7 +429,7 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
         }
         try {
             BonlalaOperateManager.getInstance().getDeviceBattery { battery ->
-                if (battery != null && battery >= 0) {
+                if (battery >= 0) {
                     _batteryLevel.value = battery
                     Timber.i("🔋 Battery: $battery%")
                 } else {
@@ -478,23 +480,41 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
         }
 
     override suspend fun getRecordData(day: Int): RecordDataResult {
-        if (!_isPaired.value) return RecordDataResult.Error(-3)
-        if (_connectionState.value != ConnectionState.CONNECTED) return RecordDataResult.Error(-1)
+        Timber.i("📊 Requesting record data for day: $day")
+
+        if (!_isPaired.value) {
+            Timber.w("❌ Cannot get record data - device not paired")
+            return RecordDataResult.Error(-3)
+        }
+
+        if (_connectionState.value != ConnectionState.CONNECTED) {
+            Timber.w("❌ Cannot get record data - device not connected")
+            return RecordDataResult.Error(-1)
+        }
+
         return retryRecordData(day, attempt = 1)
     }
 
     private suspend fun retryRecordData(day: Int, attempt: Int): RecordDataResult {
-        if (attempt > 5) return RecordDataResult.Error(-99)
+        if (attempt > MAX_SYNC_ATTEMPTS) {
+            Timber.w("❌ Max retry attempts ($MAX_SYNC_ATTEMPTS) reached for day $day")
+            return RecordDataResult.Error(-99)
+        }
+
+        Timber.i("🔄 Sync attempt #$attempt for day $day")
 
         val result = try {
-            withTimeout(15000L) {
+            withTimeout(SYNC_TIMEOUT_MS) {
                 suspendCancellableCoroutine<RecordDataResult> { continuation ->
                     BonlalaOperateManager.getInstance().getRecordByData(
                         day,
                         object : OnRecordDataListener {
                             override fun isNoResponseData(dayStr: String, stateCode: Int) {
+                                Timber.w("⚠️ Sync Error day $dayStr: Code $stateCode")
                                 if (continuation.isActive) {
                                     continuation.resume(RecordDataResult.Error(stateCode))
+                                } else {
+                                    Timber.w("⚠️ isNoResponseData fired after timeout (code $stateCode)")
                                 }
                             }
 
@@ -508,7 +528,20 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
                                 recordHrvBean: RecordHrvBean?,
                                 recordSleepActivityBean: RecordSleepActivityBean?
                             ) {
+                                val hasAnyData = recordHeartBean != null || recordStepBean != null ||
+                                        recordSleepBean != null || recordStressBean != null ||
+                                        recordSpo2Bean != null || recordHrvBean != null
+
+                                if (!hasAnyData) {
+                                    Timber.w("⚠️ backRecordData fired but all beans are null")
+                                    if (continuation.isActive) {
+                                        continuation.resume(RecordDataResult.Error(6))
+                                    }
+                                    return
+                                }
+
                                 if (continuation.isActive) {
+                                    Timber.i("✅ backRecordData received valid data on attempt #$attempt")
                                     continuation.resume(
                                         RecordDataResult.Success(
                                             heartRate = recordHeartBean,
@@ -519,21 +552,47 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
                                             hrv = recordHrvBean
                                         )
                                     )
+                                } else {
+                                    // Data arrived AFTER the timeout window. The ring had the data,
+                                    // it was just slow to deliver it. Next retry should succeed faster.
+                                    Timber.w("⚠️ backRecordData fired AFTER timeout on attempt #$attempt — data exists but arrived too late")
                                 }
                             }
                         }
                     )
                 }
             }
+        } catch (e: TimeoutCancellationException) {
+            // Timeout IS retriable — the ring may just be processing slowly this cycle
+            Timber.w("⏰ Sync timed out on attempt #$attempt after ${SYNC_TIMEOUT_MS}ms for day $day")
+            RecordDataResult.Error(ERROR_TIMEOUT)
+        } catch (e: CancellationException) {
+            // Always re-throw regular cancellation — never swallow this for structured concurrency
+            Timber.w("🚫 Sync coroutine was cancelled for day $day")
+            throw e
         } catch (e: Exception) {
+            Timber.e(e, "❌ Sync unexpected exception on attempt #$attempt")
             RecordDataResult.Error(-1)
         }
 
-        if (result is RecordDataResult.Error && (result.code == 4 || result.code == 5)) {
-            delay(1500)
-            return retryRecordData(day, attempt + 1)
+        return when {
+            result is RecordDataResult.Success -> {
+                Timber.i("✅ Sync success on attempt #$attempt for day $day")
+                result
+            }
+
+            result is RecordDataResult.Error && result.code in RETRIABLE_ERROR_CODES -> {
+                val delayMs = retryDelayFor(result.code, attempt)
+                Timber.i("⏳ Retriable error (code ${result.code}). Waiting ${delayMs}ms before attempt #${attempt + 1}...")
+                delay(delayMs)
+                retryRecordData(day, attempt + 1)
+            }
+
+            else -> {
+                Timber.w("⚠️ Non-retriable error (code ${(result as? RecordDataResult.Error)?.code}) for day $day")
+                result
+            }
         }
-        return result
     }
 
     override fun setUserId(userId: Long) {
@@ -655,5 +714,29 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
                 _initializationComplete.emit(Unit) // always emit so ViewModel doesn't hang
             }
         }
+    }
+
+    private fun retryDelayFor(errorCode: Int, attempt: Int): Long {
+        return when (errorCode) {
+            4    -> 3000L + (attempt * 500L)       // 3.5s, 4.0s, 4.5s, 5.0s
+            5    -> 2000L                           // Device busy: fixed 2s
+            ERROR_TIMEOUT -> minOf(                 // Timeout: capped exponential backoff
+                2000L * attempt,
+                10_000L
+            )
+            else -> 1500L
+        }
+    }
+
+    companion object {
+        private const val MAX_SYNC_ATTEMPTS = 5
+        private const val SYNC_TIMEOUT_MS  = 25_000L
+        private const val ERROR_TIMEOUT    = -98
+
+        private val RETRIABLE_ERROR_CODES = setOf(
+            4,
+            5,
+            ERROR_TIMEOUT
+        )
     }
 }

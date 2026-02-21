@@ -465,7 +465,7 @@ fun NewHealthStatusCard(
             ) {
                 // Circle section
                 HealthScoreCircle(
-                    score = score,
+                    score = 100,
                     modifier = Modifier.size(124.dp)
                 )
 

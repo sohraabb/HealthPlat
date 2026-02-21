@@ -386,7 +386,6 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
-
     private suspend fun loadUserData() {
         userPreferences.getUserName().collect { name ->
             _userName.value = name
@@ -473,7 +472,7 @@ class DashboardViewModel @Inject constructor(
                             Timber.e(e, "Refresh sync failed")
                         }
                     }
-                    historySyncJob?.join() // wait for it
+                    historySyncJob?.join()
                 }
             } finally {
                 _isRefreshing.value = false

@@ -9,11 +9,9 @@ import com.bonyad.healthplat.domain.model.MetricData
 import com.bonyad.healthplat.domain.model.RecordDataResult
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import saman.zamani.persiandate.PersianDate
 import timber.log.Timber
@@ -21,6 +19,7 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.GregorianCalendar
 import javax.inject.Inject
+import kotlin.math.abs
 
 @HiltViewModel
 class StepsDetailViewModel @Inject constructor(
@@ -37,12 +36,20 @@ class StepsDetailViewModel @Inject constructor(
     private val _averageSteps = MutableStateFlow(0)
     val averageSteps: StateFlow<Int> = _averageSteps.asStateFlow()
 
-    data class StepBarPoint(val hourLabel: String, val steps: Int, val isSelected: Boolean = false)
+    data class StepBarPoint(
+        val hourLabel: String,
+        val steps: Int,
+        val isSelected: Boolean = false
+    )
 
     private val _barChartData = MutableStateFlow<List<StepBarPoint>>(emptyList())
     val barChartData: StateFlow<List<StepBarPoint>> = _barChartData.asStateFlow()
 
-    data class ComparisonPoint(val timeRatio: Float, val todaySteps: Int, val avgSteps: Int)
+    data class ComparisonPoint(
+        val timeRatio: Float,
+        val todaySteps: Int,
+        val avgSteps: Int
+    )
 
     private val _comparisonData = MutableStateFlow<List<ComparisonPoint>>(emptyList())
     val comparisonData: StateFlow<List<ComparisonPoint>> = _comparisonData.asStateFlow()
@@ -56,18 +63,11 @@ class StepsDetailViewModel @Inject constructor(
     private val _selectedDayOffset = MutableStateFlow(0)
     val selectedDayOffset = _selectedDayOffset.asStateFlow()
 
-    // ── Loading: server → UI ──────────────────────────────────────────────────
+    // Loading state
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    // ── Syncing: device → server ──────────────────────────────────────────────
-    private val _isSyncing = MutableStateFlow(false)
-    val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
-
-    // ── One-time snackbar events ──────────────────────────────────────────────
-    private val _syncMessage = Channel<String>(Channel.BUFFERED)
-    val syncMessage = _syncMessage.receiveAsFlow()
-
+    // Date label for display
     private val _dateLabel = MutableStateFlow("")
     val dateLabel: StateFlow<String> = _dateLabel.asStateFlow()
 
@@ -75,27 +75,18 @@ class StepsDetailViewModel @Inject constructor(
         loadStepsFromApi()
     }
 
-    // ── Public actions ────────────────────────────────────────────────────────
+    // ============ Sync: Ring → Server → API fetch → Display ============
 
     fun refreshData() {
         viewModelScope.launch {
-            // Phase 1 — Device → Server
-            _isSyncing.value = true
+            _isLoading.value = true
             try {
-                when (val result = healthRepository.syncDashboardData(day = 0)) {
-                    is RecordDataResult.Success ->
-                        _syncMessage.trySend("تعداد قدم به‌روز شد ✓")
-                    is RecordDataResult.Error ->
-                        _syncMessage.trySend("دستگاه متصل نیست — نمایش آخرین داده")
-                }
+                val syncDay = abs(_selectedDayOffset.value)
+                healthRepository.syncDashboardData(syncDay)
+                Timber.i("✅ Ring steps data synced to server for day $syncDay")
             } catch (e: Exception) {
-                Timber.w(e, "Steps sync failed")
-                _syncMessage.trySend("خطا در همگام‌سازی")
-            } finally {
-                _isSyncing.value = false
+                Timber.e(e, "⚠️ Ring→Server sync failed, loading from API anyway")
             }
-
-            // Phase 2 — Reload (always runs)
             loadStepsFromApi()
         }
     }
@@ -107,28 +98,90 @@ class StepsDetailViewModel @Inject constructor(
 
     fun selectDay(offset: Int) {
         _selectedDayOffset.value = offset
-        if (_selectedTimeRange.value == "روزانه") loadStepsFromApi()
+        if (_selectedTimeRange.value == "روزانه") {
+            loadStepsFromApi()
+        }
     }
 
-    // ── Private: data loading ─────────────────────────────────────────────────
+    // ============ Date Range ============
+
+    private fun getDateRange(): Pair<String, String> {
+        val today = LocalDate.now()
+        val formatter = DateTimeFormatter.ISO_LOCAL_DATE
+
+        return when (_selectedTimeRange.value) {
+            "روزانه" -> {
+                val targetDate = today.plusDays(_selectedDayOffset.value.toLong())
+                val dateStr = targetDate.format(formatter)
+                updateDateLabel(targetDate)
+                Pair(dateStr, dateStr)
+            }
+            "هفتگی" -> {
+                val dateFrom = today.minusDays(6).format(formatter)
+                val dateTo = today.format(formatter)
+                _dateLabel.value = "هفته گذشته"
+                Pair(dateFrom, dateTo)
+            }
+            "ماهانه" -> {
+                val dateFrom = today.minusDays(29).format(formatter)
+                val dateTo = today.format(formatter)
+                _dateLabel.value = "ماه گذشته"
+                Pair(dateFrom, dateTo)
+            }
+            else -> {
+                val dateStr = today.format(formatter)
+                Pair(dateStr, dateStr)
+            }
+        }
+    }
+
+    // ============ Standardized Date Label ============
+
+    private fun updateDateLabel(date: LocalDate) {
+        val today = LocalDate.now()
+        val calendar = GregorianCalendar(date.year, date.monthValue - 1, date.dayOfMonth)
+        val pDate = PersianDate(calendar.time)
+        val dayOfMonth = pDate.shDay.toString().toFarsiDigits()
+        val monthName = pDate.monthName
+
+        _dateLabel.value = when {
+            date == today -> "امروز $dayOfMonth $monthName"
+            date == today.minusDays(1) -> "دیروز $dayOfMonth $monthName"
+            else -> "$dayOfMonth $monthName"
+        }
+    }
+
+    // ============ PRIMARY: Load from API ============
 
     private fun loadStepsFromApi() {
         viewModelScope.launch {
             _isLoading.value = true
+
             try {
                 val (dateFrom, dateTo) = getDateRange()
-                Timber.i("📡 Fetching steps: $dateFrom → $dateTo")
 
-                healthRepository.getMetricData(MetricType.STEPS, dateFrom, dateTo).fold(
+                Timber.i("📡 Fetching steps: $dateFrom to $dateTo")
+
+                healthRepository.getMetricData(
+                    metricType = MetricType.STEPS,
+                    dateFrom = dateFrom,
+                    dateTo = dateTo
+                ).fold(
                     onSuccess = { metricsData ->
-                        if (metricsData.isNotEmpty()) processStepsData(metricsData)
-                        else { Timber.w("⚠️ No steps data"); clearData() }
+                        if (metricsData.isNotEmpty()) {
+                            processStepsData(metricsData)
+                            Timber.i("✅ Steps loaded: ${metricsData.size} records")
+                        } else {
+                            Timber.w("⚠️ No steps data from API")
+                            clearData()
+                        }
                     },
-                    onFailure = { e ->
-                        Timber.e(e, "❌ Steps API error")
+                    onFailure = { error ->
+                        Timber.e(error, "❌ Steps API error")
                         loadStepsFromDevice(_selectedDayOffset.value)
                     }
                 )
+
             } catch (e: Exception) {
                 Timber.e(e, "❌ Failed to load steps from API")
                 loadStepsFromDevice(_selectedDayOffset.value)
@@ -138,41 +191,7 @@ class StepsDetailViewModel @Inject constructor(
         }
     }
 
-    private fun getDateRange(): Pair<String, String> {
-        val today = LocalDate.now()
-        val formatter = DateTimeFormatter.ISO_LOCAL_DATE
-        return when (_selectedTimeRange.value) {
-            "روزانه" -> {
-                val targetDate = today.plusDays(_selectedDayOffset.value.toLong())
-                updateDateLabel(targetDate)
-                targetDate.format(formatter).let { Pair(it, it) }
-            }
-            "هفتگی" -> {
-                _dateLabel.value = "هفته گذشته"
-                Pair(today.minusDays(6).format(formatter), today.format(formatter))
-            }
-            "ماهانه" -> {
-                _dateLabel.value = "ماه گذشته"
-                Pair(today.minusDays(29).format(formatter), today.format(formatter))
-            }
-            else -> today.format(formatter).let { Pair(it, it) }
-        }
-    }
-
-    private fun updateDateLabel(date: LocalDate) {
-        val today = LocalDate.now()
-        _dateLabel.value = when {
-            date == today -> "امروز"
-            date == today.minusDays(1) -> "دیروز"
-            else -> {
-                val calendar = GregorianCalendar(date.year, date.monthValue - 1, date.dayOfMonth)
-                val pDate = PersianDate(calendar.time)
-                "${pDate.shDay.toString().toFarsiDigits()} ${pDate.monthName}"
-            }
-        }
-    }
-
-    // ── Data processing ───────────────────────────────────────────────────────
+    // ============ Data Processing ============
 
     private fun processStepsData(metricsData: List<MetricData>) {
         when (_selectedTimeRange.value) {
@@ -184,76 +203,141 @@ class StepsDetailViewModel @Inject constructor(
 
     private fun processDailySteps(metricsData: List<MetricData>) {
         val allValues = metricsData.flatMap { it.values }
-        if (allValues.isEmpty()) { clearData(); return }
+
+        if (allValues.isEmpty()) {
+            clearData()
+            return
+        }
 
         val total = allValues.maxOrNull() ?: 0
         _totalSteps.value = total
         _todaySteps.value = total
+
         _barChartData.value = convertToHourlyBars(allValues)
+
         loadComparisonDataFromApi()
     }
 
     private fun processWeeklySteps(metricsData: List<MetricData>) {
-        if (metricsData.isEmpty()) { clearData(); return }
-        val dailyTotals = metricsData.map { it.values.maxOrNull() ?: 0 }
-        _totalSteps.value = dailyTotals.sum()
-        _averageSteps.value = dailyTotals.average().toInt()
+        if (metricsData.isEmpty()) {
+            clearData()
+            return
+        }
+
+        val dailyTotals = metricsData.map { metric ->
+            metric.values.maxOrNull() ?: 0
+        }
+
+        val total = dailyTotals.sum()
+        val average = if (dailyTotals.isNotEmpty()) dailyTotals.average().toInt() else 0
+
+        _totalSteps.value = total
+        _averageSteps.value = average
         _weeklySteps.value = dailyTotals
+
         _barChartData.value = metricsData.mapIndexed { index, metric ->
             val dayTotal = metric.values.maxOrNull() ?: 0
             val dayLabel = try {
-                getDayOfWeekShort(LocalDate.parse(metric.recordDate.substring(0, 10)))
-            } catch (e: Exception) { "Day ${index + 1}" }
-            StepBarPoint(dayLabel, dayTotal, isSelected = index == metricsData.lastIndex)
+                val date = LocalDate.parse(metric.recordDate.substring(0, 10))
+                getDayOfWeekShort(date)
+            } catch (e: Exception) {
+                "Day ${index + 1}"
+            }
+
+            StepBarPoint(
+                hourLabel = dayLabel,
+                steps = dayTotal,
+                isSelected = index == metricsData.lastIndex
+            )
         }
+
         updateWeeklyComparison(dailyTotals)
     }
 
     private fun processMonthlySteps(metricsData: List<MetricData>) {
-        if (metricsData.isEmpty()) { clearData(); return }
-        val dailyTotals = metricsData.map { it.values.maxOrNull() ?: 0 }
-        _totalSteps.value = dailyTotals.sum()
-        _averageSteps.value = dailyTotals.average().toInt()
+        if (metricsData.isEmpty()) {
+            clearData()
+            return
+        }
+
+        val dailyTotals = metricsData.map { metric ->
+            metric.values.maxOrNull() ?: 0
+        }
+
+        val total = dailyTotals.sum()
+        val average = if (dailyTotals.isNotEmpty()) dailyTotals.average().toInt() else 0
+
+        _totalSteps.value = total
+        _averageSteps.value = average
+
         val weeklyGroups = dailyTotals.chunked(7)
         _barChartData.value = weeklyGroups.mapIndexed { index, weekData ->
-            StepBarPoint("هفته ${index + 1}", weekData.sum(), isSelected = index == weeklyGroups.lastIndex)
+            StepBarPoint(
+                hourLabel = "هفته ${index + 1}",
+                steps = weekData.sum(),
+                isSelected = index == weeklyGroups.lastIndex
+            )
         }
+
         updateMonthlyComparison(dailyTotals)
     }
 
     private fun convertToHourlyBars(stepsData: List<Int>): List<StepBarPoint> {
         val bars = mutableListOf<StepBarPoint>()
         var previousTotal = 0
+
         for (hour in 0..23) {
             val startIdx = hour * 60
             val endIdx = minOf(startIdx + 60, stepsData.size)
-            if (startIdx >= stepsData.size) break
-            val hourEndValue = stepsData.subList(startIdx, endIdx).maxOrNull() ?: 0
-            val hourSteps = (hourEndValue - previousTotal).coerceAtLeast(0)
-            previousTotal = hourEndValue
-            if (hourSteps > 0) bars.add(StepBarPoint(String.format("%02d:00", hour), hourSteps))
+
+            if (startIdx < stepsData.size) {
+                val hourEndValue = stepsData.subList(startIdx, endIdx).maxOrNull() ?: 0
+                val hourSteps = (hourEndValue - previousTotal).coerceAtLeast(0)
+                previousTotal = hourEndValue
+
+                if (hourSteps > 0) {
+                    bars.add(
+                        StepBarPoint(
+                            hourLabel = String.format("%02d:00", hour),
+                            steps = hourSteps,
+                            isSelected = false
+                        )
+                    )
+                }
+            }
         }
-        if (bars.isEmpty()) return bars
-        val maxIndex = bars.indices.maxByOrNull { bars[it].steps } ?: 0
-        return bars.mapIndexed { index, point -> point.copy(isSelected = index == maxIndex) }
+
+        if (bars.isNotEmpty()) {
+            val maxIndex = bars.indices.maxByOrNull { bars[it].steps } ?: 0
+            return bars.mapIndexed { index, point ->
+                point.copy(isSelected = index == maxIndex)
+            }
+        }
+
+        return bars
     }
 
-    // ── Comparison data ───────────────────────────────────────────────────────
+    // ============ Comparison Data ============
 
     private fun loadComparisonDataFromApi() {
         viewModelScope.launch {
             try {
                 val today = LocalDate.now()
                 val formatter = DateTimeFormatter.ISO_LOCAL_DATE
+
+                val dateFrom = today.minusDays(7).format(formatter)
+                val dateTo = today.minusDays(1).format(formatter)
+
                 healthRepository.getMetricData(
-                    MetricType.STEPS,
-                    today.minusDays(7).format(formatter),
-                    today.minusDays(1).format(formatter)
+                    metricType = MetricType.STEPS,
+                    dateFrom = dateFrom,
+                    dateTo = dateTo
                 ).fold(
                     onSuccess = { metricsData ->
                         val avgData = metricsData.mapNotNull { it.values.maxOrNull() }
                         val avgTotal = if (avgData.isNotEmpty()) avgData.average().toInt() else 0
                         _averageSteps.value = avgTotal
+
                         val todayTotal = _todaySteps.value
                         _comparisonData.value = listOf(
                             ComparisonPoint(0f, 0, 0),
@@ -263,7 +347,9 @@ class StepsDetailViewModel @Inject constructor(
                             ComparisonPoint(1.0f, todayTotal, avgTotal)
                         )
                     },
-                    onFailure = { Timber.e(it, "Failed to load comparison data") }
+                    onFailure = { error ->
+                        Timber.e(error, "Failed to load comparison data")
+                    }
                 )
             } catch (e: Exception) {
                 Timber.e(e, "Error loading comparison data")
@@ -273,43 +359,63 @@ class StepsDetailViewModel @Inject constructor(
 
     private fun updateWeeklyComparison(dailyTotals: List<Int>) {
         val avg = if (dailyTotals.isNotEmpty()) dailyTotals.average().toInt() else 0
+
         _comparisonData.value = dailyTotals.mapIndexed { index, steps ->
-            ComparisonPoint((index + 1).toFloat() / dailyTotals.size, steps, avg)
+            val ratio = (index + 1).toFloat() / dailyTotals.size
+            ComparisonPoint(ratio, steps, avg)
         }
     }
 
     private fun updateMonthlyComparison(dailyTotals: List<Int>) {
         val avg = if (dailyTotals.isNotEmpty()) dailyTotals.average().toInt() else 0
+
         val sampleIndices = listOf(0, 7, 14, 21, dailyTotals.lastIndex).filter { it < dailyTotals.size }
         _comparisonData.value = sampleIndices.map { index ->
-            ComparisonPoint(
-                (index + 1).toFloat() / dailyTotals.size,
-                dailyTotals.take(index + 1).sum(),
-                avg * (index + 1)
-            )
+            val ratio = (index + 1).toFloat() / dailyTotals.size
+            val cumulative = dailyTotals.take(index + 1).sum()
+            ComparisonPoint(ratio, cumulative, avg * (index + 1))
         }
     }
 
-    private fun getDayOfWeekShort(date: LocalDate) = when (date.dayOfWeek.value) {
-        1 -> "د"; 2 -> "س"; 3 -> "چ"; 4 -> "پ"
-        5 -> "ج"; 6 -> "ش"; 7 -> "ی"; else -> ""
+    private fun getDayOfWeekShort(date: LocalDate): String {
+        return when (date.dayOfWeek.value) {
+            1 -> "د"
+            2 -> "س"
+            3 -> "چ"
+            4 -> "پ"
+            5 -> "ج"
+            6 -> "ش"
+            7 -> "ی"
+            else -> ""
+        }
     }
 
-    // ── Device fallback ───────────────────────────────────────────────────────
+    // ============ Device Fallback ============
 
     private fun loadStepsFromDevice(offset: Int) {
         viewModelScope.launch {
             try {
                 val result = deviceManager.getRecordData(offset)
+
                 if (result is RecordDataResult.Success) {
-                    val validData = result.steps?.stepSource?.filter { it >= 0 } ?: return@launch
-                    if (validData.isEmpty()) return@launch
-                    val total = validData.maxOrNull() ?: 0
-                    _totalSteps.value = total
-                    _todaySteps.value = total
-                    _barChartData.value = convertToHourlyBars(validData)
-                    loadComparisonDataFromDevice(offset)
-                    Timber.i("✅ Steps from device: $total steps")
+                    result.steps?.stepSource?.let { stepsData ->
+                        val validData = stepsData.filter { it >= 0 }
+
+                        if (validData.isEmpty()) {
+                            Timber.w("No steps data for day $offset")
+                            return@let
+                        }
+
+                        val total = validData.maxOrNull() ?: 0
+                        _totalSteps.value = total
+                        _todaySteps.value = total
+
+                        _barChartData.value = convertToHourlyBars(validData)
+
+                        loadComparisonDataFromDevice(offset)
+
+                        Timber.i("✅ Steps loaded from device: $total steps")
+                    }
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Error loading steps from device")
@@ -321,26 +427,30 @@ class StepsDetailViewModel @Inject constructor(
     private suspend fun loadComparisonDataFromDevice(currentDayOffset: Int) {
         try {
             val avgData = mutableListOf<Int>()
+
             for (day in 1..7) {
                 val result = deviceManager.getRecordData(currentDayOffset + day)
                 if (result is RecordDataResult.Success) {
                     result.steps?.stepSource?.maxOrNull()?.let { avgData.add(it) }
                 }
             }
+
             val avgTotal = if (avgData.isNotEmpty()) avgData.average().toInt() else 0
             _averageSteps.value = avgTotal
+
             val todayTotal = _todaySteps.value
             _comparisonData.value = listOf(
                 ComparisonPoint(0f, 0, 0),
                 ComparisonPoint(0.5f, todayTotal / 2, avgTotal / 2),
                 ComparisonPoint(1.0f, todayTotal, avgTotal)
             )
+
         } catch (e: Exception) {
-            Timber.e(e, "Error loading comparison from device")
+            Timber.e(e, "Error loading comparison data from device")
         }
     }
 
-    // ── Clear ─────────────────────────────────────────────────────────────────
+    // ============ Clear Data ============
 
     private fun clearData() {
         _totalSteps.value = 0

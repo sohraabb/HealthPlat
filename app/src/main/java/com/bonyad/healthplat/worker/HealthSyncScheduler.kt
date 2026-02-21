@@ -24,7 +24,7 @@ class HealthSyncScheduler @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
 
-    private val workManager = WorkManager.getInstance(context)
+    private val workManager by lazy { WorkManager.getInstance(context) }
 
     /**
      * Start periodic background sync.
@@ -66,7 +66,7 @@ class HealthSyncScheduler @Inject constructor(
         // Schedule work (replace existing if any)
         workManager.enqueueUniquePeriodicWork(
             HealthSyncWorker.WORK_NAME,
-            ExistingPeriodicWorkPolicy.KEEP,
+            ExistingPeriodicWorkPolicy.REPLACE,
             syncWorkRequest
         )
 

@@ -16,7 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -26,7 +25,6 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.bonlala.bonlalable.bean.ScanDeviceInfo
 import com.bonyad.healthplat.R
-import com.bonyad.healthplat.logging.LogFiles
 import com.bonyad.healthplat.ui.utils.rtl
 
 @Composable
@@ -40,14 +38,7 @@ fun DeviceScanningScreen(
     val scannedDevices by viewModel.scannedDevices.collectAsState()
     val scanDuration by viewModel.scanDuration.collectAsState()
 
-    val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
-
-    // Silently mirror the log file to the public Downloads folder when the user
-    // leaves this screen, so it can be retrieved/sent later. No visible UI.
-    DisposableEffect(Unit) {
-        onDispose { LogFiles.exportToDownloads(context) }
-    }
 
     BackHandler(enabled = onBack != null) {
         viewModel.stopScan()

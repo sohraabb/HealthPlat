@@ -25,6 +25,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -39,11 +42,13 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.bonyad.healthplat.ui.components.PersianDate
 import com.bonyad.healthplat.ui.dashboard.details.CustomDetailTopBar
 import com.bonyad.healthplat.ui.dashboard.details.heart_rate.DateStrip
 import com.bonyad.healthplat.ui.dashboard.details.heart_rate.StatBox
 import com.bonyad.healthplat.ui.dashboard.details.heart_rate.TimeRangeSelector
 import com.bonyad.healthplat.ui.dashboard.details.sp02.LatestMeasurementCard
+import com.bonyad.healthplat.ui.utils.PersianDateUtils
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
 
 @Composable
@@ -57,6 +62,33 @@ fun StressDetailScreen(
     val selectedRange by viewModel.selectedTimeRange.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val dateLabel by viewModel.dateLabel.collectAsState()
+    val xAxisLabels by viewModel.xAxisLabels.collectAsState()
+    val selectedDate by viewModel.selectedDate.collectAsState()
+
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    val todayPersian = remember {
+        val (jy, jm, jd) = PersianDateUtils.getCurrentJalaliDate()
+        PersianDate(jy, jm, jd)
+    }
+    val selectedPersianDate = remember(selectedDate) {
+        val (jy, jm, jd) = PersianDateUtils.georgianToJalali(
+            selectedDate.year, selectedDate.monthValue, selectedDate.dayOfMonth
+        )
+        PersianDate(jy, jm, jd)
+    }
+
+    if (showDatePicker) {
+        com.bonyad.healthplat.ui.components.PersianDatePickerDialog(
+            selectedDate = selectedPersianDate,
+            onDateSelected = { date ->
+                showDatePicker = false
+                viewModel.selectDate(date)
+            },
+            onDismiss = { showDatePicker = false },
+            maxDate = todayPersian
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -79,17 +111,15 @@ fun StressDetailScreen(
             // 1. Top Section
             TimeRangeSelector(
                 selected = selectedRange,
-                onSelect = { viewModel.setTimeRange(it) }
+                onSelect = { viewModel.setTimeRange(it) },
+                onCalendarClick = { showDatePicker = true }
             )
 
             // Date Strip (only for daily view)
             if (selectedRange == "روزانه") {
-                val selectedOffset by viewModel.selectedDayOffset.collectAsState()
                 DateStrip(
-                    selectedOffset = selectedOffset,
-                    onDaySelected = { offset ->
-                        viewModel.selectDay(offset)
-                    }
+                    selectedDate = selectedDate,
+                    onDaySelected = { date -> viewModel.selectDay(date) }
                 )
             }
 
@@ -156,7 +186,9 @@ fun StressDetailScreen(
                     } else {
                         StressChart(
                             points = points,
-                            showEmptyState = points.isEmpty()
+                            showEmptyState = points.isEmpty(),
+                            selectedRange = selectedRange,
+                            xAxisLabels = xAxisLabels
                         )
                     }
                 }
@@ -189,7 +221,9 @@ fun StressDetailScreen(
 fun StressChart(
     points: List<StressDetailViewModel.StressPoint>,
     isLoading: Boolean = false,
-    showEmptyState: Boolean = false
+    showEmptyState: Boolean = false,
+    selectedRange: String = "روزانه",
+    xAxisLabels: List<String> = emptyList()
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -226,9 +260,9 @@ fun StressChart(
                         .padding(end = 8.dp, bottom = 20.dp),
                     verticalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("۱۰۰", fontSize = 10.sp, color = Color.Gray)
-                    Text("۵۰",  fontSize = 10.sp, color = Color.Gray)
-                    Text("۰",   fontSize = 10.sp, color = Color.Gray)
+                    Text("۱۰۰", fontSize = 12.sp, color = Color.Gray)
+                    Text("۵۰",  fontSize = 12.sp, color = Color.Gray)
+                    Text("۰",   fontSize = 12.sp, color = Color.Gray)
                 }
 
                 // Chart area
@@ -254,27 +288,40 @@ fun StressChart(
                             )
                         }
 
-                        // Vertical grid lines
-                        listOf(0.33f, 0.66f).forEach { r ->
-                            drawLine(
-                                color = Color.LightGray.copy(alpha = 0.5f),
-                                start = Offset(w * r, 0f),
-                                end = Offset(w * r, h),
-                                pathEffect = pathEffect
-                            )
+                        // Vertical grid lines (every 6h for daily)
+                        if (selectedRange == "روزانه") {
+                            // Main lines at 0h, 6h, 12h, 18h, 24h
+                            listOf(0f, 0.25f, 0.5f, 0.75f, 1f).forEach { r ->
+                                drawLine(
+                                    color = Color.LightGray.copy(alpha = 0.5f),
+                                    start = Offset(w * r, 0f),
+                                    end = Offset(w * r, h),
+                                    pathEffect = pathEffect
+                                )
+                            }
+                        } else {
+                            listOf(0.33f, 0.66f).forEach { r ->
+                                drawLine(
+                                    color = Color.LightGray.copy(alpha = 0.5f),
+                                    start = Offset(w * r, 0f),
+                                    end = Offset(w * r, h),
+                                    pathEffect = pathEffect
+                                )
+                            }
                         }
 
-                        // Curve — only drawn when we have data
-                        if (points.isNotEmpty()) {
+                        // Curve — only drawn for points with data, skip zero-value points
+                        val validPoints = points.filter { it.value > 0 }
+                        if (validPoints.isNotEmpty()) {
                             val path = Path()
-                            points.forEachIndexed { i, p ->
+                            validPoints.forEachIndexed { i, p ->
                                 val x = p.xRatio * w
                                 val y = (h - (p.value / maxVal * h)).coerceIn(0f, h)
 
                                 if (i == 0) {
                                     path.moveTo(x, y)
                                 } else {
-                                    val prev = points[i - 1]
+                                    val prev = validPoints[i - 1]
                                     val prevX = prev.xRatio * w
                                     val prevY = (h - (prev.value / maxVal * h)).coerceIn(0f, h)
                                     val cx = (prevX + x) / 2f
@@ -289,8 +336,8 @@ fun StressChart(
                             )
 
                             // Dots at start and end
-                            val start = points.first()
-                            val end = points.last()
+                            val start = validPoints.first()
+                            val end = validPoints.last()
                             drawCircle(
                                 Color(0xFFFFD54F), 6.dp.toPx(),
                                 Offset(start.xRatio * w, (h - (start.value / maxVal * h)).coerceIn(0f, h))
@@ -307,13 +354,23 @@ fun StressChart(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .padding(horizontal = 6.dp)
                                 .align(Alignment.BottomCenter),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("00:00", fontSize = 10.sp, color = Color.Gray)
-                            Text("07:59", fontSize = 10.sp, color = Color.Gray)
-                            Text("15:59", fontSize = 10.sp, color = Color.Gray)
-                            Text("23:59", fontSize = 10.sp, color = Color.Gray)
+                            when (selectedRange) {
+                                "هفتگی", "ماهانه" -> {
+                                    // Dynamic labels from ViewModel
+                                    xAxisLabels.forEach {
+                                        Text(it, fontSize = 12.sp, color = Color.Gray)
+                                    }
+                                }
+                                else -> {
+                                    listOf("00:00", "06:00", "12:00", "18:00", "24:00").forEach {
+                                        Text(it, fontSize = 12.sp, color = Color.Gray)
+                                    }
+                                }
+                            }
                         }
                     }
 

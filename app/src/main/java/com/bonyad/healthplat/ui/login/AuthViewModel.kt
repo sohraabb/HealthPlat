@@ -41,9 +41,13 @@ class AuthViewModel @Inject constructor(
     val resendTimer: StateFlow<Int> = _resendTimer.asStateFlow()
 
 
-    // Debugging reason
+    // Non-empty only in dev/test mode when server returns the code directly
     private val _serverOtp = MutableStateFlow("")
     val serverOtp: StateFlow<String> = _serverOtp.asStateFlow()
+
+    // True when server sends a real SMS (code == null in response)
+    private val _isSmsMode = MutableStateFlow(false)
+    val isSmsMode: StateFlow<Boolean> = _isSmsMode.asStateFlow()
 
     private var timerJob: Job? = null
 
@@ -89,12 +93,17 @@ class AuthViewModel @Inject constructor(
                     _authState.value = AuthState.PhoneSubmitted
                     Timber.i("OTP sent to $phone - userId: ${data.userId ?: "NEW USER"}")
 
-                    data.code.let { code ->
-                        _serverOtp.value = code
+                    if (data.code != null) {
+                        // Dev/test mode: server returned the code directly — show toast
+                        _serverOtp.value = data.code
+                        _isSmsMode.value = false
+                        Timber.d("OTP Code (dev mode): ${data.code}")
+                    } else {
+                        // Production: real SMS sent — activate autofill listener
+                        _serverOtp.value = ""
+                        _isSmsMode.value = true
+                        Timber.i("SMS mode: real OTP sent via SMS")
                     }
-
-                    // In dev/test mode, the code is returned: data.code
-                    Timber.d("OTP Code (dev mode): ${data.code}")
                     startResendTimer()
                 }
 
@@ -207,7 +216,8 @@ class AuthViewModel @Inject constructor(
 
         viewModelScope.launch {
             _otp.value = ""
-            _serverOtp.value = ""  // Clear so toast re-triggers even if same code
+            _serverOtp.value = ""
+            _isSmsMode.value = false
             _authState.value = AuthState.Idle
             sendOtp()
         }

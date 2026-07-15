@@ -1,7 +1,19 @@
 package com.bonyad.healthplat.ui.login
 
+import android.app.Activity
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.runtime.DisposableEffect
+import androidx.core.content.ContextCompat
+import com.google.android.gms.auth.api.phone.SmsRetriever
+import com.google.android.gms.common.api.CommonStatusCodes
+import com.google.android.gms.common.api.Status
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,6 +31,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -75,13 +88,54 @@ fun OtpVerificationScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
 
     val serverOtp by viewModel.serverOtp.collectAsState()
+    val isSmsMode by viewModel.isSmsMode.collectAsState()
 
     val context = LocalContext.current
 
-    // Change the LaunchedEffect to observe serverOtp
+    // Dev/test mode: server returned the code — show it in a toast
     LaunchedEffect(serverOtp) {
         if (serverOtp.isNotEmpty()) {
-            Toast.makeText(context, "Debug OTP: $serverOtp", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "کد تایید: $serverOtp", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // SMS mode: launch activity-result handler for the system consent dialog
+    val smsConsentLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val sms = result.data?.getStringExtra(SmsRetriever.EXTRA_SMS_MESSAGE) ?: return@rememberLauncherForActivityResult
+            Regex("\\d{5}").find(sms)?.value?.let { code -> viewModel.updateOtp(code) }
+        }
+    }
+
+    // Start the SMS consent listener as soon as we enter SMS mode
+    LaunchedEffect(isSmsMode) {
+        if (isSmsMode) {
+            SmsRetriever.getClient(context).startSmsUserConsent(null)
+        }
+    }
+
+    // Register BroadcastReceiver that catches the incoming SMS and shows the system consent dialog
+    if (isSmsMode) {
+        DisposableEffect(Unit) {
+            val receiver = object : BroadcastReceiver() {
+                override fun onReceive(ctx: Context, intent: Intent) {
+                    if (intent.action != SmsRetriever.SMS_RETRIEVED_ACTION) return
+                    val status = intent.extras?.get(SmsRetriever.EXTRA_STATUS) as? Status ?: return
+                    if (status.statusCode == CommonStatusCodes.SUCCESS) {
+                        @Suppress("DEPRECATION")
+                        val consentIntent = intent.extras?.getParcelable<Intent>(SmsRetriever.EXTRA_CONSENT_INTENT)
+                        consentIntent?.let { smsConsentLauncher.launch(it) }
+                    }
+                }
+            }
+            ContextCompat.registerReceiver(
+                context, receiver,
+                IntentFilter(SmsRetriever.SMS_RETRIEVED_ACTION),
+                ContextCompat.RECEIVER_EXPORTED
+            )
+            onDispose { runCatching { context.unregisterReceiver(receiver) } }
         }
     }
     // Set the phone number in ViewModel when screen opens
@@ -144,20 +198,15 @@ fun OtpVerificationScreen(
                 Spacer(modifier = Modifier.height(32.dp))
 
                 Image(
-                    painter = painterResource(id = R.drawable.logo_tan),
+                    painter = painterResource(id = R.mipmap.ic_launcher_foreground),
                     contentDescription = "Logo",
-                    modifier = Modifier.size(100.dp)
+                    modifier = Modifier.size(160.dp)
                 )
 
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Text(
-                    text = "تن‌بار",
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 28.sp
-                    ),
-                    color = Color(0xFF2C2C2C)
+                Image(
+                    painter = painterResource(id = R.drawable.zhivan_text),
+                    contentDescription = "Zhivan",
+                    modifier = Modifier.width(100.dp)
                 )
 
                 Spacer(modifier = Modifier.height(48.dp))

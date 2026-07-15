@@ -21,6 +21,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bonyad.healthplat.R
+import com.bonyad.healthplat.ui.utils.rtl
 
 /**
  * Data class representing a single info section with optional icon/color
@@ -44,12 +45,12 @@ sealed class HealthInfoType {
         override val items = listOf(
             HealthInfoItem(
                 title = "ضربان قلب",
-                description = "یعنی تعداد دفعاتی که قلب در مدت یک دقیقه می‌تپد. این عدد نشان می‌دهد قلب با چه سرعتی خون را در بدن پمپ می‌کند و معمولاً با واحد bpm (ضربه در دقیقه) بیان می‌شود.",
+                description = "یعنی تعداد دفعاتی که قلب در مدت یک دقیقه می‌تپد. این عدد نشان می‌دهد قلب با چه سرعتی خون را در بدن پمپ می‌کند و معمولاً با واحد bpm (ضربه در دقیقه) بیان می‌شود.".rtl(),
                 iconRes = R.drawable.heart
             ),
             HealthInfoItem(
                 title = "HRV",
-                description = "تغییرپذیری ضربان قلب یعنی میزان تفاوت در فاصله زمانی بین ضربان‌های متوالی قلب. HRV نشان می‌دهد سیستم عصبی بدن چقدر انعطاف‌پذیر است و معمولاً هرچه بالاتر باشد، نشانه سازگاری و وضعیت بهتر بدن است.",
+                description = "تغییرپذیری ضربان قلب یعنی میزان تفاوت در فاصله زمانی بین ضربان‌های متوالی قلب. HRV نشان می‌دهد سیستم عصبی بدن چقدر انعطاف‌پذیر است و معمولاً هرچه بالاتر باشد، نشانه سازگاری و وضعیت بهتر بدن است.".rtl(),
                 iconRes = R.drawable.send_love
             )
         )
@@ -60,17 +61,17 @@ sealed class HealthInfoType {
         override val items = listOf(
             HealthInfoItem(
                 title = "خواب عمیق",
-                description = "مرحله‌ای از خواب که بدن بیشترین استراحت و ترمیم را انجام می‌دهد و بیدار شدن در این مرحله سخت‌تر است.",
+                description = "مرحله‌ای از خواب که بدن بیشترین استراحت و ترمیم را انجام می‌دهد و بیدار شدن در این مرحله سخت‌تر است.".rtl(),
                 dotColor = Color(0xFFFFC107) // Yellow/Amber
             ),
             HealthInfoItem(
                 title = "خواب سبک",
-                description = "مرحله‌ای از خواب که بدن آرام می‌شود اما به‌راحتی می‌توان از آن بیدار شد و بخش زیادی از خواب شب را تشکیل می‌دهد.",
+                description = "مرحله‌ای از خواب که بدن آرام می‌شود اما به‌راحتی می‌توان از آن بیدار شد و بخش زیادی از خواب شب را تشکیل می‌دهد.".rtl(),
                 dotColor = Color(0xFF4CAF50) // Green
             ),
             HealthInfoItem(
                 title = "خواب REM",
-                description = "مرحله‌ای از خواب که مغز فعال‌تر است، بیشتر رویاها در آن رخ می‌دهد و نقش مهمی در حافظه و یادگیری دارد.",
+                description = "مرحله‌ای از خواب که مغز فعال‌تر است، بیشتر رویاها در آن رخ می‌دهد و نقش مهمی در حافظه و یادگیری دارد.".rtl(),
                 dotColor = Color(0xFF9C27B0) // Purple
             )
         )
@@ -81,7 +82,7 @@ sealed class HealthInfoType {
         override val items = listOf(
             HealthInfoItem(
                 title = "SpO₂",
-                description = "یعنی درصد اشباع اکسیژن خون و نشان می‌دهد چه مقدار از هموگلوبین خون با اکسیژن پر شده است. این شاخص بیان می‌کند بدن تا چه حد اکسیژن کافی دریافت می‌کند و معمولاً به صورت درصد (%) نمایش داده می‌شود که مقدار آن هرچه بالاتر باشد بهتر است.",
+                description = "یعنی درصد اشباع اکسیژن خون و نشان می‌دهد چه مقدار از هموگلوبین خون با اکسیژن پر شده است. این شاخص بیان می‌کند بدن تا چه حد اکسیژن کافی دریافت می‌کند و معمولاً به صورت درصد (%) نمایش داده می‌شود که مقدار آن هرچه بالاتر باشد بهتر است.".rtl(),
                 iconRes = R.drawable.hospital_spo2
             )
         )
@@ -92,12 +93,12 @@ sealed class HealthInfoType {
         override val items = listOf(
             HealthInfoItem(
                 title = "تعداد قدم",
-                description = "شمارش قدم یکی از ساده‌ترین روش‌ها برای پایش فعالیت روزانه است. هدف پیشنهادی ۱۰,۰۰۰ قدم در روز است که معادل حدود ۸ کیلومتر پیاده‌روی می‌باشد. تحقیقات نشان می‌دهد حتی ۷,۰۰۰ قدم در روز می‌تواند فواید سلامتی قابل توجهی داشته باشد.",
+                description = "شمارش قدم یکی از ساده‌ترین روش‌ها برای پایش فعالیت روزانه است. هدف پیشنهادی ۱۰,۰۰۰ قدم در روز است که معادل حدود ۸ کیلومتر پیاده‌روی می‌باشد. تحقیقات نشان می‌دهد حتی ۷,۰۰۰ قدم در روز می‌تواند فواید سلامتی قابل توجهی داشته باشد.".rtl(),
                 dotColor = Color(0xFF4CAF50)
             ),
             HealthInfoItem(
                 title = "کالری",
-                description = "میزان کالری سوزانده شده بستگی به وزن، سرعت و مدت زمان پیاده‌روی دارد. به طور متوسط، هر ۱۰۰۰ قدم حدود ۴۰-۵۰ کالری می‌سوزاند. پیاده‌روی با سرعت بالاتر یا در سربالایی کالری بیشتری می‌سوزاند.",
+                description = "میزان کالری سوزانده شده بستگی به وزن، سرعت و مدت زمان پیاده‌روی دارد. به طور متوسط، هر ۱۰۰۰ قدم حدود ۴۰-۵۰ کالری می‌سوزاند. پیاده‌روی با سرعت بالاتر یا در سربالایی کالری بیشتری می‌سوزاند.".rtl(),
                 dotColor = Color(0xFFFFC107)
             )
         )
@@ -108,8 +109,24 @@ sealed class HealthInfoType {
         override val items = listOf(
             HealthInfoItem(
                 title = "سطح استرس",
-                description = "سطح استرس بر اساس تغییرات HRV و الگوهای ضربان قلب محاسبه می‌شود. امتیاز ۰-۲۵ آرامش، ۲۶-۵۰ طبیعی، ۵۱-۷۵ متوسط و ۷۶-۱۰۰ بالا را نشان می‌دهد. استرس کوتاه‌مدت طبیعی است اما استرس مزمن می‌تواند مضر باشد.",
+                description = "سطح استرس بر اساس تغییرات HRV و الگوهای ضربان قلب محاسبه می‌شود. امتیاز ۰-۲۵ آرامش، ۲۶-۵۰ طبیعی، ۵۱-۷۵ متوسط و ۷۶-۱۰۰ بالا را نشان می‌دهد. استرس کوتاه‌مدت طبیعی است اما استرس مزمن می‌تواند مضر باشد.".rtl(),
                 dotColor = Color(0xFF4CAF50)
+            )
+        )
+    }
+
+    object Arrhythmia : HealthInfoType() {
+        override val screenTitle = "توضیحات"
+        override val items = listOf(
+            HealthInfoItem(
+                title = "آریتمی",
+                description = "آریتمی به هرگونه نامنظمی در ریتم ضربان قلب گفته می‌شود. قلب ممکن است خیلی سریع (تاکی‌کاردی)، خیلی آهسته (برادی‌کاردی) یا نامنظم بتپد. برخی آریتمی‌ها بی‌خطر هستند اما برخی نیاز به پیگیری پزشکی دارند.".rtl(),
+                dotColor = Color(0xFFE57373)
+            ),
+            HealthInfoItem(
+                title = "فیبریلاسیون دهلیزی (AFib)",
+                description = "شایع‌ترین نوع آریتمی قلبی است که در آن دهلیزهای قلب به‌صورت نامنظم و سریع منقبض می‌شوند. AFib می‌تواند خطر سکته مغزی و نارسایی قلبی را افزایش دهد و نیاز به تشخیص و درمان پزشکی دارد.".rtl(),
+                dotColor = Color(0xFFFFCA28)
             )
         )
     }
@@ -259,7 +276,7 @@ fun InfoItemCard(
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 15.sp
                     ),
-                    color = Color(0xFF2C2C2C),
+                    color = Color(0xFF6B6B6B),
                     textAlign = TextAlign.End
                 )
 
@@ -271,10 +288,11 @@ fun InfoItemCard(
                         fontSize = 13.sp,
                         lineHeight = 18.sp
                     ),
-                    color = Color(0xFF9E9E9E),
+                    color = Color(0xFF6B6B6B),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.End
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.fillMaxWidth()  // ← this line added
                 )
             }
         }

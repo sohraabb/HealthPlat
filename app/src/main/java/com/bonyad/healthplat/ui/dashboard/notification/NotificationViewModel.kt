@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.bonyad.healthplat.ui.utils.rtl
 import javax.inject.Inject
 
 data class NotificationUiState(
@@ -41,7 +42,7 @@ class NotificationViewModel @Inject constructor(
                     NotificationItem(
                         id = 1,
                         title = "بروزرسانی اپلیکیشن تن‌یار",
-                        description = "در نسخه جدید شما میتوانید، با فعال کردن قابلیت‌های جدید، تجربه بهتری داشته باشید.",
+                        description = "در نسخه جدید شما میتوانید، با فعال کردن قابلیت‌های جدید، تجربه بهتری داشته باشید.".rtl(),
                         date = "۱۴۰۴/۰۶/۲۰"
                     )
                 )

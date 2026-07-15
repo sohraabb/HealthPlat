@@ -19,90 +19,24 @@ class SleepDataHelper @Inject constructor(
      * @return Complete sleep data list, or empty if no data
      */
     suspend fun getFullSleepData(offset: Int): List<Int> {
-        try {
-            // Get today's data
+        return try {
             val todayResult = deviceManager.getRecordData(offset)
-
             if (todayResult !is RecordDataResult.Success) {
                 return emptyList()
             }
-
-            val todaySleep = todayResult.sleep?.sourceList ?: emptyList()
-
-            if (todaySleep.isEmpty()) {
-                Timber.d("No sleep data for offset $offset")
-                return emptyList()
-            }
-
-            // Check if today starts with sleep (first 30 minutes)
-            // Values: 1=Deep, 2=Light, 3=Awake, 4=REM, 0=Activity
-            val startsWithSleep = todaySleep.take(30).any { it != 0 }
-
-            if (!startsWithSleep) {
-                // Sleep within single day - no combination needed
-                Timber.d("✅ Sleep contained in single day (offset=$offset)")
-                return todaySleep
-            }
-
-            Timber.d("🌙 Sleep starts at midnight, checking previous day...")
-
-            // Get yesterday's data
-            val yesterdayResult = deviceManager.getRecordData(offset - 1)
-
-            if (yesterdayResult !is RecordDataResult.Success) {
-                Timber.w("⚠️ No previous day data, using current day only")
-                return todaySleep
-            }
-
-            val yesterdaySleep = yesterdayResult.sleep?.sourceList ?: emptyList()
-
-            if (yesterdaySleep.isEmpty()) {
-                Timber.d("Previous day empty, using current day only")
-                return todaySleep
-            }
-
-            // Find LAST continuous sleep block from yesterday
-            // Walk backwards from 23:59 (index 1439)
-            // This ignores earlier naps, only gets night sleep
-            var lastSleepBlockStart = yesterdaySleep.size
-
-            for (i in yesterdaySleep.indices.reversed()) {
-                if (yesterdaySleep[i] != 0) {
-                    lastSleepBlockStart = i
-                } else {
-                    // Hit activity - sleep block ended
-                    break
-                }
-            }
-
-            // Combine if valid block found
-            if (lastSleepBlockStart < yesterdaySleep.size) {
-                val preMidnight = yesterdaySleep.subList(lastSleepBlockStart, yesterdaySleep.size)
-
-                val startHour = lastSleepBlockStart / 60
-                val startMin = lastSleepBlockStart % 60
-
-                Timber.i("🌙 Combined sleep (offset=$offset):")
-                Timber.i("   📍 Started: ${String.format("%02d:%02d", startHour, startMin)} previous day")
-                Timber.i("   📊 Pre-midnight: ${preMidnight.size} min")
-                Timber.i("   📊 Post-midnight: ${todaySleep.size} min")
-                Timber.i("   📊 Total: ${preMidnight.size + todaySleep.size} min")
-
-                return preMidnight + todaySleep
-            } else {
-                Timber.d("No valid sleep block at end of previous day")
-                return todaySleep
-            }
-
+            combineWithPreviousNightSleep(todayResult, offset)
         } catch (e: Exception) {
             Timber.e(e, "❌ Error getting full sleep data")
-            return emptyList()
+            emptyList()
         }
     }
 
     /**
      * Get RecordDataResult with corrected sleep data.
      * Use when you need all metrics + corrected sleep.
+     *
+     * Only calls getRecordData once — passes the result directly into
+     * combineWithPreviousNightSleep to avoid a duplicate BLE transfer.
      */
     suspend fun getRecordDataWithFullSleep(offset: Int): RecordDataResult {
         val originalResult = deviceManager.getRecordData(offset)
@@ -111,8 +45,7 @@ class SleepDataHelper @Inject constructor(
             return originalResult
         }
 
-        // Get complete sleep
-        val fullSleepData = getFullSleepData(offset)
+        val fullSleepData = combineWithPreviousNightSleep(originalResult, offset)
 
         // If unchanged, return original
         if (fullSleepData == originalResult.sleep?.sourceList) {
@@ -125,7 +58,85 @@ class SleepDataHelper @Inject constructor(
             recordDay = originalResult.sleep?.recordDay
         }
 
-        // Use copy() since Success is a data class
         return originalResult.copy(sleep = correctedSleep)
+    }
+
+    /**
+     * Combines today's sleep with the pre-midnight portion from the previous day.
+     *
+     * Takes an already-fetched [todayResult] to avoid issuing a second BLE call
+     * for the same day. Only fetches the previous day when today's sleep starts
+     * at or before midnight (first 30 minutes contain non-zero values).
+     */
+    private suspend fun combineWithPreviousNightSleep(
+        todayResult: RecordDataResult.Success,
+        offset: Int
+    ): List<Int> {
+        val todaySleep = todayResult.sleep?.sourceList ?: emptyList()
+
+        if (todaySleep.isEmpty()) {
+            Timber.d("No sleep data for offset $offset")
+            return emptyList()
+        }
+
+        // Check if today starts with sleep (first 30 minutes)
+        // Values: 1=Deep, 2=Light, 3=Awake, 4=REM, 0=Activity
+        val startsWithSleep = todaySleep.take(30).any { it != 0 }
+
+        if (!startsWithSleep) {
+            // Sleep within single day - no combination needed
+            Timber.d("✅ Sleep contained in single day (offset=$offset)")
+            return todaySleep
+        }
+
+        Timber.d("🌙 Sleep starts at midnight, checking previous day...")
+
+        // Get yesterday's data (one extra BLE call, only when needed)
+        val yesterdayResult = deviceManager.getRecordData(offset - 1)
+
+        if (yesterdayResult !is RecordDataResult.Success) {
+            Timber.w("⚠️ No previous day data, using current day only")
+            return todaySleep
+        }
+
+        val yesterdaySleep = yesterdayResult.sleep?.sourceList ?: emptyList()
+
+        if (yesterdaySleep.isEmpty()) {
+            Timber.d("Previous day empty, using current day only")
+            return todaySleep
+        }
+
+        // Find LAST continuous sleep block from yesterday
+        // Walk backwards from 23:59 (index 1439)
+        // This ignores earlier naps, only gets night sleep
+        var lastSleepBlockStart = yesterdaySleep.size
+
+        for (i in yesterdaySleep.indices.reversed()) {
+            if (yesterdaySleep[i] != 0) {
+                lastSleepBlockStart = i
+            } else {
+                // Hit activity - sleep block ended
+                break
+            }
+        }
+
+        // Combine if valid block found
+        if (lastSleepBlockStart < yesterdaySleep.size) {
+            val preMidnight = yesterdaySleep.subList(lastSleepBlockStart, yesterdaySleep.size)
+
+            val startHour = lastSleepBlockStart / 60
+            val startMin = lastSleepBlockStart % 60
+
+            Timber.i("🌙 Combined sleep (offset=$offset):")
+            Timber.i("   📍 Started: ${String.format("%02d:%02d", startHour, startMin)} previous day")
+            Timber.i("   📊 Pre-midnight: ${preMidnight.size} min")
+            Timber.i("   📊 Post-midnight: ${todaySleep.size} min")
+            Timber.i("   📊 Total: ${preMidnight.size + todaySleep.size} min")
+
+            return preMidnight + todaySleep
+        } else {
+            Timber.d("No valid sleep block at end of previous day")
+            return todaySleep
+        }
     }
 }

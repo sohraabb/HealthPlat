@@ -38,6 +38,7 @@ import com.bonyad.healthplat.domain.model.CaregiverUiModel
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import com.bonyad.healthplat.R
+import com.bonyad.healthplat.ui.utils.rtl
 import com.bonyad.healthplat.ui.components.StandardFloatingActionButton
 import com.bonyad.healthplat.ui.dashboard.calory.TealPrimary
 import androidx.compose.ui.graphics.Color as ComposeColor
@@ -45,7 +46,8 @@ import androidx.compose.ui.graphics.Color as ComposeColor
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CareScreen(
-    viewModel: CareViewModel = hiltViewModel()
+    viewModel: CareViewModel = hiltViewModel(),
+    onNavigateToRoute: (String) -> Unit = {}
 ) {
     val selectedTab by viewModel.selectedTab.collectAsState()
     val myCaregivers by viewModel.myCaregivers.collectAsState()
@@ -109,7 +111,8 @@ fun CareScreen(
         PatientOverviewScreen(
             viewModel = viewModel,
             patient = selectedPatient!!,
-            onBack = { viewModel.onDismissPatientOverview() }
+            onBack = { viewModel.onDismissPatientOverview() },
+            onNavigateToDetail = onNavigateToRoute
         )
         return
     }
@@ -207,7 +210,7 @@ fun CareScreen(
                         if (myCaregivers.isEmpty() && !isLoading) {
                             item {
                                 EmptyStateMessage(
-                                    message = "هنوز کسی به عنوان تن‌بار شما ثبت نشده است.\nبرای افزودن، دکمه + را بزنید."
+                                    message = "هنوز کسی به عنوان تن‌بار شما ثبت نشده است.\n.برای افزودن، دکمه + را بزنید"
                                 )
                             }
                         } else {
@@ -228,7 +231,7 @@ fun CareScreen(
                         if (iAmCaregiverFor.isEmpty() && !isLoading) {
                             item {
                                 EmptyStateMessage(
-                                    message = "شما هنوز تن‌بار کسی نیستید.\nکسانی که شماره شما را ثبت کنند اینجا نمایش داده می‌شوند."
+                                    message = "شما هنوز تن‌بار کسی نیستید.\nکسانی که شماره شما را ثبت کنند اینجا نمایش داده می‌شوند.".rtl()
                                 )
                             }
                         } else {
@@ -477,7 +480,7 @@ private fun translateErrorToFarsi(message: String): String {
             "دسترسی مجاز نیست"
 
         message.contains("Verification SMS sent", ignoreCase = true) ->
-            "پیامک تایید ارسال شد. پس از ثبت‌نام تن‌یار متصل خواهد شد."
+            "پیامک تایید ارسال شد. پس از ثبت‌نام تن‌یار متصل خواهد شد.".rtl()
 
         else -> message
     }

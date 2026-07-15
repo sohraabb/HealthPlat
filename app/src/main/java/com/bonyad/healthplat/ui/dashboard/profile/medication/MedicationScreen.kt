@@ -24,19 +24,27 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import com.bonyad.healthplat.R
 import com.bonyad.healthplat.domain.model.*
+import com.bonyad.healthplat.ui.utils.PersianDateUtils
+import com.bonyad.healthplat.ui.utils.rtl
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
 
 // Color constants
 private val TealColor = Color(0xFF5BA3A3)
 private val BackgroundColor = Color(0xFFF5F5F5)
 private val CardColor = Color.White
-private val TextPrimaryColor = Color(0xFF2C2C2C)
+private val TextPrimaryColor = Color(0xFF6B6B6B)
 private val TextSecondaryColor = Color(0xFF666666)
 private val TextTertiaryColor = Color(0xFF999999)
 private val BorderColor = Color(0xFFE8E8E8)
@@ -230,77 +238,79 @@ private fun MedicationCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onEdit),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = CardColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .clickable(onClick = onEdit),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = CardColor),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
         ) {
-            // Top row: Title and Toggle
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
             ) {
-                // Toggle switch
-                Switch(
-                    checked = medication.isEnabled,
-                    onCheckedChange = { onToggleEnabled() },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = TealColor,
-                        uncheckedThumbColor = Color.White,
-                        uncheckedTrackColor = DisabledColor
-                    )
-                )
-
-                // Medication title and name
-                Text(
-                    text = "${medication.title} ${medication.name}",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = TextPrimaryColor
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Bottom row: Time and Date
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Start date
-                Text(
-                    text = formatPersianDate(medication.startDate),
-                    fontSize = 12.sp,
-                    color = TextTertiaryColor
-                )
-
-                // Time and dosage
+                // Top row: Title (right) and Toggle (left)
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Green dot
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .background(TealColor, CircleShape)
+                    // Medication title and name (RTL start = right)
+                    Text(
+                        text = "${medication.title} ${medication.name}",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = TextPrimaryColor
                     )
 
+                    // Toggle switch (RTL end = left)
+                    Switch(
+                        checked = medication.isEnabled,
+                        onCheckedChange = { onToggleEnabled() },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = TealColor,
+                            uncheckedThumbColor = Color.White,
+                            uncheckedTrackColor = DisabledColor
+                        )
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Bottom row: Dot + dosage (right) and date (left)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Time and dosage (RTL start = right)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        // Green dot
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .background(TealColor, CircleShape)
+                        )
+
+                        Text(
+                            text = "${medication.times.firstOrNull()?.to24HourString() ?: "00:00"} ${medication.dosage}".toFarsiDigits(),
+                            fontSize = 13.sp,
+                            color = TextSecondaryColor
+                        )
+                    }
+
+                    // Start date (RTL end = left)
                     Text(
-                        text = "${medication.times.firstOrNull()?.to24HourString() ?: "00:00"} دقیقه صبح ${medication.dosage}".toFarsiDigits(),
-                        fontSize = 13.sp,
-                        color = TextSecondaryColor
+                        text = formatPersianDate(medication.startDate),
+                        fontSize = 12.sp,
+                        color = TextTertiaryColor
                     )
                 }
             }
@@ -335,16 +345,17 @@ private fun AddMedicationBottomSheet(
     viewModel: MedicationViewModel,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = CardColor,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-    ) {
-        when (state.currentStep) {
-            AddMedicationStep.DETAILS -> DetailsStep(state, viewModel)
-            AddMedicationStep.FREQUENCY -> FrequencyStep(state, viewModel)
-            AddMedicationStep.DAYS -> DaysStep(state, viewModel)
-            AddMedicationStep.TIME -> TimeStep(state, viewModel)
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        ModalBottomSheet(
+            onDismissRequest = onDismiss,
+            containerColor = CardColor,
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+        ) {
+            when (state.currentStep) {
+                AddMedicationStep.DETAILS -> DetailsStep(state, viewModel)
+                AddMedicationStep.FREQUENCY -> FrequencyStep(state, viewModel)
+                AddMedicationStep.TIME -> TimeStep(state, viewModel)
+            }
         }
     }
 }
@@ -365,8 +376,7 @@ private fun DetailsStep(
         // Title
         Text(
             text = "با پر کردن فرم زیر دارو خود را ثبت کنید",
-            fontWeight = FontWeight.Bold,
-            fontSize = 16.sp,
+            style = MaterialTheme.typography.titleMedium,
             color = TextPrimaryColor,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
@@ -393,7 +403,7 @@ private fun DetailsStep(
                 value = state.title,
                 onValueChange = { viewModel.updateTitle(it) },
                 label = "عنوان دارو",
-                placeholder = "مانند : قرص قلب ، قرص کبد ...",
+                placeholder = "مانند : قرص قلب ، قرص کبد ...".rtl(),
                 modifier = Modifier.weight(1f)
             )
         }
@@ -410,7 +420,7 @@ private fun DetailsStep(
                 value = state.dosage,
                 onValueChange = { viewModel.updateDosage(it) },
                 label = "مقدار مصرف",
-                placeholder = "مانند: یک قرص یا ۱۰۰ میلی گرم...",
+                placeholder = "مانند: یک قرص یا ۱۰۰ میلی گرم...".rtl(),
                 modifier = Modifier.weight(1f)
             )
 
@@ -441,8 +451,10 @@ private fun DetailsStep(
         ) {
             Text(
                 text = "ثبت",
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                ),
                 color = Color.White
             )
         }
@@ -457,47 +469,43 @@ private fun MedicationTextField(
     placeholder: String,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier = modifier) {
-        Text(
-            text = label,
-            fontSize = 12.sp,
-            color = TextTertiaryColor,
-            modifier = Modifier.fillMaxWidth(),
-            textAlign = TextAlign.End
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = {
-                Text(
-                    text = placeholder,
-                    fontSize = 12.sp,
-                    color = TextTertiaryColor,
-                    textAlign = TextAlign.End,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            textStyle = LocalTextStyle.current.copy(
-                textAlign = TextAlign.End,
-                fontSize = 14.sp
-            ),
-            singleLine = true,
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = TealColor,
-                unfocusedBorderColor = BorderColor,
-                focusedContainerColor = Color.White,
-                unfocusedContainerColor = Color.White
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.fillMaxWidth(),
+        label = {
+            Text(
+                text = label,
+                color = Color(0xFF383838),
+                fontSize = 12.sp
             )
+        },
+        placeholder = {
+            Text(
+                text = placeholder,
+                color = Color(0xFF868686),
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
+        textStyle = LocalTextStyle.current.copy(
+            textAlign = TextAlign.Start,
+            color = Color.Black,
+            fontSize = 12.sp
+        ),
+        singleLine = true,
+        shape = RoundedCornerShape(12.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = Color(0xFF5BA3A3),
+            unfocusedBorderColor = Color(0xFFE0E0E0),
+            focusedContainerColor = Color.White,
+            unfocusedContainerColor = Color.White
         )
-    }
+    )
 }
 
-// ==================== Step 2: Frequency ====================
+// ==================== Step 2: Frequency + Days ====================
 
 @Composable
 private fun FrequencyStep(
@@ -513,8 +521,7 @@ private fun FrequencyStep(
         // Title
         Text(
             text = "در چه دوره هایی باید دارو را مصرف کنید",
-            fontWeight = FontWeight.Bold,
-            fontSize = 16.sp,
+            style = MaterialTheme.typography.titleMedium,
             color = TextPrimaryColor,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
@@ -537,6 +544,60 @@ private fun FrequencyStep(
             }
         }
 
+        // Days selection — shown when any frequency is selected
+        AnimatedVisibility(
+            visible = state.frequency != null,
+            enter = expandVertically(),
+            exit = shrinkVertically()
+        ) {
+            Column {
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Days selection - Row 1 (شنبه to سه شنبه) — RTL: Saturday on the right
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(
+                        DayOfWeek.SATURDAY,
+                        DayOfWeek.SUNDAY,
+                        DayOfWeek.MONDAY,
+                        DayOfWeek.TUESDAY
+                    ).forEach { day ->
+                        DayButton(
+                            text = day.persianName,
+                            isSelected = state.selectedDays.contains(day),
+                            onClick = { viewModel.toggleDay(day) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Days selection - Row 2 (چهارشنبه to جمعه)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(
+                        DayOfWeek.WEDNESDAY,
+                        DayOfWeek.THURSDAY,
+                        DayOfWeek.FRIDAY
+                    ).forEach { day ->
+                        DayButton(
+                            text = day.persianName,
+                            isSelected = state.selectedDays.contains(day),
+                            onClick = { viewModel.toggleDay(day) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    // Empty space for alignment
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(32.dp))
 
         // Next button
@@ -545,7 +606,7 @@ private fun FrequencyStep(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
-            enabled = state.isFrequencyValid,
+            enabled = state.isFrequencyAndDaysValid,
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = TealColor,
@@ -554,8 +615,10 @@ private fun FrequencyStep(
         ) {
             Text(
                 text = "ثبت",
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                ),
                 color = Color.White
             )
         }
@@ -574,7 +637,7 @@ private fun FrequencyButton(
         modifier = modifier.height(48.dp),
         shape = RoundedCornerShape(12.dp),
         border = androidx.compose.foundation.BorderStroke(
-            width = if (isSelected) 2.dp else 1.dp,
+            width = if (isSelected) 1.dp else 1.dp,
             color = if (isSelected) TealColor else BorderColor
         ),
         colors = ButtonDefaults.outlinedButtonColors(
@@ -584,119 +647,9 @@ private fun FrequencyButton(
         Text(
             text = text,
             fontSize = 14.sp,
-            color = if (isSelected) TealColor else TextPrimaryColor,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+            color = if (isSelected) TealColor else Color(0xFF6B6B6B),
+            fontWeight = FontWeight.Normal
         )
-    }
-}
-
-// ==================== Step 3: Days ====================
-
-@Composable
-private fun DaysStep(
-    state: AddMedicationState,
-    viewModel: MedicationViewModel
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp)
-            .padding(bottom = 32.dp)
-    ) {
-        // Title
-        Text(
-            text = "در چه دوره هایی باید دارو را مصرف کنید",
-            fontWeight = FontWeight.Bold,
-            fontSize = 16.sp,
-            color = TextPrimaryColor,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // Frequency options (shown but disabled)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            MedicationFrequency.values().reversed().forEach { frequency ->
-                FrequencyButton(
-                    text = frequency.persianName,
-                    isSelected = state.frequency == frequency,
-                    onClick = { viewModel.selectFrequency(frequency) },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Days selection - Row 1 (شنبه to سه شنبه)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            listOf(
-                DayOfWeek.SATURDAY,
-                DayOfWeek.SUNDAY,
-                DayOfWeek.MONDAY,
-                DayOfWeek.TUESDAY
-            ).forEach { day ->
-                DayButton(
-                    text = day.persianName,
-                    isSelected = state.selectedDays.contains(day),
-                    onClick = { viewModel.toggleDay(day) },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Days selection - Row 2 (چهارشنبه to جمعه)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            listOf(
-                DayOfWeek.WEDNESDAY,
-                DayOfWeek.THURSDAY,
-                DayOfWeek.FRIDAY
-            ).forEach { day ->
-                DayButton(
-                    text = day.persianName,
-                    isSelected = state.selectedDays.contains(day),
-                    onClick = { viewModel.toggleDay(day) },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            // Empty space for alignment
-            Spacer(modifier = Modifier.weight(1f))
-        }
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // Next button
-        Button(
-            onClick = { viewModel.onDaysNext() },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            enabled = state.isDaysValid,
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = TealColor,
-                disabledContainerColor = DisabledColor
-            )
-        ) {
-            Text(
-                text = "ثبت",
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
-                color = Color.White
-            )
-        }
     }
 }
 
@@ -713,7 +666,7 @@ private fun DayButton(
         shape = RoundedCornerShape(10.dp),
         contentPadding = PaddingValues(horizontal = 8.dp),
         border = androidx.compose.foundation.BorderStroke(
-            width = if (isSelected) 2.dp else 1.dp,
+            width = 1.dp,
             color = if (isSelected) TealColor else BorderColor
         ),
         colors = ButtonDefaults.outlinedButtonColors(
@@ -723,13 +676,13 @@ private fun DayButton(
         Text(
             text = text,
             fontSize = 12.sp,
-            color = if (isSelected) TealColor else TextPrimaryColor,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+            color = if (isSelected) TealColor else Color(0xFF6B6B6B),
+            fontWeight = FontWeight.Normal
         )
     }
 }
 
-// ==================== Step 4: Time ====================
+// ==================== Step 3: Time ====================
 
 @Composable
 private fun TimeStep(
@@ -745,8 +698,7 @@ private fun TimeStep(
         // Title
         Text(
             text = "زمان مصرف دارو را تنظیم کنید.",
-            fontWeight = FontWeight.Bold,
-            fontSize = 16.sp,
+            style = MaterialTheme.typography.titleMedium,
             color = TextPrimaryColor,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
@@ -786,30 +738,34 @@ private fun TimeStep(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { viewModel.addCurrentTime() }
-                .padding(vertical = 12.dp),
-            horizontalArrangement = Arrangement.End,
+                .padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.Start,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "با زدن این دکمه میتوانید ساعت دیگری هم اضافه کنید",
-                fontSize = 12.sp,
-                color = TextSecondaryColor
-            )
-
-            Spacer(modifier = Modifier.width(12.dp))
 
             Box(
                 modifier = Modifier
                     .size(40.dp)
-                    .border(1.dp, BorderColor, RoundedCornerShape(10.dp)),
+                    .border(1.dp, TealColor, RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.Add,
+                    painter = (painterResource(R.drawable.add)),
                     contentDescription = "اضافه کردن زمان",
-                    tint = TextSecondaryColor
+                    tint = TealColor
                 )
             }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Text(
+                text = "با زدن این دکمه میتوانید ساعت دیگری هم اضافه کنید",
+                fontSize = 16.sp,
+                color = Color(0xFF6B6B6B)
+            )
+
+
+
         }
 
         // Show added times
@@ -842,8 +798,10 @@ private fun TimeStep(
         ) {
             Text(
                 text = "ثبت",
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                ),
                 color = Color.White
             )
         }
@@ -857,16 +815,41 @@ private fun NumberPicker(
     onValueChange: (Int) -> Unit,
     format: (Int) -> String = { it.toString() }
 ) {
+    val rangeSize = range.last - range.first + 1
+    var dragAccumulator by remember { mutableStateOf(0f) }
+    val dragThreshold = 14f // Lower threshold for faster scrolling
+
+    fun wrapValue(v: Int): Int {
+        val offset = v - range.first
+        return range.first + ((offset % rangeSize) + rangeSize) % rangeSize
+    }
+
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.pointerInput(value, range) {
+            detectVerticalDragGestures(
+                onDragEnd = { dragAccumulator = 0f },
+                onDragCancel = { dragAccumulator = 0f }
+            ) { _, dragAmount ->
+                dragAccumulator += dragAmount
+                while (dragAccumulator > dragThreshold) {
+                    dragAccumulator -= dragThreshold
+                    onValueChange(wrapValue(value - 1))
+                }
+                while (dragAccumulator < -dragThreshold) {
+                    dragAccumulator += dragThreshold
+                    onValueChange(wrapValue(value + 1))
+                }
+            }
+        }
     ) {
         // Show 5 values: value-2, value-1, value, value+1, value+2
         val displayValues = listOf(
-            (value - 2).let { if (it < range.first) range.last - (range.first - it - 1) else it },
-            (value - 1).let { if (it < range.first) range.last else it },
+            wrapValue(value - 2),
+            wrapValue(value - 1),
             value,
-            (value + 1).let { if (it > range.last) range.first else it },
-            (value + 2).let { if (it > range.last) range.first + (it - range.last - 1) else it }
+            wrapValue(value + 1),
+            wrapValue(value + 2)
         )
 
         displayValues.forEachIndexed { index, displayValue ->
@@ -877,31 +860,38 @@ private fun NumberPicker(
                 else -> 1f
             }
 
+            // Teal separator above the selected value
+            if (isSelected) {
+                HorizontalDivider(
+                    modifier = Modifier.width(50.dp),
+                    thickness = 1.dp,
+                    color = TealColor
+                )
+            }
+
             Text(
                 text = format(displayValue),
-                fontSize = if (isSelected) 24.sp else 18.sp,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                color = TextPrimaryColor.copy(alpha = alpha),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Normal,
+                color = Color.Black.copy(alpha = alpha),
                 modifier = Modifier
                     .clickable {
                         when (index) {
-                            0 -> onValueChange(
-                                if (value - 2 < range.first) range.last - (range.first - value + 1) else value - 2
-                            )
-                            1 -> onValueChange(if (value - 1 < range.first) range.last else value - 1)
-                            3 -> onValueChange(if (value + 1 > range.last) range.first else value + 1)
-                            4 -> onValueChange(
-                                if (value + 2 > range.last) range.first + (value + 1 - range.last) else value + 2
-                            )
+                            0 -> onValueChange(wrapValue(value - 2))
+                            1 -> onValueChange(wrapValue(value - 1))
+                            3 -> onValueChange(wrapValue(value + 1))
+                            4 -> onValueChange(wrapValue(value + 2))
                         }
                     }
                     .padding(vertical = 4.dp)
             )
 
+            // Teal separator below the selected value
             if (isSelected) {
-                Divider(
-                    modifier = Modifier.width(40.dp),
-                    color = BorderColor
+                HorizontalDivider(
+                    modifier = Modifier.width(50.dp),
+                    thickness = 1.dp,
+                    color = TealColor
                 )
             }
         }
@@ -948,17 +938,14 @@ private fun TimeChip(
 // ==================== Utility Functions ====================
 
 private fun formatPersianDate(timestamp: Long): String {
-    // Simple Persian date formatting
     val calendar = java.util.Calendar.getInstance()
     calendar.timeInMillis = timestamp
 
-    val year = calendar.get(java.util.Calendar.YEAR)
-    val month = calendar.get(java.util.Calendar.MONTH) + 1
-    val day = calendar.get(java.util.Calendar.DAY_OF_MONTH)
+    val gYear = calendar.get(java.util.Calendar.YEAR)
+    val gMonth = calendar.get(java.util.Calendar.MONTH) + 1
+    val gDay = calendar.get(java.util.Calendar.DAY_OF_MONTH)
 
-    // Convert to Persian calendar (simplified)
-    // In production, use a proper Persian calendar library
-    val persianYear = year - 621
+    val (jy, jm, jd) = PersianDateUtils.georgianToJalali(gYear, gMonth, gDay)
 
-    return "$persianYear/${"۰$month".takeLast(2)}/${"۰$day".takeLast(2)}".toFarsiDigits()
+    return String.format("%04d/%02d/%02d", jy, jm, jd).toFarsiDigits()
 }

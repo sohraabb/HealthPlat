@@ -8,6 +8,7 @@ import com.bonyad.healthplat.blesdk.manager.HealthDeviceManager
 import com.bonyad.healthplat.blesdk.model.ConnectionState
 import com.bonyad.healthplat.data.local.UserPreferencesDataStore
 import com.bonyad.healthplat.data.network.AIAnalysisApiService
+import com.bonyad.healthplat.data.network.ArrhythmiaApiService
 import com.bonyad.healthplat.data.network.SignalRManager
 import com.bonyad.healthplat.data.network.TokenManager
 import com.bonyad.healthplat.data.repository.HealthDataRepository
@@ -16,6 +17,7 @@ import com.bonyad.healthplat.domain.model.ApiErrorType
 import com.bonyad.healthplat.domain.model.RecordDataResult
 
 import com.bonyad.healthplat.ui.utils.PermissionUtils
+import com.bonyad.healthplat.ui.utils.rtl
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
@@ -36,6 +38,8 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
+enum class SyncStatus { Idle, Syncing, Success, Failed }
+
 data class HealthOverview(
     // Real-time data (Updates constantly)
     val heartRate: Int = 0,
@@ -52,6 +56,9 @@ data class HealthOverview(
     val sleepHistory: List<Int> = emptyList(),
     val spo2History: List<Int> = emptyList(),
 
+    // Arrhythmia
+    val arrhythmiaAfibPercent: Float = -1f, // -1 = not loaded yet
+
     // Device State
     val batteryLevel: Int? = null,
     val isDeviceConnected: Boolean = false
@@ -63,6 +70,7 @@ class DashboardViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val deviceManager: HealthDeviceManager,
     private val aiApiService: AIAnalysisApiService,
+    private val arrhythmiaApiService: ArrhythmiaApiService,
     private val healthRepository: HealthDataRepository,
     private val userRepository: UserRepository,
     private val userPreferences: UserPreferencesDataStore,
@@ -87,6 +95,11 @@ class DashboardViewModel @Inject constructor(
     private val _requestBluetoothEnable = MutableSharedFlow<Unit>(replay = 0)
     val requestBluetoothEnable: SharedFlow<Unit> = _requestBluetoothEnable.asSharedFlow()
 
+    // Location services enable request — UI observes this to open location settings
+    // Required for BLE scanning on Samsung + OEM devices
+    private val _requestLocationServicesEnable = MutableSharedFlow<Unit>(replay = 0)
+    val requestLocationServicesEnable: SharedFlow<Unit> = _requestLocationServicesEnable.asSharedFlow()
+
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
@@ -94,16 +107,33 @@ class DashboardViewModel @Inject constructor(
     private val _readinessScore = MutableStateFlow(0)
     val readinessScore: StateFlow<Int> = _readinessScore.asStateFlow()
 
+    // Each pair is (insightText, flagScore) where flagScore 0-3 drives the icon
     private val _healthInsights = MutableStateFlow(
-        listOf("در حال تحلیل وضعیت شما...")
+        listOf("در حال تحلیل وضعیت شما...".rtl() to 1)
     )
-    val healthInsights: StateFlow<List<String>> = _healthInsights.asStateFlow()
+    val healthInsights: StateFlow<List<Pair<String, Int>>> = _healthInsights.asStateFlow()
+
+    private val _isConnecting = MutableStateFlow(false)
+    val isConnecting: StateFlow<Boolean> = _isConnecting.asStateFlow()
+
+    private val _syncStatus = MutableStateFlow(SyncStatus.Idle)
+    val syncStatus: StateFlow<SyncStatus> = _syncStatus.asStateFlow()
+
+    private val _lastSyncServerTime = MutableStateFlow<String?>(null)
+    val lastSyncServerTime: StateFlow<String?> = _lastSyncServerTime.asStateFlow()
 
     private var historySyncJob: Job? = null
+    private var initObserverJob: Job? = null
+    private var connectingTimeoutJob: Job? = null
     private var hasCompletedInitialSync = false
+    private var suppressNextAutoReconnect = false
 
     init {
         Timber.i("📱 DashboardViewModel initialized")
+
+        viewModelScope.launch {
+            userPreferences.getLastSyncServerTime().collect { _lastSyncServerTime.value = it }
+        }
 
         viewModelScope.launch {
             // OPTIMIZATION 1: Run independent tasks in parallel
@@ -125,6 +155,7 @@ class DashboardViewModel @Inject constructor(
 
             // These can run in parallel with device connection
             launch { fetchReadinessData() }
+            launch { fetchArrhythmiaForCard() }
             launch {
                 startTokenRefreshLoop()
                 srManager.observeToken(viewModelScope)
@@ -137,70 +168,92 @@ class DashboardViewModel @Inject constructor(
         try {
             val userId = userPreferences.getUserId().first() ?: return
 
-            val datesToTry = (1..3).map { daysAgo ->
-                LocalDate.now().minusDays(daysAgo.toLong())
-                    .format(DateTimeFormatter.ISO_DATE)
-            }
+            val today = LocalDate.now().format(DateTimeFormatter.ISO_DATE)
 
-            for (date in datesToTry) {
+            Timber.d("Fetching readiness for today: $today")
 
-                Timber.d("Trying readiness date: $date")
+            val response = aiApiService.getReadinessScore(userId, today)
 
-                val response = aiApiService.getReadinessScore(userId, date)
-
-                if (!response.isSuccessful) {
-                    if (response.code() == 404 || response.code() == 500) {
-                        continue
-                    } else {
-                        fallbackGenericError()
-                        return
-                    }
-                }
-
-                val body = response.body() ?: run {
-                    fallbackGenericError()
-                    return
-                }
-
-                if (!body.ok) {
-                    if (body.error?.type == ApiErrorType.NO_METRICS_FOUND) {
-                        continue
-                    } else {
-                        fallbackGenericError()
-                        return
-                    }
-                }
-
-                val data = body.data ?: continue
-
-                // ✅ SUCCESS → stop fallback loop
-                _readinessScore.value =
-                    data.absReadinessScore.coerceIn(0, 100)
-
-                _healthInsights.value =
-                    if (data.perAspectNotes.isNotEmpty())
-                        data.perAspectNotes.values.toList()
-                    else
-                        listOf("وضعیت کلی شما نرمال است")
-
+            if (!response.isSuccessful) {
+                fallbackGenericError()
                 return
             }
 
-            _readinessScore.value = 0
+            val body = response.body() ?: run {
+                fallbackGenericError()
+                return
+            }
+
+            if (!body.isSuccess) {
+                _readinessScore.value = 0
+                _healthInsights.value =
+                    listOf("داده‌ای برای امروز ثبت نشده است" to 1)
+                return
+            }
+
+            val data = body.data ?: run {
+                _readinessScore.value = 0
+                _healthInsights.value =
+                    listOf("داده‌ای برای امروز ثبت نشده است" to 1)
+                return
+            }
+
+            _readinessScore.value =
+                data.absReadinessScore.coerceIn(0, 100)
+
+            // Map English flag keys to Persian note keys
+            val flagKeyToPersianKey = mapOf(
+                "activity" to "فعالیت",
+                "heart"    to "قلبی",
+                "stress"   to "استرس",
+                "sleep"    to "خواب"
+            )
+
             _healthInsights.value =
-                listOf("داده‌ای برای چند روز اخیر ثبت نشده است")
+                if (data.perAspectNotes.isNotEmpty()) {
+                    data.perAspectNotes.entries.map { (persianKey, noteText) ->
+                        val englishKey = flagKeyToPersianKey.entries
+                            .firstOrNull { it.value == persianKey }?.key
+                        val flagScore = englishKey?.let { data.perAspectFlags[it] } ?: 1
+                        noteText to flagScore
+                    }
+                } else {
+                    listOf("وضعیت کلی شما نرمال است" to 2)
+                }
 
         } catch (e: Exception) {
             Timber.e(e, "Error fetching readiness")
             _readinessScore.value = 0
             _healthInsights.value =
-                listOf("عدم دسترسی به سرویس")
+                listOf("عدم دسترسی به سرویس" to 0)
         }
     }
 
     private fun fallbackGenericError() {
         _readinessScore.value = 0
-        _healthInsights.value = listOf("خطا در دریافت تحلیل")
+        _healthInsights.value = listOf("خطا در دریافت تحلیل" to 0)
+    }
+
+    private suspend fun fetchArrhythmiaForCard() {
+        try {
+            val userId = userPreferences.getUserId().first() ?: return
+            val today = LocalDate.now().format(DateTimeFormatter.ISO_DATE)
+            val response = arrhythmiaApiService.predictArrhythmia(userId, today, today)
+            if (!response.isSuccessful || response.body()?.isSuccess != true) return
+
+            val dataList = response.body()?.data ?: return
+            val data = dataList.firstOrNull() ?: return
+            val predictions = data.predictions
+            if (predictions.isEmpty()) return
+
+            val afibCount = predictions.count { it == 1 }
+            val afibPercent = (afibCount.toFloat() / predictions.size) * 100f
+
+            _healthOverview.update { it.copy(arrhythmiaAfibPercent = afibPercent) }
+            Timber.d("Arrhythmia card: ${afibPercent}% AFib")
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to fetch arrhythmia for home card")
+        }
     }
 
     private suspend fun checkPermissionsAndConnect() {
@@ -225,7 +278,6 @@ class DashboardViewModel @Inject constructor(
     fun onPermissionsDenied() {
         Timber.w("⚠️ User denied Bluetooth permissions")
         _needsBluetoothPermissions.value = false
-        // You might want to show an explanation dialog here
     }
 
     private suspend fun ensureUserData() {
@@ -238,11 +290,27 @@ class DashboardViewModel @Inject constructor(
     }
 
     private fun observeInitializationComplete() {
-        viewModelScope.launch {
+        initObserverJob?.cancel()
+        initObserverJob = viewModelScope.launch {
             deviceManager.initializationComplete.collect {
                 Timber.i("🎯 Device initialization complete")
 
-                // OPTIMIZATION: Reduced from 2000ms to 500ms
+                // DeviceInfoBean.deviceId reflects the userId stored on the ring via setUserInfo().
+                // If it's 0 the ring has never been assigned a user — set it now.
+                try {
+                    val ringDeviceId = deviceManager.getDeviceInfo().getOrNull()?.deviceId ?: 0
+                    if (ringDeviceId == 0) {
+                        val storedDeviceId = userPreferences.getDeviceId().first()
+                        val userIdForRing = storedDeviceId?.toLong()?.coerceIn(1L, 4294967294L) ?: 1L
+                        deviceManager.setUserId(userIdForRing)
+                        Timber.i("👤 Ring had no userId — set to device ID: $userIdForRing")
+                    } else {
+                        Timber.i("👤 Ring already has userId=$ringDeviceId — skipping setUserId")
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "⚠️ Could not read ring device info for userId check")
+                }
+
                 delay(500)
 
                 if (!hasCompletedInitialSync) {
@@ -268,6 +336,7 @@ class DashboardViewModel @Inject constructor(
             }
 
             Timber.i("🔄 Starting optimized history sync (with gap detection)...")
+            _syncStatus.value = SyncStatus.Syncing
 
             // OPTIMIZATION: Minimal delay (reduced from 2500ms)
             delay(300)
@@ -278,11 +347,14 @@ class DashboardViewModel @Inject constructor(
                 if (result is RecordDataResult.Success) {
                     processHistoryData(result)
                     hasCompletedInitialSync = true
+                    _syncStatus.value = SyncStatus.Success
                     Timber.i("✅ History sync complete (all missing days synced)")
                 } else if (result is RecordDataResult.Error) {
+                    _syncStatus.value = SyncStatus.Failed
                     Timber.w("⚠️ Sync failed: ${result.message}")
                 }
             } catch (e: Exception) {
+                _syncStatus.value = SyncStatus.Failed
                 Timber.e(e, "❌ Sync exception")
             }
         }
@@ -296,48 +368,16 @@ class DashboardViewModel @Inject constructor(
         _healthOverview.update { current ->
             current.copy(
                 sleepDurationHours = calculateSleepHours(data.sleep?.sourceList),
-                bloodOxygen = data.spo2?.sourceList?.lastOrNull { it > 0 } ?: current.bloodOxygen,
-                stressLevel = data.stress?.stressSource?.lastOrNull { it > 0 } ?: current.stressLevel,
-                hrv = data.hrv?.hrvSource?.lastOrNull { it > 0 } ?: current.hrv,
+                bloodOxygen = data.spo2?.sourceList?.lastOrNull { it > 0 } ?: 0,
+                stressLevel = data.stress?.stressSource?.lastOrNull { it > 0 } ?: 0,
+                hrv = data.hrv?.hrvSource?.lastOrNull { it > 0 } ?: 0,
                 steps = data.steps?.stepSource?.sum()?.takeIf { it > current.steps } ?: current.steps,
 
                 // Update history for charts
                 heartRateHistory = data.heartRate?.heartRateSource ?: current.heartRateHistory,
                 stepsHistory = data.steps?.stepSource ?: current.stepsHistory,
-                sleepHistory = data.sleep?.sourceList ?: current.sleepHistory,
-                spo2History = data.spo2?.sourceList ?: current.spo2History
-            )
-        }
-    }
-
-    private fun processHistoryDataUpdated(data: RecordDataResult.Success) {
-        _healthOverview.update { current ->
-            // 1. Calculate Total Sleep (Hours)
-            val sleepSource = data.sleep?.sourceList ?: emptyList()
-            val sleepDuration = calculateSleepHours(sleepSource)
-
-            // 2. Get Last SpO2
-            val spo2List = data.spo2?.sourceList ?: emptyList()
-            val lastSpo2 = spo2List.lastOrNull { it > 0 } ?: current.bloodOxygen
-
-            // 3. Total Steps (Sum of the day)
-            val stepSource = data.steps?.stepSource ?: emptyList()
-            val totalSteps = if (stepSource.isNotEmpty()) stepSource.sum() else current.steps
-
-            // 4. Heart Rate History
-            val hrSource = data.heartRate?.heartRateSource ?: emptyList()
-
-            current.copy(
-                // Update Values
-                sleepDurationHours = sleepDuration,
-                bloodOxygen = lastSpo2,
-                steps = totalSteps,
-
-                // Update History Lists for Charts
-                heartRateHistory = hrSource,
-                stepsHistory = stepSource,
-                sleepHistory = sleepSource,
-                spo2History = spo2List
+                sleepHistory = data.sleep?.sourceList ?: emptyList(),
+                spo2History = data.spo2?.sourceList ?: emptyList()
             )
         }
     }
@@ -348,12 +388,22 @@ class DashboardViewModel @Inject constructor(
         return sleepMinutes / 60f
     }
 
+    // ══════════════════════════════════════════════════════════════════════
+    // FIX: Uses reconnect(mac) instead of connect(mac).
+    // reconnect() does: quick BLE scan → find device by MAC → connect
+    // using BluetoothDevice object (matching demo's toReconDevice pattern).
+    // ══════════════════════════════════════════════════════════════════════
     private fun autoConnectDevice() {
         viewModelScope.launch {
             val currentState = deviceManager.connectionState.value
-            if (currentState == ConnectionState.CONNECTED || currentState == ConnectionState.CONNECTING) {
-                Timber.d("🚫 Already ${currentState}")
+            if (currentState == ConnectionState.CONNECTED) {
+                Timber.d("🚫 Already connected")
                 return@launch
+            }
+            if (currentState == ConnectionState.CONNECTING) {
+                Timber.w("⚠️ Stuck in CONNECTING — forcing disconnect and retrying")
+                deviceManager.disconnect()
+                delay(500)
             }
 
             try {
@@ -370,13 +420,18 @@ class DashboardViewModel @Inject constructor(
                     return@launch
                 }
 
-                // OPTIMIZATION: Reduced from 800ms
+                // Check location services switch — required for BLE on Samsung + OEM devices
+                if (!PermissionUtils.isLocationServicesEnabled(context)) {
+                    Timber.w("⚠️ Location services are OFF, cannot auto-connect on this device")
+                    return@launch
+                }
+
                 delay(200)
 
                 val deviceMac = userPreferences.getDeviceMac().first()
                 if (!deviceMac.isNullOrEmpty()) {
-                    Timber.i("🔄 Auto-connecting to: $deviceMac")
-                    deviceManager.connect(deviceMac)
+                    Timber.i("🔄 Auto-reconnecting to: $deviceMac")
+                    deviceManager.reconnect(deviceMac)
                 } else {
                     Timber.w("⚠️ No saved device MAC")
                 }
@@ -392,6 +447,8 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    private var autoReconnectJob: Job? = null
+
     private fun observeDeviceConnection() {
         viewModelScope.launch {
             deviceManager.connectionState.collect { state ->
@@ -402,20 +459,52 @@ class DashboardViewModel @Inject constructor(
 
                 when (state) {
                     ConnectionState.CONNECTED -> {
+                        _isConnecting.value = false
+                        connectingTimeoutJob?.cancel()
+                        suppressNextAutoReconnect = false
+                        autoReconnectJob?.cancel()
                         Timber.i("✅ Device connected")
-                        // Start observing initialization after connection
                         observeInitializationComplete()
                     }
                     ConnectionState.DISCONNECTED -> {
+                        _isConnecting.value = false
+                        connectingTimeoutJob?.cancel()
                         hasCompletedInitialSync = false
+                        initObserverJob?.cancel()
                         _healthOverview.update { it.copy(batteryLevel = null) }
 
-                        // OPTIMIZATION: Faster reconnect attempt
-                        delay(1000) // Reduced from default
-                        autoConnectDevice()
+                        autoReconnectJob?.cancel()
+                        if (!suppressNextAutoReconnect) {
+                            autoReconnectJob = launch {
+                                delay(2000)
+                                autoConnectDevice()
+                            }
+                        }
+                        suppressNextAutoReconnect = false
                     }
-                    else -> {}
+                    ConnectionState.CONNECTING -> {
+                        _isConnecting.value = true
+                        autoReconnectJob?.cancel()
+                        startConnectingTimeout()
+                    }
+                    ConnectionState.SCANNING -> {
+                        _isConnecting.value = true
+                        startConnectingTimeout()
+                    }
                 }
+            }
+        }
+    }
+
+    private fun startConnectingTimeout() {
+        if (connectingTimeoutJob?.isActive == true) return // countdown already running
+        connectingTimeoutJob = viewModelScope.launch {
+            delay(60_000)
+            if (_isConnecting.value) {
+                Timber.w("⏰ BLE connection timed out after 60s — aborting")
+                suppressNextAutoReconnect = true
+                _isConnecting.value = false
+                deviceManager.disconnect()
             }
         }
     }
@@ -456,24 +545,33 @@ class DashboardViewModel @Inject constructor(
     fun refreshData() {
         viewModelScope.launch {
             _isRefreshing.value = true
+            _syncStatus.value = SyncStatus.Syncing
             try {
                 fetchReadinessData()
                 if (_healthOverview.value.isDeviceConnected) {
                     deviceManager.readBatteryLevel()
-                    // wait for sync to actually finish
                     historySyncJob?.cancel()
                     historySyncJob = launch {
                         try {
                             val result = healthRepository.syncAllMissingDays()
                             if (result is RecordDataResult.Success) {
                                 processHistoryData(result)
+                                _syncStatus.value = SyncStatus.Success
+                            } else {
+                                _syncStatus.value = SyncStatus.Failed
                             }
                         } catch (e: Exception) {
+                            _syncStatus.value = SyncStatus.Failed
                             Timber.e(e, "Refresh sync failed")
                         }
                     }
                     historySyncJob?.join()
+                } else {
+                    _syncStatus.value = SyncStatus.Idle
                 }
+            } catch (e: Exception) {
+                _syncStatus.value = SyncStatus.Failed
+                Timber.e(e, "Refresh failed")
             } finally {
                 _isRefreshing.value = false
             }
@@ -481,6 +579,7 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun connectDevice() {
+        suppressNextAutoReconnect = false
         if (!PermissionUtils.hasBluetoothPermissions(context)) {
             _needsBluetoothPermissions.value = true
             return
@@ -498,6 +597,14 @@ class DashboardViewModel @Inject constructor(
             return
         }
 
+        if (!PermissionUtils.isLocationServicesEnabled(context)) {
+            Timber.w("⚠️ Location services are OFF — BLE scan will fail on Samsung/OEM devices")
+            viewModelScope.launch {
+                _requestLocationServicesEnable.emit(Unit)
+            }
+            return
+        }
+
         viewModelScope.launch { autoConnectDevice() }
     }
 
@@ -505,6 +612,11 @@ class DashboardViewModel @Inject constructor(
         // Called from UI after user enables Bluetooth
         viewModelScope.launch {
             delay(500)
+            if (!PermissionUtils.isLocationServicesEnabled(context)) {
+                Timber.w("⚠️ Bluetooth enabled but location services are OFF")
+                _requestLocationServicesEnable.emit(Unit)
+                return@launch
+            }
             autoConnectDevice()
         }
     }
@@ -562,6 +674,9 @@ class DashboardViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         historySyncJob?.cancel()
+        initObserverJob?.cancel()
+        autoReconnectJob?.cancel()
+        connectingTimeoutJob?.cancel()
         deviceManager.closeRealTimeHeartRate()
     }
 }

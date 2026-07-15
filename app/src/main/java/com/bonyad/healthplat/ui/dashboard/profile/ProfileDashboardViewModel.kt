@@ -86,7 +86,6 @@ class ProfileDashboardViewModel @Inject constructor(
                 Timber.i("✅ Background sync stopped")
 
                 authRepository.logout()
-                userPreferences.clearAuthOnly()
                 Timber.i("✅ Auth data cleared")
 
                 _navigationEvent.send(ProfileNavigationEvent.NavigateToLogin)
@@ -96,7 +95,7 @@ class ProfileDashboardViewModel @Inject constructor(
                 Timber.e(e, "❌ Logout failed, but clearing data anyway...")
                 // Fallback
                 healthSyncScheduler.stopPeriodicSync()
-                userPreferences.clearAuthOnly()
+                userPreferences.clearForLogout()
                 _navigationEvent.send(ProfileNavigationEvent.NavigateToLogin)
             }
         }

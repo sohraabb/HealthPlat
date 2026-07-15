@@ -3,6 +3,7 @@ package com.bonyad.healthplat.ui.utils
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.os.Build
 import androidx.core.content.ContextCompat
 
@@ -54,5 +55,16 @@ object PermissionUtils {
      */
     fun hasPermission(context: Context, permission: String): Boolean {
         return ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+    }
+
+    /**
+     * Check if location services (the system GPS toggle) are enabled.
+     * Required for BLE scanning on Samsung and other OEM devices even when
+     * ACCESS_FINE_LOCATION permission is already granted.
+     */
+    fun isLocationServicesEnabled(context: Context): Boolean {
+        val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        return lm.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+                lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
     }
 }

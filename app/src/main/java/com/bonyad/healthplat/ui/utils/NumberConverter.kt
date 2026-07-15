@@ -8,3 +8,10 @@ val farsiDigits = mapOf(
 fun String.toFarsiDigits(): String {
     return this.map { it -> farsiDigits[it] ?: it }.joinToString("")
 }
+
+/**
+ * Wraps a Persian/RTL string with Right-to-Left Marks (U+200F) so that
+ * neutral punctuation characters (`.`, `...`, `!`, `?`, etc.) stay at the
+ * visual end of the text instead of jumping to the visual start due to BiDi.
+ */
+fun String.rtl(): String = "\u200F${this}\u200F"

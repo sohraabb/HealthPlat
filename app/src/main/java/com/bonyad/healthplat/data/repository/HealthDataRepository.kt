@@ -8,12 +8,12 @@ import com.bonyad.healthplat.domain.model.MetricRequest
 import com.bonyad.healthplat.domain.model.RecordDataResult
 import com.bonyad.healthplat.domain.model.SleepMetricRequest
 import com.bonyad.healthplat.domain.model.SleepSummary
-import com.bonyad.healthplat.domain.model.SyncHealthDataRequest
 import com.bonyad.healthplat.ui.utils.SleepDataHelper
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import timber.log.Timber
 import java.time.LocalDate
 import java.time.LocalTime
@@ -22,7 +22,6 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.coroutines.resume
 
 @Singleton
 class HealthDataRepository @Inject constructor(
@@ -55,21 +54,22 @@ class HealthDataRepository @Inject constructor(
 
         Timber.i("📅 Sync check - Today: $todayString, Last sync: ${lastSyncDate ?: "never"}")
 
-        // Calculate days to sync
         val daysToSync = calculateDaysToSync(lastSyncDate, today)
 
         Timber.i("📅 Days to sync: $daysToSync")
 
         var todayResult: RecordDataResult = RecordDataResult.Error(-1)
+        var serverSyncTime: String? = null
 
         // Sync from oldest to newest (so if interrupted, older data is saved)
         for (day in daysToSync.sortedDescending()) {
             Timber.i("🔄 Syncing day $day (${today.minusDays(day.toLong())})")
 
-            val result = syncDashboardData(day)
+            val (result, serverTime) = syncDashboardData(day)
 
             if (day == 0) {
                 todayResult = result
+                serverSyncTime = serverTime
             }
 
             when (result) {
@@ -78,15 +78,14 @@ class HealthDataRepository @Inject constructor(
                 }
                 is RecordDataResult.Error -> {
                     Timber.w("⚠️ Day $day sync failed: ${result.message} (code: ${result.code})")
-                    // Continue with other days, don't stop on failure
                 }
             }
         }
 
-        // Update last sync date only if today (day 0) synced successfully
+        // Save server-provided sync time; fall back to local date for gap calculation
         if (todayResult is RecordDataResult.Success) {
-            userPreferences.saveLastSyncDate(todayString)
-            Timber.i("💾 Last sync date updated to: $todayString")
+            userPreferences.saveLastSyncDate(todayString, serverSyncTime)
+            Timber.i("💾 Last sync date updated to: $todayString (server time: $serverSyncTime)")
         }
 
         return todayResult
@@ -135,17 +134,22 @@ class HealthDataRepository @Inject constructor(
     }
 
     /**
-     * ✅ FIXED: Now returns RecordDataResult with CORRECTED sleep data
+     * Syncs a single day's data: reads from BLE, uploads to server.
+     * @return Pair of (RecordDataResult, serverLastSyncedTime) — time is null if upload failed or no data.
      */
-    suspend fun syncDashboardData(day: Int): RecordDataResult {
-        // ✅ Use helper to get complete sleep data (including pre-midnight portion)
+    suspend fun syncDashboardData(day: Int): Pair<RecordDataResult, String?> {
         val recordResult = sleepDataHelper.getRecordDataWithFullSleep(day)
 
         if (recordResult is RecordDataResult.Success) {
-            uploadHealthData(recordResult)
+            val serverTime = uploadHealthData(recordResult)
+            if (serverTime == null) {
+                Timber.e("❌ Upload failed for day $day — reporting as error")
+                return Pair(RecordDataResult.Error(-4), null)
+            }
+            return Pair(recordResult, serverTime)
         }
 
-        return recordResult
+        return Pair(recordResult, null)
     }
 
     suspend fun getMetricData(
@@ -174,23 +178,22 @@ class HealthDataRepository @Inject constructor(
     }
 
     /**
-     * ✅ This now receives CORRECTED sleep data from syncDashboardData()
-     * Server will get complete sleep data including pre-midnight portion
+     * Uploads all available health metrics in parallel.
+     * @return the server's lastSyncedTime if ALL uploads succeeded, null if any failed.
      */
-    private suspend fun uploadHealthData(data: RecordDataResult.Success) = coroutineScope {
+    private suspend fun uploadHealthData(data: RecordDataResult.Success): String? = coroutineScope {
         val userId = userPreferences.getUserId().first()
         val deviceId = userPreferences.getDeviceId().first()
 
         if (userId == null || deviceId == null) {
             Timber.e("❌ Cannot sync: Missing UserId or DeviceId")
-            return@coroutineScope
+            return@coroutineScope null
         }
 
-        // Get date from SDK beans
         val sdkDateString = data.heartRate?.recordDay
             ?: data.steps?.recordDay
             ?: data.sleep?.recordDay
-            ?: getCurrentDateString() // Fallback
+            ?: getCurrentDateString()
 
         val time = LocalTime.now(ZoneOffset.UTC)
             .format(DateTimeFormatter.ofPattern("HH:mm:ss"))
@@ -199,83 +202,78 @@ class HealthDataRepository @Inject constructor(
 
         Timber.i("🔄 Preparing upload for $finalRecordDate")
 
-        // ---------------------------------------------------------
-        // Parallel Uploads
-        // ---------------------------------------------------------
+        val uploads = mutableListOf<Deferred<MetricData?>>()
 
-        // 1. Heart Rate
         if (data.heartRate?.heartRateSource?.any { it > 0 } == true) {
-            launch {
-                uploadMetric(
-                    userId, deviceId, finalRecordDate,
-                    data.heartRate.heartRateSource, MetricType.HEART_RATE
-                )
+            uploads += async {
+                uploadMetric(userId, deviceId, finalRecordDate, data.heartRate.heartRateSource, MetricType.HEART_RATE)
             }
         }
 
-        // 2. Steps
         if (data.steps?.stepSource?.any { it > 0 } == true) {
-            launch {
-                uploadMetric(
-                    userId, deviceId, finalRecordDate,
-                    data.steps.stepSource, MetricType.STEPS
-                )
+            uploads += async {
+                uploadMetric(userId, deviceId, finalRecordDate, data.steps.stepSource, MetricType.STEPS)
             }
         }
 
-        // 3. Sleep ✅ Now uploads COMPLETE sleep data (including pre-midnight)
         if (data.sleep?.sourceList?.any { it > 0 } == true) {
-            launch {
-                uploadMetric(
-                    userId, deviceId, finalRecordDate,
-                    data.sleep.sourceList, MetricType.SLEEP
-                )
+            uploads += async {
+                uploadMetric(userId, deviceId, finalRecordDate, data.sleep.sourceList, MetricType.SLEEP)
             }
         }
 
-        // 4. SpO2
         if (data.spo2?.sourceList?.any { it > 0 } == true) {
-            launch {
-                uploadMetric(
-                    userId, deviceId, finalRecordDate,
-                    data.spo2.sourceList, MetricType.SPO2
-                )
+            uploads += async {
+                uploadMetric(userId, deviceId, finalRecordDate, data.spo2.sourceList, MetricType.SPO2)
             }
         }
 
-        // 5. Stress
         if (data.stress?.stressSource?.any { it > 0 } == true) {
-            launch {
-                uploadMetric(
-                    userId, deviceId, finalRecordDate,
-                    data.stress.stressSource, MetricType.STRESS
-                )
+            uploads += async {
+                uploadMetric(userId, deviceId, finalRecordDate, data.stress.stressSource, MetricType.STRESS)
             }
         }
 
-        // 6. HRV
         if (data.hrv?.hrvSource?.any { it > 0 } == true) {
-            launch {
-                uploadMetric(
-                    userId, deviceId, finalRecordDate,
-                    data.hrv.hrvSource, MetricType.HRV
-                )
+            uploads += async {
+                uploadMetric(userId, deviceId, finalRecordDate, data.hrv.hrvSource, MetricType.HRV)
             }
+        }
+
+        if (uploads.isEmpty()) {
+            // Ring returned all-zero metrics — nothing to upload.
+            // This is normal early in the day or when the ring has no readings yet.
+            // Return the local record date as a sentinel so the caller doesn't
+            // treat this as an upload failure.
+            Timber.w("⚠️ No non-zero metrics for $finalRecordDate — skipping upload (ring has no data yet)")
+            return@coroutineScope finalRecordDate
+        }
+
+        val results = uploads.awaitAll()
+        if (results.any { it == null }) {
+            null
+        } else {
+            // All succeeded — take the lastSyncedTime from the last response
+            results.filterNotNull()
+                .maxByOrNull { it.lastSyncedTime }
+                ?.lastSyncedTime
         }
     }
 
+    /**
+     * @return the server's MetricData response on success, null on failure.
+     */
     private suspend fun uploadMetric(
         userId: String,
         deviceId: Int,
         recordDate: String,
         values: List<Int>,
         type: MetricType
-    ) {
-        try {
+    ): MetricData? {
+        return try {
             val response = when (type) {
                 MetricType.SLEEP -> {
                     val summary = calculateSleepSummary(values)
-
                     val sleepRequest = SleepMetricRequest(
                         userId = userId,
                         deviceId = deviceId,
@@ -303,13 +301,17 @@ class HealthDataRepository @Inject constructor(
                 }
             }
 
-            if (response.isSuccessful && response.body()?.isSuccess == true) {
-                Timber.i("✅ Uploaded ${type.name}: ${values.size} values")
+            val body = response.body()
+            if (response.isSuccessful && body?.isSuccess == true) {
+                Timber.i("✅ Uploaded ${type.name}: ${values.size} values (server time: ${body.data?.lastSyncedTime})")
+                body.data
             } else {
-                Timber.w("⚠️ Failed to upload ${type.name}: ${response.body()?.message}")
+                Timber.e("❌ Failed to upload ${type.name}: ${body?.message}")
+                null
             }
         } catch (e: Exception) {
             Timber.e(e, "❌ Error uploading ${type.name}")
+            null
         }
     }
 
@@ -334,8 +336,33 @@ private fun calculateSleepSummary(values: List<Int>): SleepSummary {
     val total = deep + light + rem
 
     val sleepQuality = if (total > 0) {
-        val restorativeRatio = (deep + rem).toFloat() / total.toFloat()
-        (restorativeRatio * 200).coerceAtMost(100f).toInt()
+        val totalInBed = total + awake
+
+        // 1. Restorative ratio (deep + REM as % of sleep) — ideal is 40-60%
+        val restorativeRatio = (deep + rem).toFloat() / total
+        val restorativeScore = when {
+            restorativeRatio >= 0.50f -> 40f
+            restorativeRatio >= 0.40f -> 35f
+            restorativeRatio >= 0.30f -> 28f
+            restorativeRatio >= 0.20f -> 20f
+            else -> 10f
+        }
+
+        // 2. Sleep efficiency (sleep vs total time in bed) — ideal > 90%
+        val efficiency = total.toFloat() / totalInBed
+        val efficiencyScore = (efficiency * 35f).coerceAtMost(35f)
+
+        // 3. Duration score — 7-9 hours ideal
+        val sleepHours = total / 60f
+        val durationScore = when {
+            sleepHours in 7f..9f -> 25f
+            sleepHours in 6f..7f || sleepHours in 9f..10f -> 20f
+            sleepHours in 5f..6f || sleepHours in 10f..11f -> 14f
+            sleepHours >= 4f -> 8f
+            else -> 4f
+        }
+
+        (restorativeScore + efficiencyScore + durationScore).coerceIn(0f, 100f).toInt()
     } else {
         0
     }

@@ -6,6 +6,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -35,8 +37,14 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -48,6 +56,9 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -59,7 +70,9 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.bonyad.healthplat.R
 import com.bonyad.healthplat.ui.dashboard.details.CustomDetailTopBar
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
+import androidx.compose.ui.tooling.preview.Preview
 import saman.zamani.persiandate.PersianDate
+import kotlin.math.abs
 
 
 @Composable
@@ -81,7 +94,33 @@ fun HeartRateDetailScreen(
     val currentHeartRate by viewModel.currentHeartRate.collectAsState()
 
     val hrvChartData by viewModel.hrvChartData.collectAsState()
+    val selectedDate by viewModel.selectedDate.collectAsState()
+    val isCaregiverMode = viewModel.isCaregiverMode
 
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    val todayPersian = remember {
+        val (jy, jm, jd) = com.bonyad.healthplat.ui.utils.PersianDateUtils.getCurrentJalaliDate()
+        com.bonyad.healthplat.ui.components.PersianDate(jy, jm, jd)
+    }
+    val selectedPersianDate = remember(selectedDate) {
+        val (jy, jm, jd) = com.bonyad.healthplat.ui.utils.PersianDateUtils.georgianToJalali(
+            selectedDate.year, selectedDate.monthValue, selectedDate.dayOfMonth
+        )
+        com.bonyad.healthplat.ui.components.PersianDate(jy, jm, jd)
+    }
+
+    if (showDatePicker) {
+        com.bonyad.healthplat.ui.components.PersianDatePickerDialog(
+            selectedDate = selectedPersianDate,
+            onDateSelected = { date ->
+                showDatePicker = false
+                viewModel.selectDate(date)
+            },
+            onDismiss = { showDatePicker = false },
+            maxDate = todayPersian
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -103,20 +142,17 @@ fun HeartRateDetailScreen(
             // 1. Segment Control (Daily/Weekly/Monthly)
             TimeRangeSelector(
                 selected = selectedRange,
-                onSelect = { viewModel.setTimeRange(it) }
+                onSelect = { viewModel.setTimeRange(it) },
+                onCalendarClick = { showDatePicker = true }
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
             // 2. Date Strip (only for daily view)
             if (selectedRange == "روزانه") {
-                val selectedOffset by viewModel.selectedDayOffset.collectAsState()
-
                 DateStrip(
-                    selectedOffset = selectedOffset,
-                    onDaySelected = { offset ->
-                        viewModel.selectDay(offset)
-                    }
+                    selectedDate = selectedDate,
+                    onDaySelected = { date -> viewModel.selectDay(date) }
                 )
             }
             Spacer(modifier = Modifier.height(24.dp))
@@ -156,7 +192,6 @@ fun HeartRateDetailScreen(
                     )
                 }
 
-
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // Current Date display
@@ -165,21 +200,6 @@ fun HeartRateDetailScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // در حال ورزش - COMMENTED OUT
-                    // Row(verticalAlignment = Alignment.CenterVertically) {
-                    //     Icon(
-                    //         painter = painterResource(R.drawable.ic_running),
-                    //         contentDescription = null,
-                    //         tint = Color.Gray,
-                    //         modifier = Modifier.size(16.dp)
-                    //     )
-                    //     Spacer(modifier = Modifier.width(4.dp))
-                    //     Text(
-                    //         text = "در حال ورزش",
-                    //         style = MaterialTheme.typography.bodySmall,
-                    //         color = Color.Gray
-                    //     )
-                    // }
                     Spacer(modifier = Modifier.weight(1f))
 
                     Text(
@@ -203,8 +223,10 @@ fun HeartRateDetailScreen(
                         CircularProgressIndicator(color = Color(0xFFE53935))
                     }
                 } else {
-                    // The Bar Chart - FIXED VERSION
-                    HeartRateRangeChart(data = chartData)
+                    HeartRateRangeChart(
+                        data = chartData,
+                        selectedRange = selectedRange
+                    )
                 }
             }
 
@@ -216,9 +238,11 @@ fun HeartRateDetailScreen(
                 min = minRate
             )
 
-            Spacer(modifier = Modifier.height(32.dp))
+            if (!isCaregiverMode) {
+                Spacer(modifier = Modifier.height(32.dp))
 
-            HrvSection(currentHrv = currentHrv, hrvChartData = hrvChartData)
+                HrvSection(currentHrv = currentHrv, hrvChartData = hrvChartData, selectedRange = selectedRange)
+            }
 
             Spacer(modifier = Modifier.height(50.dp))
         }
@@ -546,38 +570,63 @@ fun RecommendationsCard(
 @Composable
 fun TimeRangeSelector(
     selected: String,
-    onSelect: (String) -> Unit
+    onSelect: (String) -> Unit,
+    onCalendarClick: () -> Unit = {}
 ) {
     val options = listOf("ماهانه", "هفتگی", "روزانه")
 
-    Box(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .height(48.dp)
-            .background(Color.White, RoundedCornerShape(12.dp))
-            .border(1.dp, Color(0xFFEEEEEE), RoundedCornerShape(12.dp))
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(modifier = Modifier.fillMaxSize()) {
-            options.forEach { option ->
-                val isSelected = option == selected
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .padding(4.dp)
-                        .background(
-                            if (isSelected) Color(0xFF4FA8A6) else Color.Transparent, // Teal color
-                            RoundedCornerShape(8.dp)
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .background(Color.White, RoundedCornerShape(12.dp))
+                .border(1.dp, Color(0xFFEEEEEE), RoundedCornerShape(12.dp))
+                .clickable { onCalendarClick() },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.calendar),
+                contentDescription = "انتخاب تاریخ",
+                tint = Color(0xFF4FA8A6),
+                modifier = Modifier.size(22.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(48.dp)
+                .background(Color.White, RoundedCornerShape(12.dp))
+                .border(1.dp, Color(0xFFEEEEEE), RoundedCornerShape(12.dp))
+        ) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                options.forEach { option ->
+                    val isSelected = option == selected
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .padding(4.dp)
+                            .background(
+                                if (isSelected) Color(0xFF4FA8A6) else Color.Transparent,
+                                RoundedCornerShape(8.dp)
+                            )
+                            .clickable { onSelect(option) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = option,
+                            color = if (isSelected) Color.White else Color.Gray,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                         )
-                        .clickable { onSelect(option) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = option,
-                        color = if (isSelected) Color.White else Color.Gray,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                    )
+                    }
                 }
             }
         }
@@ -586,10 +635,10 @@ fun TimeRangeSelector(
 
 @Composable
 fun DateStrip(
-    selectedOffset: Int,  // 0 = today, -1 = yesterday, -2 = day before, etc.
-    onDaySelected: (Int) -> Unit
+    selectedDate: java.time.LocalDate,
+    onDaySelected: (java.time.LocalDate) -> Unit
 ) {
-    val today = PersianDate()
+    val today = java.time.LocalDate.now()
 
     // Persian weekday letters: Saturday=ش, Sunday=ی, Monday=د, etc.
     val weekDayNames = mapOf(
@@ -602,14 +651,8 @@ fun DateStrip(
         6 to "ج"   // Friday
     )
 
-    // Generate last 7 days: -6 (oldest) to 0 (today)
-    // Reversed so today appears on the right (RTL)
-    val days = (-6..0).map { offset ->
-        val date = PersianDate(today.time).apply {
-            if (offset < 0) subDays(-offset)
-        }
-        Pair(offset, date)
-    }.reversed() // Reversed: today first (right side in RTL Row)
+    // Generate last 7 days oldest-first, reversed so today appears on the right (RTL)
+    val days = (-6..0).map { offset -> today.plusDays(offset.toLong()) }.reversed()
 
     Row(
         modifier = Modifier
@@ -617,9 +660,11 @@ fun DateStrip(
             .padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        days.forEach { (offset, date) ->
-            val isSelected = offset == selectedOffset
-            val dayOfWeek = date.dayOfWeek()
+        days.forEach { date ->
+            val isSelected = date == selectedDate
+            val cal = java.util.GregorianCalendar(date.year, date.monthValue - 1, date.dayOfMonth)
+            val pDate = PersianDate(cal.time)
+            val dayOfWeek = pDate.dayOfWeek()
 
             Column(
                 modifier = Modifier
@@ -634,14 +679,12 @@ fun DateStrip(
                         if (isSelected) Color.Transparent else Color(0xFFEEEEEE),
                         RoundedCornerShape(16.dp)
                     )
-                    .clickable {
-                        onDaySelected(offset)
-                    },
+                    .clickable { onDaySelected(date) },
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
                 Text(
-                    text = date.shDay.toString().toFarsiDigits(),
+                    text = pDate.shDay.toString().toFarsiDigits(),
                     color = if (isSelected) Color.White else Color.Gray,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
@@ -665,8 +708,15 @@ fun DateStrip(
 @Composable
 fun HeartRateRangeChart(
     data: List<HeartRateRangePoint>,
-    showEmptyState: Boolean = data.filter { it.min > 1 && it.max > 1 }.isEmpty()
+    showEmptyState: Boolean = data.isEmpty() || data.all { it.min <= 1 && it.max <= 1 },
+    selectedRange: String = "روزانه",
+    initialSelectedIndex: Int = -1,
+    onBarSelected: (HeartRateRangePoint?) -> Unit = {}
 ) {
+    // Track selected bar index and X position for tooltip
+    var selectedBarIndex by remember(selectedRange) { mutableIntStateOf(-1) }
+    var selectedBarX by remember(selectedRange) { mutableFloatStateOf(0f) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -679,19 +729,17 @@ fun HeartRateRangeChart(
                 .height(240.dp)
                 .padding(16.dp)
         ) {
-            val validData = data.filter { it.min > 1 && it.max > 1 }
-
             Row(modifier = Modifier.fillMaxSize()) {
                 // Y-Axis Labels (Left side)
                 Column(
                     modifier = Modifier
                         .fillMaxHeight()
-                        .padding(end = 8.dp, bottom = 20.dp), // Adjust bottom padding to align with chart area
+                        .padding(end = 8.dp, bottom = 20.dp),
                     verticalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("۱۵۰", fontSize = 10.sp, color = Color.Gray)
-                    Text("۱۰۰", fontSize = 10.sp, color = Color.Gray)
-                    Text("۵۰", fontSize = 10.sp, color = Color.Gray)
+                    Text("۲۲۰", fontSize = 12.sp, color = Color.Gray)
+                    Text("۱۲۵", fontSize = 12.sp, color = Color.Gray)
+                    Text("۳۰", fontSize = 12.sp, color = Color.Gray)
                 }
 
                 // Chart Content
@@ -699,18 +747,82 @@ fun HeartRateRangeChart(
                     Canvas(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(bottom = 20.dp) // Space for X-axis labels
+                            .padding(bottom = 20.dp)
+                            .pointerInput(data, selectedRange) {
+                                detectTapGestures { tapOffset ->
+                                    val width = size.width.toFloat()
+                                    val barWidth = when (selectedRange) {
+                                        "هفتگی" -> 12.dp.toPx()
+                                        "ماهانه" -> 14.dp.toPx()
+                                        else -> 3.dp.toPx()
+                                    }
+                                    // Tap hit zone radius (generous for easy tapping)
+                                    val hitRadius =
+                                        if (selectedRange == "روزانه") 12.dp.toPx() else 16.dp.toPx()
+
+                                    var closestIndex = -1
+                                    var closestDist = Float.MAX_VALUE
+                                    var closestX = 0f
+
+                                    data.forEachIndexed { index, point ->
+                                        if (point.min <= 1 && point.max <= 1) return@forEachIndexed
+
+                                        val x = when (selectedRange) {
+                                            "روزانه" -> {
+                                                val parts = point.timeLabel.split(":")
+                                                val hour =
+                                                    parts.getOrNull(0)?.toIntOrNull() ?: 0
+                                                val minute =
+                                                    parts.getOrNull(1)?.toIntOrNull() ?: 0
+                                                ((hour * 60 + minute) / (24f * 60f)) * width
+                                            }
+
+                                            else -> {
+                                                val pad = barWidth / 2 + 4.dp.toPx()
+                                                val usable = width - pad * 2
+                                                if (data.size > 1) {
+                                                    pad + (index.toFloat() / (data.size - 1)) * usable
+                                                } else {
+                                                    width / 2f
+                                                }
+                                            }
+                                        }
+
+                                        val dist = abs(tapOffset.x - x)
+                                        if (dist < hitRadius && dist < closestDist) {
+                                            closestDist = dist
+                                            closestIndex = index
+                                            closestX = x
+                                        }
+                                    }
+
+
+                                    if (closestIndex == selectedBarIndex) {
+                                        // Tap same bar again → deselect
+                                        selectedBarIndex = -1
+                                        onBarSelected(null)
+                                    } else {
+                                        selectedBarIndex = closestIndex
+                                        selectedBarX = closestX
+                                        if (closestIndex >= 0) {
+                                            onBarSelected(data[closestIndex])
+                                        } else {
+                                            onBarSelected(null)
+                                        }
+                                    }
+                                }
+                            }
                     ) {
                         val width = size.width
                         val height = size.height
 
                         // Fixed Range for stability (matching the 50-150 labels)
-                        val yMin = 50f
-                        val yMax = 150f
+                        val yMin = 30f
+                        val yMax = 220f
                         val yRange = yMax - yMin
 
                         // 1. Draw Grid Lines (Dashed)
-                        val gridLines = listOf(0f, 0.5f, 1f) // Top, Middle, Bottom relative positions
+                        val gridLines = listOf(0f, 0.5f, 1f)
                         val dashEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
 
                         gridLines.forEach { fraction ->
@@ -724,7 +836,7 @@ fun HeartRateRangeChart(
                             )
                         }
 
-                        // Vertical Grid Lines (every 6 hours approx)
+                        // Vertical Grid Lines (every 6h = 5 main lines)
                         val verticalDivisions = 4
                         for (i in 0..verticalDivisions) {
                             val x = (width / verticalDivisions) * i
@@ -737,46 +849,72 @@ fun HeartRateRangeChart(
                             )
                         }
 
-                        if (validData.isEmpty()) return@Canvas
 
-                        // 2. Draw Bars
-                        val barWidth = 6.dp.toPx()
+                        if (data.isEmpty()) return@Canvas
+
+                        // 2. Draw Bars — thinner for daily (48 half-hour slots)
+                        val barWidth = when (selectedRange) {
+                            "هفتگی" -> 12.dp.toPx()
+                            "ماهانه" -> 14.dp.toPx()
+                            else -> 3.dp.toPx()
+                        }
                         val cornerRadius = CornerRadius(barWidth / 2, barWidth / 2)
-                        val barColor = Color(0xFFFF6B6B) // Salmon/Red color from Figma
+                        val barColor = Color(0xFFFF6B6B)
+                        val selectedBarColor = Color(0xFFE53935)
 
-                        validData.forEach { point ->
-                            // Calculate X position based on time (00:00 - 23:59)
-                            val hour = point.timeLabel.split(":").firstOrNull()?.toIntOrNull() ?: 0
-                            val x = (hour / 24f) * width
+                        data.forEachIndexed { index, point ->
+                            // Skip drawing for entries with no data
+                            if (point.min <= 1 && point.max <= 1) return@forEachIndexed
 
-                            // Calculate Y positions
-                            // Clamp values to the visual range so bars don't fly off screen
-                            val rawMin = point.min.toFloat()
-                            val rawMax = point.max.toFloat()
+                            val isSelected = index == selectedBarIndex
 
-                            val safeMin = rawMin.coerceIn(yMin, yMax)
-                            val safeMax = rawMax.coerceIn(yMin, yMax)
+                            // Calculate X position based on time range
+                            val x = when (selectedRange) {
+                                "روزانه" -> {
+                                    val parts = point.timeLabel.split(":")
+                                    val hour = parts.getOrNull(0)?.toIntOrNull() ?: 0
+                                    val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                                    ((hour * 60 + minute) / (24f * 60f)) * width
+                                }
+                                else -> {
+                                    // Weekly/Monthly: position by index in full list
+                                    val padding = barWidth / 2 + 4.dp.toPx()
+                                    val usable = width - padding * 2
+                                    if (data.size > 1) {
+                                        padding + (index.toFloat() / (data.size - 1)) * usable
+                                    } else {
+                                        width / 2f
+                                    }
+                                }
+                            }
+
+                            // Calculate Y positions (clamped to visual range)
+                            val safeMin = point.min.toFloat().coerceIn(yMin, yMax)
+                            val safeMax = point.max.toFloat().coerceIn(yMin, yMax)
 
                             val yTop = height - ((safeMax - yMin) / yRange) * height
                             val yBottom = height - ((safeMin - yMin) / yRange) * height
-
-                            // Visual correction: ensure min height for visibility
                             val calculatedHeight = yBottom - yTop
 
+                            val currentBarColor = if (isSelected) selectedBarColor else barColor
+                            val currentBarWidth = if (isSelected) barWidth * 1.5f else barWidth
+
                             if (calculatedHeight < barWidth) {
-                                // Draw as a Dot (Circle) if range is very small
+                                // Draw as a Dot if range is very small
+                                val dotRadius = if (selectedRange == "روزانه") 2.dp.toPx() else barWidth / 2
+                                val currentDotRadius = if (isSelected) dotRadius * 1.5f else dotRadius
                                 drawCircle(
-                                    color = barColor,
-                                    radius = barWidth / 2,
+                                    color = currentBarColor,
+                                    radius = currentDotRadius,
                                     center = Offset(x, yTop + calculatedHeight / 2)
                                 )
                             } else {
-                                // Draw as a Capsule (Rounded Rect)
+                                // Draw as a Capsule
                                 drawRoundRect(
-                                    color = barColor,
-                                    topLeft = Offset(x - barWidth / 2, yTop),
-                                    size = Size(barWidth, calculatedHeight),
-                                    cornerRadius = cornerRadius
+                                    color = currentBarColor,
+                                    topLeft = Offset(x - currentBarWidth / 2, yTop),
+                                    size = Size(currentBarWidth, calculatedHeight),
+                                    cornerRadius = CornerRadius(currentBarWidth / 2, currentBarWidth / 2)
                                 )
                             }
                         }
@@ -787,16 +925,108 @@ fun HeartRateRangeChart(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .padding(horizontal = 6.dp)
                                 .align(Alignment.BottomCenter),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            listOf("00:00", "08:00", "16:00", "24:00").forEach { label ->
-                                Text(
-                                    text = label,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Color.Gray,
-                                    fontSize = 10.sp
-                                )
+                            when (selectedRange) {
+                                "هفتگی" -> {
+                                    if (data.isNotEmpty()) {
+                                        data.forEach { point ->
+                                            Text(point.timeLabel, fontSize = 12.sp, color = Color.Gray)
+                                        }
+                                    } else {
+                                        // Fallback: show day labels for last 7 days
+                                        val today = java.time.LocalDate.now()
+                                        (0..6).forEach { i ->
+                                            val date = today.minusDays((6 - i).toLong())
+                                            val label = when (date.dayOfWeek.value) {
+                                                1 -> "د"; 2 -> "س"; 3 -> "چ"; 4 -> "پ"
+                                                5 -> "ج"; 6 -> "ش"; 7 -> "ی"; else -> ""
+                                            }
+                                            Text(label, fontSize = 12.sp, color = Color.Gray)
+                                        }
+                                    }
+                                }
+                                "ماهانه" -> {
+                                    if (data.isNotEmpty()) {
+                                        data.forEach { point ->
+                                            Text(point.timeLabel, fontSize = 12.sp, color = Color.Gray)
+                                        }
+                                    } else {
+                                        val (_, _, days) = com.bonyad.healthplat.ui.utils.PersianDateUtils.getCurrentPersianMonthRange()
+                                        val numWeeks = (days + 6) / 7
+                                        (1..numWeeks).forEach { Text("هفته $it", fontSize = 12.sp, color = Color.Gray) }
+                                    }
+                                }
+                                else -> {
+                                    listOf("00:00", "06:00", "12:00", "18:00", "24:00").forEach { label ->
+                                        Text(label, fontSize = 12.sp, color = Color.Gray)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Tooltip overlay
+                    if (selectedBarIndex >= 0 && selectedBarIndex < data.size) {
+                        val point = data[selectedBarIndex]
+                        val timeRangeText = formatTimeRange(point.timeLabel, selectedRange)
+                        val density = LocalDensity.current
+                        var tooltipWidthPx by remember { mutableIntStateOf(0) }
+                        var parentWidthPx by remember { mutableIntStateOf(0) }
+
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .fillMaxWidth()
+                                    .onSizeChanged { parentWidthPx = it.width }
+                            ) {
+                                val offsetXDp = with(density) {
+                                    val halfTooltip = tooltipWidthPx / 2f
+                                    val maxOffset =
+                                        (parentWidthPx - tooltipWidthPx).coerceAtLeast(0).toFloat()
+                                    (selectedBarX - halfTooltip).coerceIn(0f, maxOffset).toDp()
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .offset(x = offsetXDp)
+                                        .onSizeChanged { tooltipWidthPx = it.width }
+                                        .border(
+                                            width = 0.5.dp,
+                                            color = Color(0xFFEFEFEF),
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                        .background(
+                                            color = Color(0xFFEDEDED).copy(alpha = 0.85f),
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = "${point.min.toString().toFarsiDigits()} - ${point.max.toString().toFarsiDigits()}",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.Black
+                                            )
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text(
+                                                "bpm",
+                                                fontSize = 10.sp,
+                                                color = Color(0xFF666666)
+                                            )
+                                        }
+                                        Text(
+                                            text = timeRangeText,
+                                            fontSize = 10.sp,
+                                            color = Color(0xFF666666)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -816,6 +1046,62 @@ fun HeartRateRangeChart(
                 }
             }
         }
+    }
+}
+
+/**
+ * Formats the time range label for the tooltip based on the selected range mode.
+ * Daily: "05:00" → "۵ تا ۵:۳۰" / with AM/PM in Farsi
+ * Weekly: day label as-is
+ * Monthly: week label as-is
+ */
+private fun formatTimeRange(timeLabel: String, selectedRange: String): String {
+    return when (selectedRange) {
+        "روزانه" -> {
+            val parts = timeLabel.split(":")
+            val hour = parts.getOrNull(0)?.toIntOrNull() ?: 0
+            val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
+
+            val endMinute = minute + 30
+            val endHour = if (endMinute >= 60) hour + 1 else hour
+            val endMin = if (endMinute >= 60) endMinute - 60 else endMinute
+
+            val period = when {
+                endHour < 12 -> "صبح"
+                endHour < 17 -> "بعدازظهر"
+                else -> "شب"
+            }
+
+            val startDisplay = formatTimeOnly(hour, minute)
+            val endDisplay = formatTimeOnly(endHour, endMin)
+
+            "\u202B$startDisplay تا $endDisplay $period\u202C"
+        }
+        "هفتگی" -> {
+            when (timeLabel) {
+                "ش" -> "شنبه"
+                "ی" -> "یکشنبه"
+                "د" -> "دوشنبه"
+                "س" -> "سه‌شنبه"
+                "چ" -> "چهارشنبه"
+                "پ" -> "پنجشنبه"
+                "ج" -> "جمعه"
+                else -> timeLabel
+            }
+        }
+        else -> timeLabel
+    }
+}
+
+/**
+ * Formats hour:minute to a short time string without period (e.g., "۵" or "۵:۳۰").
+ */
+private fun formatTimeOnly(hour: Int, minute: Int): String {
+    val displayHour = if (hour == 0) 12 else if (hour > 12) hour - 12 else hour
+    return if (minute == 0) {
+        displayHour.toString().toFarsiDigits()
+    } else {
+        "${displayHour.toString().toFarsiDigits()}:${minute.toString().padStart(2, '0').toFarsiDigits()}"
     }
 }
 
@@ -883,7 +1169,8 @@ fun StatBox(title: String, value: Int, modifier: Modifier, unit: String = "bpm")
 @Composable
 fun HrvSection(
     currentHrv: Int,
-    hrvChartData: List<Int> = emptyList()
+    hrvChartData: List<Int> = emptyList(),
+    selectedRange: String = "روزانه"
 ) {
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
         // Title row - HRV on right
@@ -936,14 +1223,17 @@ fun HrvSection(
                     .height(180.dp)
                     .padding(16.dp)
             ) {
-                HrvAreaChart(data = hrvChartData)
+                HrvAreaChart(data = hrvChartData, selectedRange = selectedRange)
             }
         }
     }
 }
 
 @Composable
-fun HrvAreaChart(data: List<Int>) {
+fun HrvAreaChart(
+    data: List<Int>,
+    selectedRange: String = "روزانه"
+) {
     Box(modifier = Modifier.fillMaxSize()) {
         // Y-axis labels
         Column(
@@ -967,8 +1257,9 @@ fun HrvAreaChart(data: List<Int>) {
             val width = size.width
             val height = size.height
 
-            // Draw vertical grid lines
+            // Draw vertical grid lines (every 6h = 5 main lines)
             val gridCount = 4
+            val gridDashEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
             for (i in 0..gridCount) {
                 val x = (width / gridCount) * i
                 drawLine(
@@ -976,40 +1267,61 @@ fun HrvAreaChart(data: List<Int>) {
                     start = Offset(x, 0f),
                     end = Offset(x, height),
                     strokeWidth = 1.dp.toPx(),
-                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
+                    pathEffect = gridDashEffect
                 )
             }
 
             if (data.isEmpty()) return@Canvas
 
-            val validData = data.filter { it > 0 }
-            if (validData.isEmpty()) return@Canvas
-
             val yMax = 100f
             val yMin = 0f
             val yRange = yMax - yMin
 
+            // Build list of (x, y) points — only non-zero values, positioned by time
+            val drawPoints = mutableListOf<Pair<Float, Float>>()
+
+            when (selectedRange) {
+                "روزانه" -> {
+                    // data = all 48 slots (with zeros). Position by slot index.
+                    val totalSlots = data.size.coerceAtLeast(1)
+                    data.forEachIndexed { index, value ->
+                        if (value > 0) {
+                            val x = if (totalSlots > 1) (index.toFloat() / (totalSlots - 1)) * width else width / 2f
+                            val clamped = value.coerceIn(yMin.toInt(), yMax.toInt())
+                            val y = height - ((clamped - yMin) / yRange) * height
+                            drawPoints.add(x to y)
+                        }
+                    }
+                }
+                else -> {
+                    // Weekly/Monthly: data = daily or weekly averages, evenly spaced
+                    // Use full list size for positioning, skip zero values for drawing
+                    if (data.all { it <= 0 }) return@Canvas
+                    val spacing = if (data.size > 1) width / (data.size - 1) else 0f
+                    data.forEachIndexed { index, value ->
+                        if (value > 0) {
+                            val x = if (data.size > 1) index * spacing else width / 2f
+                            val clamped = value.coerceIn(yMin.toInt(), yMax.toInt())
+                            val y = height - ((clamped - yMin) / yRange) * height
+                            drawPoints.add(x to y)
+                        }
+                    }
+                }
+            }
+
+            if (drawPoints.isEmpty()) return@Canvas
+
+            // Build smooth bezier paths through the draw points
             val path = Path()
             val fillPath = Path()
 
-            val pointSpacing = width / (validData.size - 1).coerceAtLeast(1)
-
-            // Build smooth bezier paths
-            validData.forEachIndexed { index, value ->
-                val clampedValue = value.coerceIn(yMin.toInt(), yMax.toInt())
-                val x = index * pointSpacing
-                val y = height - ((clampedValue - yMin) / yRange) * height
-
+            drawPoints.forEachIndexed { index, (x, y) ->
                 if (index == 0) {
                     path.moveTo(x, y)
-                    fillPath.moveTo(0f, height)
+                    fillPath.moveTo(x, height) // start fill from bottom-left of first point
                     fillPath.lineTo(x, y)
                 } else {
-                    // Smooth cubic bezier between points
-                    val prevValue = validData[index - 1].coerceIn(yMin.toInt(), yMax.toInt())
-                    val prevX = (index - 1) * pointSpacing
-                    val prevY = height - ((prevValue - yMin) / yRange) * height
-
+                    val (prevX, prevY) = drawPoints[index - 1]
                     val cx = (prevX + x) / 2f
                     path.cubicTo(cx, prevY, cx, y, x, y)
                     fillPath.cubicTo(cx, prevY, cx, y, x, y)
@@ -1017,7 +1329,7 @@ fun HrvAreaChart(data: List<Int>) {
             }
 
             // Complete fill path
-            val lastX = (validData.size - 1) * pointSpacing
+            val lastX = drawPoints.last().first
             fillPath.lineTo(lastX, height)
             fillPath.close()
 
@@ -1040,7 +1352,7 @@ fun HrvAreaChart(data: List<Int>) {
             )
         }
 
-        // X-axis labels
+        // X-axis labels — time-based per range
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             Row(
                 modifier = Modifier
@@ -1049,13 +1361,222 @@ fun HrvAreaChart(data: List<Int>) {
                     .padding(start = 32.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                listOf("۰", "۱۰", "۲۰", "۳۰", "۴۰").forEach { label ->
-                    Text(
-                        text = label,
-                        fontSize = 9.sp,
-                        color = Color.Gray
-                    )
+                when (selectedRange) {
+                    "هفتگی" -> {
+                        val today = java.time.LocalDate.now()
+                        val persianLabels = listOf("ش", "ی", "د", "س", "چ", "پ", "ج")
+                        val todayIdx = when (today.dayOfWeek.value) {
+                            6 -> 0; 7 -> 1; else -> today.dayOfWeek.value + 1
+                        }
+                        (6 downTo 0).forEach { i ->
+                            Text(
+                                persianLabels[(todayIdx - i + 7) % 7],
+                                fontSize = 9.sp,
+                                color = Color.Gray
+                            )
+                        }
+                    }
+                    "ماهانه" -> {
+                        listOf("هفته ۱", "هفته ۲", "هفته ۳", "هفته ۴").forEach {
+                            Text(it, fontSize = 9.sp, color = Color.Gray)
+                        }
+                    }
+                    else -> {
+                        // Daily: time labels matching 48 half-hour slots
+                        listOf("00:00", "06:00", "12:00", "18:00", "24:00").forEach {
+                            Text(it, fontSize = 9.sp, color = Color.Gray)
+                        }
+                    }
                 }
+            }
+        }
+    }
+}
+
+
+// ============ Previews ============
+
+@Preview(showBackground = true, widthDp = 380, heightDp = 700)
+@Composable
+private fun HeartRateChartPreview() {
+    val sampleData = listOf(
+        HeartRateRangePoint("00:00", 0, 0),
+        HeartRateRangePoint("00:30", 0, 0),
+        HeartRateRangePoint("01:00", 0, 0),
+        HeartRateRangePoint("06:00", 68, 75),
+        HeartRateRangePoint("06:30", 70, 78),
+        HeartRateRangePoint("07:00", 72, 85),
+        HeartRateRangePoint("07:30", 75, 90),
+        HeartRateRangePoint("08:00", 65, 80),
+        HeartRateRangePoint("08:30", 68, 76),
+        HeartRateRangePoint("09:00", 70, 82),
+        HeartRateRangePoint("09:30", 0, 0),
+        HeartRateRangePoint("10:00", 72, 88),
+        HeartRateRangePoint("10:30", 74, 92),
+        HeartRateRangePoint("11:00", 78, 95),
+        HeartRateRangePoint("11:30", 80, 98),
+        HeartRateRangePoint("12:00", 0, 0),
+        HeartRateRangePoint("12:30", 0, 0),
+        HeartRateRangePoint("13:00", 72, 80),
+        HeartRateRangePoint("13:30", 70, 78),
+        HeartRateRangePoint("14:00", 68, 75),
+        HeartRateRangePoint("15:00", 0, 0),
+        HeartRateRangePoint("16:00", 0, 0),
+        HeartRateRangePoint("17:00", 85, 103, isAlert = false),
+        HeartRateRangePoint("17:30", 90, 120, isAlert = false),
+        HeartRateRangePoint("18:00", 95, 130, isAlert = true),
+        HeartRateRangePoint("18:30", 88, 110),
+        HeartRateRangePoint("19:00", 75, 90),
+        HeartRateRangePoint("19:30", 70, 82),
+        HeartRateRangePoint("20:00", 68, 78),
+        HeartRateRangePoint("20:30", 65, 72),
+        HeartRateRangePoint("21:00", 62, 70),
+        HeartRateRangePoint("22:00", 60, 68),
+        HeartRateRangePoint("23:00", 58, 65),
+    )
+
+    // Pre-selected bar for static preview
+    val preSelectedBar = sampleData[22] // "17:00" → 85-103 bpm
+    var selectedBar by remember { mutableStateOf<HeartRateRangePoint?>(preSelectedBar) }
+
+    MaterialTheme {
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+            Column(
+                modifier = Modifier
+                    .background(Color(0xFFF9F9F9))
+                    .padding(16.dp)
+            ) {
+                // Tooltip or default heart rate info
+                if (selectedBar != null) {
+                    val bar = selectedBar!!
+                    val timeRangeText = formatTimeRange(bar.timeLabel, "روزانه")
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                color = Color(0xFFF0F0F0),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "${bar.min.toString().toFarsiDigits()} - ${bar.max.toString().toFarsiDigits()}",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.Black
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("bpm", fontSize = 12.sp, color = Color(0xFF444444))
+                            }
+                            Text(timeRangeText, fontSize = 12.sp, color = Color(0xFF666666))
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        Text("ضربان قلب شما", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("۸۵", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("bpm", fontSize = 14.sp, color = Color(0xFF6B6B6B))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Spacer(modifier = Modifier.weight(1f))
+                    Text("امروز ۷ اردیبهشت", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                HeartRateRangeChart(
+                    data = sampleData,
+                    selectedRange = "روزانه",
+                    initialSelectedIndex = 22,
+                    onBarSelected = { bar -> selectedBar = bar }
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                StatsRow(max = 130, avg = 85, min = 58)
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true, widthDp = 380, heightDp = 400)
+@Composable
+private fun HeartRateChartWeeklyPreview() {
+    val weeklyData = listOf(
+        HeartRateRangePoint("ش", 62, 95),
+        HeartRateRangePoint("ی", 58, 88),
+        HeartRateRangePoint("د", 65, 110),
+        HeartRateRangePoint("س", 70, 105),
+        HeartRateRangePoint("چ", 60, 92),
+        HeartRateRangePoint("پ", 68, 130, isAlert = true),
+        HeartRateRangePoint("ج", 55, 85),
+    )
+
+    val preSelectedBar = weeklyData[3] // "س" day
+    var selectedBar by remember { mutableStateOf<HeartRateRangePoint?>(preSelectedBar) }
+
+    MaterialTheme {
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+            Column(
+                modifier = Modifier
+                    .background(Color(0xFFF9F9F9))
+                    .padding(16.dp)
+            ) {
+                if (selectedBar != null) {
+                    val bar = selectedBar!!
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                color = Color(0xFFF0F0F0),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "${bar.min.toString().toFarsiDigits()} - ${bar.max.toString().toFarsiDigits()}",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.Black
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("bpm", fontSize = 12.sp, color = Color(0xFF444444))
+                            }
+                            Text(bar.timeLabel, fontSize = 12.sp, color = Color(0xFF666666))
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                HeartRateRangeChart(
+                    data = weeklyData,
+                    selectedRange = "هفتگی",
+                    initialSelectedIndex = 3,
+                    onBarSelected = { bar -> selectedBar = bar }
+                )
             }
         }
     }

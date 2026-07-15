@@ -1,9 +1,8 @@
 package com.bonyad.healthplat.ui.dashboard.calory
 
-import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,11 +18,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -54,11 +48,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import coil3.compose.AsyncImage
 import com.bonyad.healthplat.R
 import com.bonyad.healthplat.domain.model.FoodItemUi
 import com.bonyad.healthplat.domain.model.MealType
@@ -78,6 +72,11 @@ fun ConsumedCaloriesScreen(
     val allFoodItems by viewModel.allFoodItems.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Load full meal data (with dishes) on first composition
+    LaunchedEffect(Unit) {
+        viewModel.loadFullMealsForSelectedDate()
+    }
 
     // Group items by meal type
     val groupedItems = allFoodItems.groupBy { it.mealType }
@@ -292,46 +291,39 @@ fun MealSection(
     onEditClick: (FoodItemUi) -> Unit,
     onDeleteClick: (FoodItemUi) -> Unit
 ) {
-    Column(
+    // Outer white card with shadow — title inside
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
+            .background(
+                color = Color.White,
+                shape = RoundedCornerShape(16.dp)
+            )
+            .clip(RoundedCornerShape(16.dp))
     ) {
-        // Section Header
-        Text(
-            text = mealType.persianName,
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-            color = TextDark,
-            modifier = Modifier.padding(vertical = 8.dp)
-        )
-
-        // Food Items
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = CardBackground),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
         ) {
-            Column(
-                modifier = Modifier.animateContentSize()
-            ) {
-                items.forEachIndexed { index, item ->
-                    FoodItemRow(
-                        item = item,
-                        onEditClick = { onEditClick(item) },
-                        onDeleteClick = { onDeleteClick(item) }
-                    )
+            // Section title inside the card
+            Text(
+                text = mealType.persianName,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = TextDark,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
 
-                    // Divider between items
-                    if (index < items.size - 1) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(1.dp)
-                                .background(Color(0xFFF0F0F0))
-                                .padding(horizontal = 16.dp)
-                        )
-                    }
+            // Food item cards
+            items.forEachIndexed { index, item ->
+                FoodItemRow(
+                    item = item,
+                    onEditClick = { onEditClick(item) },
+                    onDeleteClick = { onDeleteClick(item) }
+                )
+                if (index < items.size - 1) {
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
             }
         }
@@ -346,83 +338,98 @@ fun FoodItemRow(
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
-    Row(
+    // Individual bordered card for each food item
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+            .border(
+                width = 0.5.dp,
+                color = Color(0xFFD9D9D9),
+                shape = RoundedCornerShape(12.dp)
+            )
+            .background(
+                color = Color.White,
+                shape = RoundedCornerShape(12.dp)
+            )
+            .clip(RoundedCornerShape(12.dp))
     ) {
-        // Left side: Action buttons
         Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Delete button
-            IconButton(
-                onClick = onDeleteClick,
-                modifier = Modifier.size(32.dp)
+            // Start side (right in RTL): Food image + info
+            Row(
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete",
-                    tint = Color(0xFFE57373),
-                    modifier = Modifier.size(18.dp)
-                )
+                // Food image
+                Box(
+                    modifier = Modifier
+                        .size(50.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.LightGray.copy(alpha = 0.3f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AsyncImage(
+                        model = resolveMealImageUrl(item.imageUrl),
+                        contentDescription = item.name,
+                        contentScale = ContentScale.Crop,
+                        placeholder = painterResource(R.drawable.pills),
+                        error = painterResource(R.drawable.pills),
+                        fallback = painterResource(R.drawable.pills),
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // Food details
+                Column {
+                    Text(
+                        text = item.name,
+                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                        color = TextDark
+                    )
+                    Text(
+                        text = "${item.calories} کیلو کالری".toFarsiDigits(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TealPrimary
+                    )
+                }
             }
 
-            // Edit button
-            IconButton(
-                onClick = onEditClick,
-                modifier = Modifier.size(32.dp)
+            // End side (left in RTL): Action buttons
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Edit,
-                    contentDescription = "Edit",
-                    tint = TextGray,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
+                // Edit button
+                IconButton(
+                    onClick = onEditClick,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.edit),
+                        contentDescription = "Edit",
+                        tint = Color.Unspecified,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
 
-        // Right side: Food info + image
-        Row(
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Food details
-            Column(
-                horizontalAlignment = Alignment.End
-            ) {
-                Text(
-                    text = item.name,
-                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                    color = TextDark,
-                    textAlign = TextAlign.End
-                )
-                Text(
-                    text = "${item.calories} کیلو کالری".toFarsiDigits(),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TealPrimary
-                )
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            // Food image
-            Box(
-                modifier = Modifier
-                    .size(50.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color.LightGray.copy(alpha = 0.3f)),
-                contentAlignment = Alignment.Center
-            ) {
-                // In production, use Coil/Glide for URL loading
-                Image(
-                    painter = painterResource(id = R.drawable.pills), // Placeholder
-                    contentDescription = item.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
+                // Delete button
+                IconButton(
+                    onClick = onDeleteClick,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.delete),
+                        contentDescription = "Delete",
+                        tint = Color.Unspecified,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
     }

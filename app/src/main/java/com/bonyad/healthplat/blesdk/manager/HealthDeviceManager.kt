@@ -1,5 +1,6 @@
 package com.bonyad.healthplat.blesdk.manager
 
+import android.bluetooth.BluetoothDevice
 import com.bonlala.bonlalable.bean.DeviceInfoBean
 import com.bonlala.bonlalable.bean.ScanDeviceInfo
 import com.bonyad.healthplat.blesdk.model.ConnectionState
@@ -24,7 +25,8 @@ interface HealthDeviceManager {
     fun startScan()
     fun stopScan()
 
-    fun connect(deviceMac: String)
+    fun connect(device: BluetoothDevice)
+    fun reconnect(mac: String)
     fun disconnect()
 
     fun openRealTimeHeartRate()
@@ -39,11 +41,9 @@ interface HealthDeviceManager {
 
     fun cleanup()
 
-
     suspend fun getFirmwareVersion(): String?
     suspend fun getDeviceInfo(): Result<DeviceInfoBean>
     suspend fun getRecordData(day: Int): RecordDataResult
-
 
     suspend fun readCharacteristic(uuid: UUID): Result<ByteArray>
     suspend fun writeCharacteristic(uuid: UUID, data: ByteArray): Result<Unit>

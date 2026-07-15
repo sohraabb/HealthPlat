@@ -238,15 +238,15 @@ class AuthRepository @Inject constructor(
                 // Call logout API
                 apiService.logout()
 
-                // Clear local data regardless of API response
-                userPreferences.clearAuthOnly()
+                // Clear all account data
+                userPreferences.clearForLogout()
 
                 Timber.i("Logout successful")
                 AuthResult.Success(Unit)
             } catch (e: Exception) {
                 Timber.e(e, "Logout exception")
-                // Clear local data anyway
-                userPreferences.clearAuthOnly()
+                // Clear all account data anyway
+                userPreferences.clearForLogout()
                 AuthResult.Success(Unit)
             }
         }

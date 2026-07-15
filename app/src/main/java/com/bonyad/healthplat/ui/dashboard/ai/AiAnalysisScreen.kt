@@ -59,10 +59,12 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.compose.ui.tooling.preview.Preview
 import com.bonyad.healthplat.R
 import com.bonyad.healthplat.ui.components.PersianDate
 import com.bonyad.healthplat.ui.components.PersianDatePickerDialog
 import com.bonyad.healthplat.ui.utils.PersianDateUtils
+import com.bonyad.healthplat.ui.utils.rtl
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
 
 // Color palette matching the design
@@ -104,7 +106,8 @@ fun AiAnalysisScreen(
                 viewModel.fetchAnalysisForDate(date)
             },
             onDismiss = { showDatePicker = false },
-            maxDate = todayPersian
+            maxDate = todayPersian,
+            useDarkTheme = true
         )
     }
 
@@ -179,7 +182,7 @@ private fun LoadingContent(modifier: Modifier = Modifier) {
                 modifier = Modifier.size(48.dp)
             )
             Text(
-                text = "در حال دریافت تحلیل...",
+                text = "در حال دریافت تحلیل...".rtl(),
                 color = TextGray,
                 style = MaterialTheme.typography.bodyMedium
             )
@@ -237,6 +240,18 @@ private fun SuccessContent(
     onConsultClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // State for the health term definition bottom sheet
+    var selectedTerm by remember { mutableStateOf<Pair<String, String>?>(null) }
+
+    // Show term definition bottom sheet
+    if (selectedTerm != null) {
+        TermDefinitionBottomSheet(
+            term = selectedTerm!!.first,
+            definition = selectedTerm!!.second,
+            onDismiss = { selectedTerm = null }
+        )
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -248,6 +263,16 @@ private fun SuccessContent(
 
         // AI Icon at top
         AiIconHeader()
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Horizontal separator
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(Color.White.copy(alpha = 0.10f))
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -265,60 +290,77 @@ private fun SuccessContent(
 
         // Readiness Score Label with sparkle
         Row(
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
+            horizontalArrangement = Arrangement.Start
         ) {
-            Text(
-                text = "امتیاز آمادگی",
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextGray
-            )
-            Spacer(modifier = Modifier.width(6.dp))
             Icon(
                 painter = painterResource(id = R.drawable.ic_sparkle),
                 contentDescription = null,
                 tint = AccentCyan,
                 modifier = Modifier.size(16.dp)
             )
+            Spacer(modifier = Modifier.width(6.dp))
+
+            Text(
+                text = "امتیاز آمادگی",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextGray
+            )
+
         }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // Circular Score
-        AnimatedCircularScore(score = data.overallScore)
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Score Badge
-        Surface(
-            color = AccentCyan.copy(alpha = 0.15f),
+        // Circular Score + Score Badge + Summary grouped in one card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
-            border = BorderStroke(1.dp, AccentCyan.copy(alpha = 0.3f))
+            colors = CardDefaults.cardColors(containerColor = CardBackground),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_sparkle),
-                    contentDescription = null,
-                    tint = AccentCyan,
-                    modifier = Modifier.size(14.dp)
-                )
-                Text(
-                    text = "امتیاز آمادگی",
-                    color = AccentCyan,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium
+                // Circular Score
+                AnimatedCircularScore(score = data.overallScore)
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Score Badge
+                Surface(
+                    color = AccentCyan.copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, AccentCyan.copy(alpha = 0.3f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "امتیاز آمادگی",
+                            color = AccentCyan,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // Summary Card (retains its own styling)
+                SummaryCard(
+                    text = data.summaryText,
+                    onTermClick = { term, definition ->
+                        selectedTerm = term to definition
+                    }
                 )
             }
         }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // Summary Card
-        SummaryCard(text = data.summaryText)
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -336,7 +378,12 @@ private fun SuccessContent(
 
         // Metric Cards
         data.metrics.forEach { metric ->
-            AiMetricCard(metric = metric)
+            AiMetricCard(
+                metric = metric,
+                onTermClick = { term, definition ->
+                    selectedTerm = term to definition
+                }
+            )
             Spacer(modifier = Modifier.height(12.dp))
         }
 
@@ -397,25 +444,31 @@ private fun SuccessContent(
 @Composable
 private fun AiIconHeader() {
     Box(
-        modifier = Modifier
-            .size(72.dp)
-            .clip(CircleShape)
-            .background(
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        AccentCyan.copy(alpha = 0.3f),
-                        AccentCyan.copy(alpha = 0.1f)
-                    )
-                )
-            ),
+        modifier = Modifier.size(80.dp),
         contentAlignment = Alignment.Center
     ) {
-        Icon(
-            painter = painterResource(id = R.drawable.ic_ai_brain),
-            contentDescription = null,
-            tint = AccentCyan,
-            modifier = Modifier.size(36.dp)
-        )
+        // Thin circular ring
+        Canvas(modifier = Modifier.size(80.dp)) {
+            drawCircle(
+                color = Color(0xFF4A8E8E).copy(alpha = 0.5f),
+                style = Stroke(width = 1.dp.toPx())
+            )
+        }
+        // Filled circular background
+        Box(
+            modifier = Modifier
+                .size(64.dp)
+                .clip(CircleShape)
+                .background(Color(0x334A8E8E)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                painter = painterResource(id = R.drawable.ic_sparkle),
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(36.dp)
+            )
+        }
     }
 }
 
@@ -498,7 +551,10 @@ private fun AnimatedCircularScore(score: Int) {
 }
 
 @Composable
-private fun SummaryCard(text: String) {
+private fun SummaryCard(
+    text: String,
+    onTermClick: (term: String, definition: String) -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -515,7 +571,7 @@ private fun SummaryCard(text: String) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Icon(
-                    painter = painterResource(id = R.drawable.ic_sparkle),
+                    painter = painterResource(id = R.drawable.arrow_ai),
                     contentDescription = null,
                     tint = AccentCyan,
                     modifier = Modifier.size(18.dp)
@@ -529,21 +585,25 @@ private fun SummaryCard(text: String) {
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            Text(
+            ClickableHealthTermText(
                 text = text,
                 style = MaterialTheme.typography.bodyMedium.copy(
                     lineHeight = 26.sp,
                     fontSize = 14.sp
                 ),
                 color = TextWhite,
-                textAlign = TextAlign.Justify
+                textAlign = TextAlign.Justify,
+                onTermClick = onTermClick
             )
         }
     }
 }
 
 @Composable
-private fun AiMetricCard(metric: AiMetric) {
+private fun AiMetricCard(
+    metric: AiMetric,
+    onTermClick: (term: String, definition: String) -> Unit
+) {
     Card(
         colors = CardDefaults.cardColors(containerColor = CardBackground),
         shape = RoundedCornerShape(18.dp),
@@ -556,6 +616,24 @@ private fun AiMetricCard(metric: AiMetric) {
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Icon — first in RTL = rightmost
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(AccentCyan.copy(alpha = 0.1f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        painter = painterResource(metric.iconRes),
+                        contentDescription = null,
+                        tint = AccentCyan,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
                 // Title
                 Text(
                     text = metric.title,
@@ -578,43 +656,19 @@ private fun AiMetricCard(metric: AiMetric) {
                         fontWeight = FontWeight.Medium
                     )
                 }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                // Icon
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(AccentCyan.copy(alpha = 0.1f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        painter = painterResource(metric.iconRes),
-                        contentDescription = null,
-                        tint = AccentCyan,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
             }
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Value text
-            Text(
-                text = metric.value.toFarsiDigits(),
-                color = TextGray,
-                fontSize = 13.sp
-            )
-
-            Spacer(modifier = Modifier.height(6.dp))
-
             // Description
-            Text(
+            ClickableHealthTermText(
                 text = metric.description,
                 color = TextLightGray,
-                fontSize = 14.sp,
-                lineHeight = 22.sp
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = 14.sp,
+                    lineHeight = 22.sp
+                ),
+                onTermClick = onTermClick
             )
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -636,13 +690,76 @@ private fun AiMetricCard(metric: AiMetric) {
                         tint = AccentCyan,
                         modifier = Modifier.size(16.dp)
                     )
-                    Text(
+                    ClickableHealthTermText(
                         text = metric.advice,
                         color = AccentCyan,
-                        fontSize = 12.sp,
-                        lineHeight = 20.sp
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 12.sp,
+                            lineHeight = 20.sp
+                        ),
+                        onTermClick = onTermClick
                     )
                 }
+            }
+        }
+    }
+}
+// ============ Preview ============
+
+private val sampleMetrics = listOf(
+    AiMetric(
+        title = "کیفیت خواب",
+        status = "عالی",
+        statusColor = Color(0xFF00BFA5),
+        description = "کیفیت خواب بسیار خوب گزارش شده است. مدت بیداری در طول خواب ثبت شده، اما جمع‌بندی کلی خواب همچنان مطلوب بوده است. الگوی خواب نشان می‌دهد که استراحت شبانه از نظر کلی مناسب بوده است.".rtl(),
+        advice = "زمان خواب و بیداری را تا حد امکان در ساعت‌های ثابت نگه دارید.\nدر ساعت‌های پایانی شب از استفاده طولانی از تلفن همراه و نور زیاد دوری کنید.\nمحیط خواب را خنک، آرام و تاریک نگه دارید تا کیفیت خوب خواب حفظ شود.".rtl(),
+        iconRes = R.drawable.sleep_icon
+    ),
+    AiMetric(
+        title = "فعالیت بدنی",
+        status = "نیازمند توجه",
+        statusColor = Color(0xFFE57373),
+        description = "سطح فعالیت روزانه کم و در حد کم‌تحرکی گزارش شده است. تعداد گام‌های روزانه پایین بوده و نشان می‌دهد زمان زیادی در حالت نشسته یا کم‌تحرک سپری شده است.".rtl(),
+        advice = "پیاده‌روی روزانه را به‌صورت تدریجی افزایش دهید و برای خود هدف گام روزانه قابل انجام تعیین کنید.\nپس از هر ۴۵ تا ۶۰ دقیقه نشستن، چند دقیقه بلند شوید و حرکت سبک انجام دهید.".rtl(),
+        iconRes = R.drawable.walk
+    ),
+    AiMetric(
+        title = "قلب",
+        status = "خوب",
+        statusColor = Color(0xFF00BFA5),
+        description = "میانگین ضربان قلب در حالت استراحت در محدوده طبیعی گزارش شده است. میانگین اکسیژن خون در محدوده طبیعی قرار دارد. شاخص‌های اصلی قلبی و تنفسی وضعیت آرام و باثباتی را نشان می‌دهند.".rtl(),
+        advice = "برای حفظ وضعیت مناسب قلبی، فعالیت بدنی منظم و سبک تا متوسط را به برنامه روزانه اضافه کنید.\nآب کافی در طول روز بنوشید و خواب منظم را ادامه دهید.".rtl(),
+        iconRes = R.drawable.heart_rate
+    ),
+    AiMetric(
+        title = "مدیریت استرس",
+        status = "عالی",
+        statusColor = Color(0xFF00BFA5),
+        description = "میانگین فشار روانی روزانه پایین گزارش شده است. بیشینه فشار روانی ثبت‌شده نیز بالا نبوده و نشان‌دهنده وضعیت کلی آرام است.".rtl(),
+        advice = "برای حفظ آرامش فعلی، تمرین تنفس آرام و عمیق را در طول روز ادامه دهید.\nزمان کوتاهی را به استراحت ذهنی، دعا، مراقبه یا پیاده‌روی آرام اختصاص دهید.".rtl(),
+        iconRes = R.drawable.care
+    )
+)
+
+private val sampleData = AiAnalysisData(
+    overallScore = 90,
+    summaryText = "وضعیت کلی شما از نظر اکسیژن خون، ضربان قلب در حالت استراحت، کیفیت خواب و فشار روانی روزانه در محدوده مناسب قرار دارد. در عین حال، سطح فعالیت بدنی پایین است و تمرکز اصلی می‌تواند بر افزایش تحرک روزانه باشد.".rtl(),
+    metrics = sampleMetrics,
+    lastAnalysisDate = "تحلیل: ۲۰ اردیبهشت ۱۴۰۳ — ساعت ۱۴:۳۲"
+)
+
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+fun AiAnalysisScreenPreview() {
+    MaterialTheme {
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+            Box(
+                modifier = Modifier.background(DarkBackground)
+            ) {
+                SuccessContent(
+                    data = sampleData,
+                    onConsultClick = {}
+                )
             }
         }
     }

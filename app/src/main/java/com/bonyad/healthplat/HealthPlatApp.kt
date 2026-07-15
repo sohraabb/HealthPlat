@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.bonlala.bonlalable.BonlalaOperateManager
+import com.bonyad.healthplat.logging.FileLoggingTree
+import com.bonyad.healthplat.logging.LogFiles
 import com.bonyad.healthplat.worker.HealthSyncScheduler
 import dagger.hilt.android.HiltAndroidApp
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -25,6 +27,11 @@ class HealthPlatApp: Application(), Configuration.Provider {
 
 //        if (BuildConfig.DEBUG)
         Timber.plant(Timber.DebugTree())
+        // Persist logs to a file (esp. for the BLE pairing flow).
+        Timber.plant(FileLoggingTree(this))
+        // Mirror the previous session's log into Downloads on launch — safety net in
+        // case the app was force-closed before the connection screen could export it.
+        LogFiles.exportToDownloads(this)
 
         // Initialize Ring SDK
         try {

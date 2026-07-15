@@ -6,6 +6,7 @@ import com.bonyad.healthplat.data.local.UserPreferencesDataStore
 import com.bonyad.healthplat.data.repository.AuthResult
 import com.bonyad.healthplat.data.repository.UserRepository
 import com.bonyad.healthplat.domain.model.DiseaseData
+import com.bonyad.healthplat.domain.model.UserOverviewData
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -102,6 +103,9 @@ class PersonalInfoViewModel @Inject constructor(
     private val _phoneChangeState = MutableStateFlow<PersonalInfoUiState>(PersonalInfoUiState.Idle)
     val phoneChangeState: StateFlow<PersonalInfoUiState> = _phoneChangeState.asStateFlow()
 
+    private val _serverPhoneOtp = MutableStateFlow("")
+    val serverPhoneOtp: StateFlow<String> = _serverPhoneOtp.asStateFlow()
+
     // ============ UI State ============
     private val _uiState = MutableStateFlow<PersonalInfoUiState>(PersonalInfoUiState.Idle)
     val uiState: StateFlow<PersonalInfoUiState> = _uiState.asStateFlow()
@@ -119,6 +123,43 @@ class PersonalInfoViewModel @Inject constructor(
     // ============ Track if data was loaded ============
     private val _isDataLoaded = MutableStateFlow(false)
     val isDataLoaded: StateFlow<Boolean> = _isDataLoaded.asStateFlow()
+
+    // ============ Change Detection (initial snapshot) ============
+    private data class FormSnapshot(
+        val name: String = "",
+        val lastName: String = "",
+        val birthDate: String = "",
+        val height: String = "",
+        val weight: String = "",
+        val gender: String = "",
+        val nationalCode: String = "",
+        val email: String = "",
+        val diseaseIds: Set<Int> = emptySet()
+    )
+
+    private var initialSnapshot = FormSnapshot()
+
+    val hasChanges: StateFlow<Boolean> = combine(
+        combine(_name, _lastName, _birthDate, _height, _weight) { it.toList() },
+        _gender, _nationalCode, _email, _selectedDiseaseIds
+    ) { basics, gender, nationalCode, email, diseaseIds ->
+        val current = FormSnapshot(
+            name = basics[0] as String,
+            lastName = basics[1] as String,
+            birthDate = basics[2] as String,
+            height = basics[3] as String,
+            weight = basics[4] as String,
+            gender = gender,
+            nationalCode = nationalCode,
+            email = email,
+            diseaseIds = diseaseIds
+        )
+        current != initialSnapshot
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = false
+    )
 
     // ============ Form Validation ============
     val isFormValid: StateFlow<Boolean> = combine(
@@ -151,66 +192,103 @@ class PersonalInfoViewModel @Inject constructor(
     // ============ Load Existing Data (for Edit screen) ============
 
     /**
-     * Load existing user data from local preferences
-     * Call this when entering Edit screen
+     * Load user data from API first, fall back to local preferences if API fails.
+     * Call this when entering Edit screen.
      */
     fun loadExistingData() {
         if (_isDataLoaded.value) return // Prevent reloading
 
         viewModelScope.launch {
-            try {
-                Timber.d("Loading existing user data from preferences...")
+            _uiState.value = PersonalInfoUiState.Loading
 
-                userPreferences.getUserName().first()?.let { savedName ->
-                    _name.value = savedName
+            // Load available diseases from API (in parallel)
+            loadDiseases()
+
+            when (val result = userRepository.getUserOverview()) {
+                is AuthResult.Success -> {
+                    applyOverviewData(result.data)
+                    _isDataLoaded.value = true
+                    _uiState.value = PersonalInfoUiState.Idle
+                    Timber.i("User data loaded from API")
                 }
 
-                userPreferences.getUserLastName().first()?.let { savedLastName ->
-                    _lastName.value = savedLastName
+                is AuthResult.Error -> {
+                    Timber.w("API failed (${result.message}), falling back to local preferences")
+                    loadFromPreferences()
+                    _isDataLoaded.value = true
+                    _uiState.value = PersonalInfoUiState.Idle
                 }
-
-                userPreferences.getUserBirthDate().first()?.let { savedBirthDate ->
-                    _birthDate.value = convertIsoToPersianDate(savedBirthDate)
-                }
-
-                userPreferences.getUserHeight().first()?.let { savedHeight ->
-                    _height.value = convertToPersianNumber(savedHeight)
-                }
-
-                userPreferences.getUserWeight().first()?.let { savedWeight ->
-                    _weight.value = convertToPersianNumber(savedWeight)
-                }
-
-                userPreferences.getUserGender().first()?.let { savedGender ->
-                    _gender.value = savedGender
-                    Timber.d("Loaded gender from preferences: $savedGender")
-                }
-
-                userPreferences.getPhoneNumber().first()?.let { savedPhone ->
-                    _phoneNumber.value = savedPhone
-                }
-
-                userPreferences.getUserNationalCode().first()?.let { savedNationalCode ->
-                    _nationalCode.value = savedNationalCode
-                }
-
-                userPreferences.getUserEmail().first()?.let { savedEmail ->
-                    _email.value = savedEmail
-                }
-
-                // Load disease IDs
-                val savedDiseaseIds = userPreferences.getUserDiseaseIds().first()
-                _selectedDiseaseIds.value = savedDiseaseIds.toSet()
-                Timber.d("Loaded disease IDs: $savedDiseaseIds")
-
-                // Load available diseases from API
-                loadDiseases()
-
-                _isDataLoaded.value = true
-                Timber.d("Existing user data loaded successfully")
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to load existing user data")
             }
+        }
+    }
+
+    /**
+     * Apply UserOverviewData to all form fields
+     */
+    private fun applyOverviewData(overview: UserOverviewData) {
+        overview.name?.takeIfReal()?.let { _name.value = it }
+        overview.lastName?.takeIfReal()?.let { _lastName.value = it }
+        overview.birthDate?.takeIfReal()?.let { _birthDate.value = convertIsoToPersianDate(it) }
+        overview.height?.let { _height.value = convertToPersianNumber(it) }
+        overview.weight?.let { _weight.value = convertToPersianNumber(it) }
+        overview.gender?.let { _gender.value = if (it == 1) "مرد" else "زن" }
+        _phoneNumber.value = overview.phoneNumber
+        overview.nationalCode?.takeIfReal()?.let { _nationalCode.value = it }
+        overview.email?.takeIfReal()?.let { _email.value = it }
+        overview.diseases?.let {
+            _selectedDiseaseIds.value = it.map { disease -> disease.id }.toSet()
+        }
+        captureSnapshot()
+    }
+
+    private fun captureSnapshot() {
+        initialSnapshot = FormSnapshot(
+            name = _name.value,
+            lastName = _lastName.value,
+            birthDate = _birthDate.value,
+            height = _height.value,
+            weight = _weight.value,
+            gender = _gender.value,
+            nationalCode = _nationalCode.value,
+            email = _email.value,
+            diseaseIds = _selectedDiseaseIds.value
+        )
+    }
+
+    /** Filters out the literal string "null" that the API sometimes returns */
+    private fun String.takeIfReal(): String? =
+        if (isBlank() || equals("null", ignoreCase = true)) null else this
+
+    /**
+     * Fallback: load from local DataStore when API is unavailable
+     */
+    private suspend fun loadFromPreferences() {
+        try {
+            Timber.d("Loading user data from local preferences...")
+
+            userPreferences.getUserName().first()?.let { _name.value = it }
+            userPreferences.getUserLastName().first()?.let { _lastName.value = it }
+            userPreferences.getUserBirthDate().first()?.let {
+                _birthDate.value = convertIsoToPersianDate(it)
+            }
+            userPreferences.getUserHeight().first()?.let {
+                _height.value = convertToPersianNumber(it)
+            }
+            userPreferences.getUserWeight().first()?.let {
+                _weight.value = convertToPersianNumber(it)
+            }
+            userPreferences.getUserGender().first()?.let { _gender.value = it }
+            userPreferences.getPhoneNumber().first()?.let { _phoneNumber.value = it }
+            userPreferences.getUserNationalCode().first()?.let { _nationalCode.value = it }
+            userPreferences.getUserEmail().first()?.let { _email.value = it }
+
+            val savedDiseaseIds = userPreferences.getUserDiseaseIds().first()
+            _selectedDiseaseIds.value = savedDiseaseIds.toSet()
+
+            captureSnapshot()
+            Timber.d("User data loaded from preferences")
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to load user data from preferences")
         }
     }
 
@@ -240,19 +318,7 @@ class PersonalInfoViewModel @Inject constructor(
 
             when (val result = userRepository.getUserOverview()) {
                 is AuthResult.Success -> {
-                    val overview = result.data
-
-                    overview.name?.let { _name.value = it }
-                    overview.lastName?.let { _lastName.value = it }
-                    overview.birthDate?.let { _birthDate.value = convertIsoToPersianDate(it) }
-                    overview.height?.let { _height.value = convertToPersianNumber(it) }
-                    overview.weight?.let { _weight.value = convertToPersianNumber(it) }
-                    overview.gender?.let { _gender.value = if (it == 1) "مرد" else "زن" }
-                    _phoneNumber.value = overview.phoneNumber
-                    overview.nationalCode?.let { _nationalCode.value = it }
-                    overview.email?.let { _email.value = it }
-                    overview.diseaseIds?.let { _selectedDiseaseIds.value = it.toSet() }
-
+                    applyOverviewData(result.data)
                     _uiState.value = PersonalInfoUiState.Idle
                     Timber.i("User data refreshed from API")
                 }
@@ -315,6 +381,16 @@ class PersonalInfoViewModel @Inject constructor(
     }
 
     fun onDateSelected(year: Int, month: Int, day: Int) {
+        // Validate minimum age: user must be at least 8 years old
+        val today = java.time.LocalDate.now()
+        val (todayJy, todayJm, todayJd) = gregorianToJalali(today.year, today.monthValue, today.dayOfMonth)
+        var age = todayJy - year
+        if (todayJm < month || (todayJm == month && todayJd < day)) age--
+        if (age < 8) {
+            _uiState.value = PersonalInfoUiState.Error("سن کاربر باید حداقل ۸ سال باشد")
+            return
+        }
+
         _birthDate.value = "${convertToPersianNumber(year)}/${
             convertToPersianNumber(month).padStart(2, '۰')
         }/${convertToPersianNumber(day).padStart(2, '۰')}"
@@ -413,12 +489,17 @@ class PersonalInfoViewModel @Inject constructor(
 
         viewModelScope.launch {
             _phoneChangeState.value = PersonalInfoUiState.Loading
-            // TODO: Call API to request phone change OTP
-            // For now, simulate success
-            kotlinx.coroutines.delay(1000)
-            _showPhoneChangeSheet.value = false
-            _showPhoneOtpSheet.value = true
-            _phoneChangeState.value = PersonalInfoUiState.Idle
+            when (val result = userRepository.requestPhoneChangeOtp(phone)) {
+                is AuthResult.Success -> {
+                    _serverPhoneOtp.value = result.data.code ?: ""  // shown as Toast in UI (dev only)
+                    _showPhoneChangeSheet.value = false
+                    _showPhoneOtpSheet.value = true
+                    _phoneChangeState.value = PersonalInfoUiState.Idle
+                }
+                is AuthResult.Error -> {
+                    _phoneChangeState.value = PersonalInfoUiState.Error(result.message)
+                }
+            }
         }
     }
 
@@ -441,16 +522,23 @@ class PersonalInfoViewModel @Inject constructor(
             return
         }
 
+        val phone = convertPersianToEnglish(_newPhoneNumber.value)
+
         viewModelScope.launch {
             _phoneChangeState.value = PersonalInfoUiState.Loading
-            // TODO: Call API to verify OTP and change phone
-            // For now, simulate success
-            kotlinx.coroutines.delay(1000)
-            _phoneNumber.value = _newPhoneNumber.value
-            _showPhoneOtpSheet.value = false
-            _newPhoneNumber.value = ""
-            _phoneOtp.value = ""
-            _phoneChangeState.value = PersonalInfoUiState.Idle
+            when (val result = userRepository.updatePhoneNumber(phone, otp)) {
+                is AuthResult.Success -> {
+                    _phoneNumber.value = _newPhoneNumber.value  // update displayed field
+                    _showPhoneOtpSheet.value = false
+                    _newPhoneNumber.value = ""
+                    _phoneOtp.value = ""
+                    _serverPhoneOtp.value = ""
+                    _phoneChangeState.value = PersonalInfoUiState.Success
+                }
+                is AuthResult.Error -> {
+                    _phoneChangeState.value = PersonalInfoUiState.Error(result.message)
+                }
+            }
         }
     }
 
@@ -491,7 +579,7 @@ class PersonalInfoViewModel @Inject constructor(
                     weight = weightInt,
                     nationalCode = _nationalCode.value.ifEmpty { null },
                     email = _email.value.ifEmpty { null },
-                    diseaseIds = _selectedDiseaseIds.value.toList().ifEmpty { null }
+                    diseaseIds = _selectedDiseaseIds.value.toList()
                 )) {
                     is AuthResult.Success -> {
                         Timber.i("Personal info saved successfully")

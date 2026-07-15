@@ -27,9 +27,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -37,9 +42,11 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.bonyad.healthplat.ui.components.PersianDate
 import com.bonyad.healthplat.ui.dashboard.details.CustomDetailTopBar
 import com.bonyad.healthplat.ui.dashboard.details.heart_rate.DateStrip
 import com.bonyad.healthplat.ui.dashboard.details.heart_rate.TimeRangeSelector
+import com.bonyad.healthplat.ui.utils.PersianDateUtils
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
 
 @Composable
@@ -54,6 +61,33 @@ fun SpO2DetailScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val dateLabel by viewModel.dateLabel.collectAsState()
     val rangeText by viewModel.rangeText.collectAsState()
+    val xAxisLabels by viewModel.xAxisLabels.collectAsState()
+    val selectedDate by viewModel.selectedDate.collectAsState()
+
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    val todayPersian = remember {
+        val (jy, jm, jd) = PersianDateUtils.getCurrentJalaliDate()
+        PersianDate(jy, jm, jd)
+    }
+    val selectedPersianDate = remember(selectedDate) {
+        val (jy, jm, jd) = PersianDateUtils.georgianToJalali(
+            selectedDate.year, selectedDate.monthValue, selectedDate.dayOfMonth
+        )
+        PersianDate(jy, jm, jd)
+    }
+
+    if (showDatePicker) {
+        com.bonyad.healthplat.ui.components.PersianDatePickerDialog(
+            selectedDate = selectedPersianDate,
+            onDateSelected = { date ->
+                showDatePicker = false
+                viewModel.selectDate(date)
+            },
+            onDismiss = { showDatePicker = false },
+            maxDate = todayPersian
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -76,17 +110,15 @@ fun SpO2DetailScreen(
             // 1. Range Selector
             TimeRangeSelector(
                 selected = selectedRange,
-                onSelect = { viewModel.setTimeRange(it) }
+                onSelect = { viewModel.setTimeRange(it) },
+                onCalendarClick = { showDatePicker = true }
             )
 
             // 2. Date Strip (only for daily view)
             if (selectedRange == "روزانه") {
-                val selectedOffset by viewModel.selectedDayOffset.collectAsState()
                 DateStrip(
-                    selectedOffset = selectedOffset,
-                    onDaySelected = { offset ->
-                        viewModel.selectDay(offset)
-                    }
+                    selectedDate = selectedDate,
+                    onDaySelected = { date -> viewModel.selectDay(date) }
                 )
             }
 
@@ -97,7 +129,8 @@ fun SpO2DetailScreen(
                 dateLabel = dateLabel,
                 selectedRange = selectedRange,
                 isLoading = isLoading,
-                showEmptyState = chartData.isEmpty() && !isLoading
+                showEmptyState = chartData.isEmpty() && !isLoading,
+                xAxisLabels = xAxisLabels
             )
 
             // 4. Latest Measurement Card
@@ -122,7 +155,8 @@ fun SpO2ChartSection(
     dateLabel: String,
     selectedRange: String,
     isLoading: Boolean = false,
-    showEmptyState: Boolean = false
+    showEmptyState: Boolean = false,
+    xAxisLabels: List<String> = emptyList()
 ) {
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
         // Chart Header
@@ -212,10 +246,10 @@ fun SpO2ChartSection(
                                 .padding(end = 8.dp, bottom = 20.dp),
                             verticalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("۱۰۰", fontSize = 10.sp, color = Color.Gray)
-                            Text("۹۵", fontSize = 10.sp, color = Color.Gray)
-                            Text("۹۰", fontSize = 10.sp, color = Color.Gray)
-                            Text("۸۵", fontSize = 10.sp, color = Color.Gray)
+                            Text("۱۰۰", fontSize = 12.sp, color = Color.Gray)
+                            Text("۹۵", fontSize = 12.sp, color = Color.Gray)
+                            Text("۹۰", fontSize = 12.sp, color = Color.Gray)
+                            Text("۸۵", fontSize = 12.sp, color = Color.Gray)
                         }
 
                         // Chart Area
@@ -251,7 +285,7 @@ fun SpO2ChartSection(
                                     )
                                 }
 
-                                // Vertical Grid Lines
+                                // Vertical Grid Lines (every 6h = 5 main lines)
                                 val verticalLines = listOf(0f, 0.25f, 0.5f, 0.75f, 1f)
                                 verticalLines.forEach { ratio ->
                                     val x = w * ratio
@@ -264,22 +298,55 @@ fun SpO2ChartSection(
                                     )
                                 }
 
-                                // Draw Scatter Points
+
+                                // Draw data points
                                 if (data.isNotEmpty()) {
                                     val dotColor = Color(0xFF4DD0E1)
 
-                                    data.forEach { point ->
-                                        val x = w * point.timeRatio
-                                        val y = (h - ((point.value - minVal) / range) * h).coerceIn(
-                                            0f,
-                                            h
-                                        )
+                                    if (selectedRange == "روزانه") {
+                                        // Daily: scatter dots
+                                        data.forEach { point ->
+                                            val x = w * point.timeRatio
+                                            val y = (h - ((point.value - minVal) / range) * h).coerceIn(0f, h)
+                                            drawCircle(
+                                                color = dotColor,
+                                                radius = 4.dp.toPx(),
+                                                center = Offset(x, y)
+                                            )
+                                        }
+                                    } else {
+                                        // Weekly/Monthly: range bar chart (min to max capsules)
+                                        val barWidth = if (selectedRange == "هفتگی") 12.dp.toPx() else 14.dp.toPx()
+                                        val chartPaddingX = barWidth / 2 + 4.dp.toPx()
+                                        val usableWidth = w - chartPaddingX * 2
 
-                                        drawCircle(
-                                            color = dotColor,
-                                            radius = 4.dp.toPx(),
-                                            center = Offset(x, y)
-                                        )
+                                        data.forEach { point ->
+                                            if (point.min <= 0 && point.max <= 0) return@forEach
+                                            val x = chartPaddingX + point.timeRatio * usableWidth
+
+                                            val safeMin = point.min.toFloat().coerceIn(minVal, maxVal)
+                                            val safeMax = point.max.toFloat().coerceIn(minVal, maxVal)
+
+                                            val yTop = h - ((safeMax - minVal) / range) * h
+                                            val yBottom = h - ((safeMin - minVal) / range) * h
+                                            val capsuleHeight = (yBottom - yTop).coerceAtLeast(barWidth)
+
+                                            if (capsuleHeight < barWidth * 2) {
+                                                // Draw as dot when range is tiny
+                                                drawCircle(
+                                                    color = dotColor,
+                                                    radius = barWidth / 2,
+                                                    center = Offset(x, yTop + capsuleHeight / 2)
+                                                )
+                                            } else {
+                                                drawRoundRect(
+                                                    color = dotColor,
+                                                    topLeft = Offset(x - barWidth / 2, yTop),
+                                                    size = Size(barWidth, capsuleHeight),
+                                                    cornerRadius = CornerRadius(barWidth / 2, barWidth / 2)
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -289,16 +356,27 @@ fun SpO2ChartSection(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
+                                        .padding(horizontal = 6.dp)
                                         .align(Alignment.BottomCenter),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    listOf("00:00", "08:00", "16:00", "24:00").forEach { label ->
-                                        Text(
-                                            text = label.toFarsiDigits(),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = Color.Gray,
-                                            fontSize = 10.sp
-                                        )
+                                    when (selectedRange) {
+                                        "هفتگی", "ماهانه" -> {
+                                            // Dynamic labels from ViewModel
+                                            xAxisLabels.forEach {
+                                                Text(it, fontSize = 12.sp, color = Color.Gray)
+                                            }
+                                        }
+                                        else -> {
+                                            listOf("00:00", "06:00", "12:00", "18:00", "24:00").forEach { label ->
+                                                Text(
+                                                    text = label.toFarsiDigits(),
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = Color.Gray,
+                                                    fontSize = 12.sp
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }

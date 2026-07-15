@@ -1,7 +1,9 @@
 package com.bonyad.healthplat.domain.model
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonNames
 
 // ============ Meal/Food Request Models ============
 
@@ -36,17 +38,17 @@ data class CreateMealRequest(
     @SerialName("MealQuality")
     val mealQuality: String = "good",
     @SerialName("TotalProteinLevel")
-    val totalProteinLevel: String = "medium",
+    val totalProteinLevel: Double = 0.0,
     @SerialName("TotalFiberLevel")
-    val totalFiberLevel: String = "medium",
+    val totalFiberLevel: Double = 0.0,
     @SerialName("TotalProcessingLevel")
     val totalProcessingLevel: String = "low",
-    @SerialName("TotalAddedSugarLevel")
-    val totalAddedSugarLevel: String = "low",
+    @SerialName("TotalSugarLevel")
+    val totalSugarLevel: Double = 0.0,
     @SerialName("TotalFatLevel")
-    val totalFatLevel: String = "medium",
+    val totalFatLevel: Double = 0.0,
     @SerialName("TotalCarbLevel")
-    val totalCarbLevel: String = "medium",
+    val totalCarbLevel: Double = 0.0,
     @SerialName("TotalNutrientConfidence")
     val totalNutrientConfidence: Int = 80,
     @SerialName("Dishes")
@@ -76,17 +78,17 @@ data class DishRequest(
     @SerialName("CaloriesBasis")
     val caloriesBasis: String = "estimate",
     @SerialName("ProteinLevel")
-    val proteinLevel: String = "medium",
+    val proteinLevel: Double = 0.0,
     @SerialName("FiberLevel")
-    val fiberLevel: String = "medium",
+    val fiberLevel: Double = 0.0,
     @SerialName("ProcessingLevel")
     val processingLevel: String = "low",
-    @SerialName("AddedSugarLevel")
-    val addedSugarLevel: String = "low",
+    @SerialName("SugarLevel")
+    val sugarLevel: Double = 0.0,
     @SerialName("FatLevel")
-    val fatLevel: String = "medium",
+    val fatLevel: Double = 0.0,
     @SerialName("CarbLevel")
-    val carbLevel: String = "medium",
+    val carbLevel: Double = 0.0,
     @SerialName("NutrientConfidence")
     val nutrientConfidence: Int = 80,
     @SerialName("NutrientBasis")
@@ -109,6 +111,8 @@ data class CreateDishRequest(
     val mealId: Int,
     @SerialName("DishName")
     val dishName: String,
+    @SerialName("MealImageId")
+    val mealImageId: Int? = null,
     @SerialName("Amount")
     val amount: Int = 1,
     @SerialName("Unit")
@@ -116,12 +120,22 @@ data class CreateDishRequest(
     @SerialName("CaloriesMinKcal")
     val caloriesMinKcal: Int = 0,
     @SerialName("CaloriesMaxKcal")
-    val caloriesMaxKcal: Int = 0
+    val caloriesMaxKcal: Int = 0,
+    @SerialName("ProteinLevel")
+    val proteinLevel: Double = 0.0,
+    @SerialName("FiberLevel")
+    val fiberLevel: Double = 0.0,
+    @SerialName("FatLevel")
+    val fatLevel: Double = 0.0,
+    @SerialName("CarbLevel")
+    val carbLevel: Double = 0.0,
+    @SerialName("SugarLevel")
+    val sugarLevel: Double = 0.0
 )
 
 @Serializable
 data class UpdateMealRequest(
-    @SerialName("Id")
+    @SerialName("MealId")
     val id: Int,
     @SerialName("MealName")
     val mealName: String? = null,
@@ -132,7 +146,23 @@ data class UpdateMealRequest(
     @SerialName("TotalCaloriesAvgKcal")
     val totalCaloriesAvgKcal: Int? = null,
     @SerialName("MealQuality")
-    val mealQuality: String? = null
+    val mealQuality: String? = null,
+    @SerialName("ContainsFood")
+    val containsFood: Boolean? = null,
+    @SerialName("MultipleDishes")
+    val multipleDishes: Boolean? = null,
+    @SerialName("DishCountEstimate")
+    val dishCountEstimate: Int? = null,
+    @SerialName("TotalProteinLevel")
+    val totalProteinLevel: Double? = null,
+    @SerialName("TotalFiberLevel")
+    val totalFiberLevel: Double? = null,
+    @SerialName("TotalFatLevel")
+    val totalFatLevel: Double? = null,
+    @SerialName("TotalCarbLevel")
+    val totalCarbLevel: Double? = null,
+    @SerialName("TotalSugarLevel")
+    val totalSugarLevel: Double? = null
 )
 
 @Serializable
@@ -154,31 +184,43 @@ data class UpdateDishRequest(
 // ============ Meal/Food Response Models ============
 
 @Serializable
-data class MealData(
+data class MealImageData(
     @SerialName("Id")
     val id: Int,
+    @SerialName("MealId")
+    val mealId: Int,
+    @SerialName("ImageUrl")
+    val imageUrl: String,
+    @SerialName("DisplayOrder")
+    val displayOrder: Int = 0
+)
+
+@OptIn(ExperimentalSerializationApi::class)
+@Serializable
+data class MealData(
+    @SerialName("Id")
+    @JsonNames("MealId")
+    val id: Int = 0,
     @SerialName("UserId")
     val userId: String? = null,
     @SerialName("MealName")
-    val mealName: String,
-    @SerialName("MealImageId")
-    val mealImageId: Int? = null,
-    @SerialName("MealImageName")
-    val mealImageName: String? = null,
+    val mealName: String? = null,
+    @SerialName("MealImages")
+    val mealImages: List<MealImageData> = emptyList(),
     @SerialName("ContainsFood")
     val containsFood: Boolean = true,
     @SerialName("FoodConfidence")
-    val foodConfidence: Int = 0,
+    val foodConfidence: Double = 0.0,
     @SerialName("MultipleDishes")
     val multipleDishes: Boolean = false,
     @SerialName("DishCountEstimate")
-    val dishCountEstimate: Int = 1,
+    val dishCountEstimate: Double = 1.0,
     @SerialName("TotalCaloriesMinKcal")
-    val totalCaloriesMinKcal: Int = 0,
+    val totalCaloriesMinKcal: Double = 0.0,
     @SerialName("TotalCaloriesMaxKcal")
-    val totalCaloriesMaxKcal: Int = 0,
+    val totalCaloriesMaxKcal: Double = 0.0,
     @SerialName("TotalCaloriesAvgKcal")
-    val totalCaloriesAvgKcal: Int = 0,
+    val totalCaloriesAvgKcal: Double = 0.0,
     @SerialName("Blurry")
     val blurry: Boolean = false,
     @SerialName("LowLight")
@@ -192,65 +234,69 @@ data class MealData(
     @SerialName("MealQuality")
     val mealQuality: String = "good",
     @SerialName("TotalProteinLevel")
-    val totalProteinLevel: String = "medium",
+    val totalProteinLevel: Double = 0.0,
     @SerialName("TotalFiberLevel")
-    val totalFiberLevel: String = "medium",
+    val totalFiberLevel: Double = 0.0,
     @SerialName("TotalProcessingLevel")
     val totalProcessingLevel: String = "low",
-    @SerialName("TotalAddedSugarLevel")
-    val totalAddedSugarLevel: String = "low",
+    @SerialName("TotalSugarLevel")
+    val totalSugarLevel: Double = 0.0,
     @SerialName("TotalFatLevel")
-    val totalFatLevel: String = "medium",
+    val totalFatLevel: Double = 0.0,
     @SerialName("TotalCarbLevel")
-    val totalCarbLevel: String = "medium",
+    val totalCarbLevel: Double = 0.0,
     @SerialName("TotalNutrientConfidence")
-    val totalNutrientConfidence: Int = 80,
+    val totalNutrientConfidence: Double = 80.0,
+    @SerialName("TotalNutrientBasis")
+    val totalNutrientBasis: String? = null,
     @SerialName("CreatedDate")
     val createdDate: String? = null,
     @SerialName("Dishes")
     val dishes: List<DishData> = emptyList()
 )
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class DishData(
-    @SerialName("Id")
-    val id: Int,
+    @SerialName("DishId")
+    @JsonNames("Id")
+    val dishId: Int = 0,
     @SerialName("MealId")
-    val mealId: Int,
+    val mealId: Int = 0,
     @SerialName("DishName")
-    val dishName: String,
+    val dishName: String = "",
     @SerialName("MealImageId")
     val mealImageId: Int? = null,
     @SerialName("Amount")
-    val amount: Int = 1,
+    val amount: Double = 1.0,
     @SerialName("Unit")
     val unit: String = "عدد",
     @SerialName("PortionEstimate")
     val portionEstimate: String = "medium",
     @SerialName("PortionConfidence")
-    val portionConfidence: Int = 80,
+    val portionConfidence: Double = 80.0,
     @SerialName("CaloriesMinKcal")
-    val caloriesMinKcal: Int = 0,
+    val caloriesMinKcal: Double = 0.0,
     @SerialName("CaloriesMaxKcal")
-    val caloriesMaxKcal: Int = 0,
+    val caloriesMaxKcal: Double = 0.0,
     @SerialName("CaloriesConfidence")
-    val caloriesConfidence: Int = 80,
+    val caloriesConfidence: Double = 80.0,
     @SerialName("CaloriesBasis")
     val caloriesBasis: String = "estimate",
     @SerialName("ProteinLevel")
-    val proteinLevel: String = "medium",
+    val proteinLevel: Double = 0.0,
     @SerialName("FiberLevel")
-    val fiberLevel: String = "medium",
+    val fiberLevel: Double = 0.0,
     @SerialName("ProcessingLevel")
     val processingLevel: String = "low",
-    @SerialName("AddedSugarLevel")
-    val addedSugarLevel: String = "low",
+    @SerialName("SugarLevel")
+    val sugarLevel: Double = 0.0,
     @SerialName("FatLevel")
-    val fatLevel: String = "medium",
+    val fatLevel: Double = 0.0,
     @SerialName("CarbLevel")
-    val carbLevel: String = "medium",
+    val carbLevel: Double = 0.0,
     @SerialName("NutrientConfidence")
-    val nutrientConfidence: Int = 80,
+    val nutrientConfidence: Double = 80.0,
     @SerialName("NutrientBasis")
     val nutrientBasis: String = "estimate",
     @SerialName("DishNameCandidate")
@@ -265,6 +311,104 @@ data class DishData(
     val dishNote: List<String> = emptyList(),
     @SerialName("CreatedDate")
     val createdDate: String? = null
+)
+
+// ============ Daily Summary Response ============
+
+@Serializable
+data class DailySummaryData(
+    @SerialName("Date")
+    val date: String,
+    @SerialName("TotalActivityDuration")
+    val totalActivityDuration: Double = 0.0,
+    @SerialName("TotalActivityCal")
+    val totalActivityCal: Double = 0.0,
+    @SerialName("TotalGainedCal")
+    val totalGainedCal: Double = 0.0,
+    @SerialName("Meals")
+    val meals: List<MealData> = emptyList()
+)
+
+// ============ Food Analysis Models (AI service on port 8003) ============
+
+@Serializable
+data class FoodAnalysisData(
+    @SerialName("total_facts")
+    val totalFacts: FoodTotalFacts,
+    @SerialName("item_facts")
+    val itemFacts: List<FoodItemFact>,
+    @SerialName("meal_quality")
+    val mealQuality: String
+)
+
+// Nutrient fields are nullable: null means the server reported no value for that
+// nutrient (hide it in the UI), whereas 0.0 is a real measured value (show it).
+@Serializable
+data class FoodTotalFacts(
+    @SerialName("Cal")
+    val cal: Double = 0.0,
+    @SerialName("Fat")
+    val fat: Double? = null,
+    @SerialName("Protein")
+    val protein: Double? = null,
+    @SerialName("Carb")
+    val carb: Double? = null,
+    @SerialName("Fiber")
+    val fiber: Double? = null,
+    @SerialName("Sugar")
+    val sugar: Double? = null
+)
+
+@Serializable
+data class FoodItemFact(
+    @SerialName("food_name")
+    val foodName: String,
+    @SerialName("selected_unit")
+    val selectedUnit: String,
+    @SerialName("portion")
+    val portion: Double,
+    @SerialName("Cal")
+    val cal: Double = 0.0,
+    @SerialName("Fat")
+    val fat: Double? = null,
+    @SerialName("Protein")
+    val protein: Double? = null,
+    @SerialName("Carb")
+    val carb: Double? = null,
+    @SerialName("Fiber")
+    val fiber: Double? = null,
+    @SerialName("Sugar")
+    val sugar: Double? = null,
+    @SerialName("food_fact_id")
+    val foodFactId: Int? = null
+)
+
+// ============ Food Facts Search ============
+
+@Serializable
+data class FoodFactData(
+    @SerialName("Id")
+    val id: Int,
+    @SerialName("Name")
+    val name: String,
+    @SerialName("Unit")
+    val unit: String,
+    @SerialName("Amount")
+    val amount: Int,
+    @SerialName("Cal")
+    val cal: Double = 0.0,
+    @SerialName("Fat")
+    val fat: Double? = null,
+    @SerialName("Protein")
+    val protein: Double? = null,
+    @SerialName("Carb")
+    val carb: Double? = null,
+    @SerialName("Fiber")
+    val fiber: Double? = null,
+    @SerialName("Sugar")
+    val sugar: Double? = null,
+    @SerialName("Source")
+    val source: String? = null
 )
 
 // ============ UI Models ============
@@ -349,7 +493,7 @@ enum class HealthQuality(val persianName: String, val score: Int) {
         fun fromString(quality: String): HealthQuality {
             return when (quality.lowercase()) {
                 "limited", "poor" -> LIMITED
-                "moderate", "medium" -> MODERATE
+                "moderate", "medium", "fair" -> MODERATE
                 "good" -> GOOD
                 "nutritious", "excellent" -> NUTRITIOUS
                 else -> MODERATE
@@ -364,15 +508,12 @@ enum class HealthQuality(val persianName: String, val score: Int) {
 data class FoodScanResult(
     val imagePath: String,
     val mealName: String,
+    val mealId: Int,
+    val mealImageId: Int,
     val dishes: List<ScannedDish>,
     val healthQuality: HealthQuality,
     val healthScore: Int, // 0-100
-    val totalCaloriesMin: Int,
-    val totalCaloriesMax: Int,
-    val proteinLevel: String,
-    val fiberLevel: String,
-    val fatLevel: String,
-    val carbLevel: String
+    val totalFacts: FoodTotalFacts
 )
 
 data class ScannedDish(
@@ -381,6 +522,13 @@ data class ScannedDish(
     val caloriesMax: Int,
     val amount: Int = 1,
     val unit: String = "عدد",
+    val portion: Double = 1.0,
+    val fat: Double? = null,
+    val protein: Double? = null,
+    val carb: Double? = null,
+    val fiber: Double? = null,
+    val sugar: Double? = null,
+    val foodFactId: Int? = null,
     val visibleComponents: List<String> = emptyList(),
     val assumedIngredients: List<String> = emptyList()
 )
@@ -391,19 +539,19 @@ data class ScannedDish(
  * Convert API MealData to UI model
  */
 fun MealData.toFoodItems(): List<FoodItemUi> {
-    val mealType = MealType.fromApiName(mealName)
+    val mealType = MealType.fromApiName(mealName ?: "")
     return dishes.map { dish ->
         FoodItemUi(
-            id = dish.id,
+            id = dish.dishId,
             mealId = id,
             name = dish.dishName,
-            calories = (dish.caloriesMinKcal + dish.caloriesMaxKcal) / 2,
-            caloriesMin = dish.caloriesMinKcal,
-            caloriesMax = dish.caloriesMaxKcal,
-            amount = dish.amount,
+            calories = ((dish.caloriesMinKcal + dish.caloriesMaxKcal) / 2).toInt(),
+            caloriesMin = dish.caloriesMinKcal.toInt(),
+            caloriesMax = dish.caloriesMaxKcal.toInt(),
+            amount = dish.amount.toInt(),
             unit = dish.unit,
             mealType = mealType,
-            imageUrl = mealImageName
+            imageUrl = mealImages.firstOrNull()?.imageUrl
         )
     }
 }
@@ -412,12 +560,12 @@ fun MealData.toFoodItems(): List<FoodItemUi> {
  * Convert API MealData to MealSummaryUi
  */
 fun MealData.toMealSummary(): MealSummaryUi {
-    val mealType = MealType.fromApiName(mealName)
+    val mealType = MealType.fromApiName(mealName ?: "")
     return MealSummaryUi(
         mealType = mealType,
         items = toFoodItems(),
-        totalCaloriesMin = totalCaloriesMinKcal,
-        totalCaloriesMax = totalCaloriesMaxKcal
+        totalCaloriesMin = totalCaloriesMinKcal.toInt(),
+        totalCaloriesMax = totalCaloriesMaxKcal.toInt()
     )
 }
 
@@ -433,5 +581,5 @@ fun List<MealData>.groupByMealType(): Map<MealType, List<FoodItemUi>> {
  * Calculate total consumed calories from meals
  */
 fun List<MealData>.totalConsumedCalories(): Int {
-    return sumOf { it.totalCaloriesAvgKcal }
+    return sumOf { it.totalCaloriesAvgKcal.toInt() }
 }

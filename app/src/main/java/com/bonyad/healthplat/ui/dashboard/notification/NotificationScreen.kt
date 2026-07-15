@@ -22,6 +22,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bonyad.healthplat.R
+import com.bonyad.healthplat.ui.utils.rtl
 import com.bonyad.healthplat.domain.model.NotificationItem
 
 // Colors matching the design
@@ -303,7 +304,7 @@ private fun NotificationScreenPreview() {
         NotificationItem(
             id = 1,
             title = "بروزرسانی اپلیکیشن تن‌یار",
-            description = "در نسخه جدید شما میتوانید، با فعال کردن قابلیت‌های جدید، تجربه بهتری داشته باشید.",
+            description = "در نسخه جدید شما میتوانید، با فعال کردن قابلیت‌های جدید، تجربه بهتری داشته باشید.".rtl(),
             date = "۱۴۰۴/۰۶/۲۰"
         ),
         NotificationItem(

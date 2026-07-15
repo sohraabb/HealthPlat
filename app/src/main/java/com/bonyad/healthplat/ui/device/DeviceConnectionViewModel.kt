@@ -22,7 +22,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
@@ -34,16 +33,8 @@ sealed class DeviceConnectionUiState {
     object Connecting : DeviceConnectionUiState()
     object WaitingForPairing : DeviceConnectionUiState()
     object Initializing : DeviceConnectionUiState()
-    // ─────────────────────────────────────────────────────────────────────────
-    // CHANGE D: Added a distinct "ReadyToNavigate" state separate from Connected.
-    //
-    // WHY: Previously Connected immediately triggered onDeviceConnected() with
-    // zero visual feedback. The user just saw the screen vanish. Now we show
-    // a success indicator for 1 second, THEN navigate. ReadyToNavigate is what
-    // the screen uses to fire navigation — Connected shows the success UI.
-    // ─────────────────────────────────────────────────────────────────────────
-    object Connected : DeviceConnectionUiState()       // show success UI
-    object ReadyToNavigate : DeviceConnectionUiState() // trigger navigation
+    object Connected : DeviceConnectionUiState()
+    object ReadyToNavigate : DeviceConnectionUiState()
     data class Error(val message: String) : DeviceConnectionUiState()
 }
 
@@ -73,6 +64,7 @@ class DeviceConnectionViewModel @Inject constructor(
 
     private var scanTimerJob: Job? = null
     private var connectionJob: Job? = null
+    private var connectAttempt = 0
 
     init {
         observeScannedDevices()
@@ -120,12 +112,18 @@ class DeviceConnectionViewModel @Inject constructor(
         }
     }
 
-    @SuppressLint("MissingPermission")
     fun connectToDevice(device: ScanDeviceInfo) {
-        val mac = device.bluetoothDevice?.address
-        val name = device.bluetoothDevice?.name
+        connectAttempt = 1
+        attemptConnection(device)
+    }
 
-        if (mac == null) {
+    @SuppressLint("MissingPermission")
+    private fun attemptConnection(device: ScanDeviceInfo) {
+        val btDevice = device.bluetoothDevice
+        val mac = btDevice?.address
+        val name = btDevice?.name
+
+        if (btDevice == null || mac == null) {
             _uiState.value = DeviceConnectionUiState.Error("آدرس دستگاه نامعتبر است")
             return
         }
@@ -133,77 +131,72 @@ class DeviceConnectionViewModel @Inject constructor(
         connectionJob?.cancel()
         stopScan()
         _uiState.value = DeviceConnectionUiState.Connecting
-        Timber.i("🔌 Connecting to: $mac ($name)")
+        Timber.i("🔌 Connecting to: $mac ($name) [attempt $connectAttempt/$MAX_CONNECT_ATTEMPTS]")
 
         connectionJob = viewModelScope.launch {
             try {
-                withTimeout(90_000) {
+                withTimeout(CONNECTION_TIMEOUT_MS) {
 
-                    // ── Step 1: Initiate BLE connection ───────────────────
-                    deviceManager.connect(mac)
+                    // ── Step 1: Initiate BLE connection ──
+                    deviceManager.connect(btDevice)
 
-                    // ── Step 2: Wait for BLE CONNECTED state ──────────────
-                    deviceManager.connectionState
-                        .filter { it == ConnectionState.CONNECTED }
-                        .first()
-                    Timber.i("✅ BLE layer connected")
-
-                    // ─────────────────────────────────────────────────────
-                    // CHANGE E: Replace pairingState.collect{} with a
-                    // targeted first{} call that terminates cleanly.
-                    //
-                    // BEFORE: We used collect{} which is an infinite suspending
-                    // loop. It never returns on its own — it only exits when
-                    // the coroutine is cancelled (timeout or ViewModel cleared).
-                    // After setting Connected inside collect, the coroutine kept
-                    // running and any future pairingState emission could re-enter
-                    // the when branches unexpectedly.
-                    //
-                    // AFTER: We use first{} which suspends until exactly one
-                    // terminal state arrives (Paired or PairingFailed), then
-                    // returns. The coroutine continues linearly after that —
-                    // no infinite loop, no surprise re-entries.
-                    // ─────────────────────────────────────────────────────
-
-                    // ── Step 3: Wait for pairing to resolve ───────────────
-                    Timber.i("⏳ Waiting for pairing state...")
-                    val pairing = deviceManager.pairingState.first { state ->
-                        state is PairingState.PairingRequested ||
-                                state is PairingState.Paired ||
-                                state is PairingState.PairingFailed
-                    }
-
-                    when (pairing) {
-                        is PairingState.PairingRequested -> {
-                            // User needs to confirm the system pairing dialog
-                            Timber.i("📲 Pairing dialog shown — waiting for user")
-                            _uiState.value = DeviceConnectionUiState.WaitingForPairing
-
-                            // Now wait for the final outcome
-                            val finalPairing = deviceManager.pairingState.first { state ->
-                                state is PairingState.Paired ||
-                                        state is PairingState.PairingFailed
+                    // ── Step 2: Monitor pairing state for UI ──
+                    // Side-job: purely visual feedback for the user.
+                    // The actual pairing logic is inside RingDeviceManager.
+                    val pairingUiJob = launch {
+                        deviceManager.pairingState.collect { state ->
+                            when (state) {
+                                is PairingState.PairingRequested -> {
+                                    Timber.i("📲 Pairing dialog shown")
+                                    _uiState.value = DeviceConnectionUiState.WaitingForPairing
+                                }
+                                is PairingState.PairingFailed -> {
+                                    Timber.w("❌ Pairing failed: ${state.error}")
+                                    // Don't throw — let main flow handle via initializationComplete
+                                }
+                                else -> { /* no UI change needed */ }
                             }
-                            if (finalPairing is PairingState.PairingFailed) {
-                                throw Exception("Pairing failed: ${finalPairing.error}")
-                            }
-                            Timber.i("✅ Pairing confirmed by user")
-                        }
-                        is PairingState.PairingFailed -> {
-                            throw Exception("Pairing failed: ${pairing.error}")
-                        }
-                        else -> {
-                            Timber.i("✅ Already paired, no dialog needed")
                         }
                     }
 
-                    // ── Step 4: Wait for device initialization ────────────
-                    _uiState.value = DeviceConnectionUiState.Initializing
+                    // ── Step 3: Wait for initialization complete ──
+                    // initializationComplete.first() now PROPERLY waits because
+                    // RingDeviceManager resets the replay cache on new connection.
+                    // It fires AFTER:
+                    //   setNoticeStatus → pair check → (optional pairing) → initializeDevice
                     Timber.i("⏳ Waiting for device initialization...")
                     deviceManager.initializationComplete.first()
-                    Timber.i("✅ Device initialized")
+                    Timber.i("✅ initializationComplete received")
 
-                    // ── Step 5: Register with backend ─────────────────────
+                    // Cancel pairing UI observer
+                    pairingUiJob.cancel()
+
+                    // ── Step 4: Verify we're actually connected AND paired ──
+                    // If pairing failed, initializationComplete still fires
+                    // (to unblock us), but isPaired will be false.
+                    val isConnected = deviceManager.connectionState.value == ConnectionState.CONNECTED
+                    val isPaired = deviceManager.isPaired.value
+                    val pairState = deviceManager.pairingState.value
+
+                    Timber.i("📊 Post-init state: connected=$isConnected, paired=$isPaired, pairingState=$pairState")
+
+                    if (!isConnected) {
+                        throw Exception("دستگاه متصل نشد")
+                    }
+
+                    if (!isPaired) {
+                        // Pairing was needed but failed
+                        val reason = if (pairState is PairingState.PairingFailed) {
+                            pairState.error
+                        } else {
+                            "جفت‌سازی انجام نشد"
+                        }
+                        throw Exception(reason)
+                    }
+
+                    // ── Step 5: Register with backend ──
+                    _uiState.value = DeviceConnectionUiState.Initializing
+
                     val firmwareVersion = deviceManager.firmwareVersion.value
                     val result = deviceRepository.addUserDevice(
                         deviceMac = mac,
@@ -216,35 +209,53 @@ class DeviceConnectionViewModel @Inject constructor(
                             Timber.i("☁️ Device registered: ID=${result.data.id}")
                             userPreferences.saveDeviceInfo(mac, name)
                             userPreferences.saveDeviceId(result.data.id)
+
+                            // Set userId on ring immediately after registration —
+                            // ring is guaranteed fresh after pairing so no need to check first.
+                            val userIdForRing = result.data.id.toLong().coerceIn(1L, 4294967294L)
+                            deviceManager.setUserId(userIdForRing)
+                            Timber.i("👤 Ring userId set right after pairing: $userIdForRing")
                         }
                         is AuthResult.Error -> {
-                            // Non-fatal: save locally and continue
                             Timber.w("⚠️ Backend registration failed: ${result.message}")
                             userPreferences.saveDeviceInfo(mac, name)
                         }
                     }
 
-                    // ─────────────────────────────────────────────────────
-                    // CHANGE D (continued): Show Connected state for 1 second
-                    // before triggering navigation. This gives the user visible
-                    // feedback that the process completed successfully.
-                    // ─────────────────────────────────────────────────────
+                    // ── Step 6: Show success, then navigate ──
                     _uiState.value = DeviceConnectionUiState.Connected
-                    Timber.i("🎉 Connection complete — showing success UI")
+                    Timber.i("🎉 Connection complete!")
                     delay(1200)
                     _uiState.value = DeviceConnectionUiState.ReadyToNavigate
                 }
             } catch (e: TimeoutCancellationException) {
-                Timber.e("⏱️ Connection timeout after 90 seconds")
-                deviceManager.disconnect()
-                _uiState.value = DeviceConnectionUiState.Error("زمان اتصال تمام شد. لطفا دوباره تلاش کنید")
+                Timber.e("⏱️ Connection timeout")
+                handleConnectionFailure(device, "زمان اتصال تمام شد. لطفا دوباره تلاش کنید")
             } catch (e: Exception) {
                 Timber.e(e, "❌ Connection error")
-                deviceManager.disconnect()
-                _uiState.value = DeviceConnectionUiState.Error(
-                    "خطا در اتصال: ${e.message ?: "نامشخص"}"
-                )
+                handleConnectionFailure(device, "خطا در اتصال: ${e.message ?: "نامشخص"}")
             }
+        }
+    }
+
+    /**
+     * On failure, disconnect cleanly then auto-retry once before surfacing an error.
+     * Pairing very often drops the BLE link, and a second attempt right after the
+     * bond exists usually succeeds — so we keep the spinner alive across one silent
+     * retry instead of dropping the user back to the list with a flashing error.
+     */
+    private fun handleConnectionFailure(device: ScanDeviceInfo, message: String) {
+        deviceManager.disconnect()
+        if (connectAttempt < MAX_CONNECT_ATTEMPTS) {
+            connectAttempt++
+            Timber.w("🔁 Connection failed — auto-retry $connectAttempt/$MAX_CONNECT_ATTEMPTS")
+            viewModelScope.launch {
+                delay(RETRY_DELAY_MS)
+                attemptConnection(device)
+            }
+        } else {
+            Timber.e("❌ Connection failed after $MAX_CONNECT_ATTEMPTS attempts")
+            _uiState.value = DeviceConnectionUiState.Error(message)
         }
     }
 
@@ -277,5 +288,17 @@ class DeviceConnectionViewModel @Inject constructor(
         super.onCleared()
         connectionJob?.cancel()
         stopScan()
+    }
+
+    companion object {
+        // Per-attempt cap. The RingDeviceManager has its own internal watchdogs
+        // (≤90 s) that unblock us well before this, so this is just a backstop.
+        private const val CONNECTION_TIMEOUT_MS = 100_000L
+        // On some phones the bond only "sticks" after the pairing attempt fails;
+        // the next attempt then finds the ring already bonded and connects cleanly.
+        // 3 attempts lets that recovery happen automatically instead of the user
+        // having to back out and re-tap the device a third time.
+        private const val MAX_CONNECT_ATTEMPTS = 3
+        private const val RETRY_DELAY_MS = 1_500L
     }
 }

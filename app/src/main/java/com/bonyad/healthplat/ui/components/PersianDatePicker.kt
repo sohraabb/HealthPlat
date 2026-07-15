@@ -53,14 +53,32 @@ import androidx.compose.ui.window.DialogProperties
 import com.bonyad.healthplat.ui.utils.PersianDateUtils
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
 
-// Colors matching the design
-private val CalendarBackground = Color(0xFF131B2E)
-private val CalendarHeaderBg = Color(0xFF0B121E)
-private val AccentCyan = Color(0xFF4ECDC4)
-private val TextWhite = Color(0xFFFFFFFF)
-private val TextGray = Color(0xFF6B7280)
-private val TextMuted = Color(0xFF4B5563)
-private val TodayBorder = Color(0xFF4ECDC4)
+private data class CalendarColors(
+    val background: Color,
+    val headerBackground: Color,
+    val accent: Color,
+    val textPrimary: Color,
+    val textMuted: Color,
+    val textDisabled: Color
+)
+
+private val DarkCalendarColors = CalendarColors(
+    background = Color(0xFF131B2E),
+    headerBackground = Color(0xFF0B121E),
+    accent = Color(0xFF4ECDC4),
+    textPrimary = Color(0xFFFFFFFF),
+    textMuted = Color(0xFF6B7280),
+    textDisabled = Color(0xFF4B5563)
+)
+
+private val LightCalendarColors = CalendarColors(
+    background = Color(0xFFFFFFFF),
+    headerBackground = Color(0xFFF5F5F5),
+    accent = Color(0xFF4FA8A6),
+    textPrimary = Color(0xFF2C2C2C),
+    textMuted = Color(0xFF9E9E9E),
+    textDisabled = Color(0xFFD1D5DB)
+)
 
 /**
  * Represents a Jalali (Persian) date with year, month, and day.
@@ -85,13 +103,14 @@ data class PersianDate(
 }
 
 /**
- * Persian date picker dialog matching the dark theme design.
+ * Persian date picker dialog.
  *
  * @param selectedDate The currently selected Persian date
  * @param onDateSelected Called when a date is tapped
  * @param onDismiss Called when the dialog should close
  * @param maxDate Optional maximum selectable date (e.g., today)
  * @param minDate Optional minimum selectable date
+ * @param useDarkTheme Whether to use a dark background (true) or light background (false, default)
  */
 @Composable
 fun PersianDatePickerDialog(
@@ -99,8 +118,11 @@ fun PersianDatePickerDialog(
     onDateSelected: (PersianDate) -> Unit,
     onDismiss: () -> Unit,
     maxDate: PersianDate? = null,
-    minDate: PersianDate? = null
+    minDate: PersianDate? = null,
+    useDarkTheme: Boolean = false
 ) {
+    val colors = if (useDarkTheme) DarkCalendarColors else LightCalendarColors
+
     val today = remember {
         val (jy, jm, jd) = PersianDateUtils.getCurrentJalaliDate()
         PersianDate(jy, jm, jd)
@@ -121,7 +143,7 @@ fun PersianDatePickerDialog(
                 .fillMaxWidth()
                 .padding(horizontal = 28.dp),
             shape = RoundedCornerShape(20.dp),
-            color = CalendarBackground
+            color = colors.background
         ) {
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                 Column(
@@ -131,6 +153,7 @@ fun PersianDatePickerDialog(
                     CalendarHeader(
                         year = displayYear,
                         month = displayMonth,
+                        colors = colors,
                         onPreviousMonth = {
                             navigationDirection = -1
                             if (displayMonth == 1) {
@@ -154,7 +177,7 @@ fun PersianDatePickerDialog(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // Day-of-week headers
-                    WeekDayHeaders()
+                    WeekDayHeaders(colors = colors)
 
                     Spacer(modifier = Modifier.height(8.dp))
 
@@ -175,6 +198,7 @@ fun PersianDatePickerDialog(
                             today = today,
                             maxDate = maxDate,
                             minDate = minDate,
+                            colors = colors,
                             onDateClick = { day ->
                                 onDateSelected(PersianDate(year, month, day))
                             }
@@ -190,6 +214,7 @@ fun PersianDatePickerDialog(
 private fun CalendarHeader(
     year: Int,
     month: Int,
+    colors: CalendarColors,
     onPreviousMonth: () -> Unit,
     onNextMonth: () -> Unit
 ) {
@@ -200,7 +225,7 @@ private fun CalendarHeader(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(CalendarHeaderBg)
+            .background(colors.headerBackground)
             .padding(horizontal = 4.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -210,14 +235,14 @@ private fun CalendarHeader(
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
                 contentDescription = "ماه قبل",
-                tint = TextGray
+                tint = colors.textMuted
             )
         }
 
         // Month name and year
         Text(
             text = "$monthName $yearStr",
-            color = TextWhite,
+            color = colors.textPrimary,
             fontWeight = FontWeight.Bold,
             fontSize = 16.sp
         )
@@ -227,16 +252,18 @@ private fun CalendarHeader(
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = "ماه بعد",
-                tint = TextGray
+                tint = colors.textMuted
             )
         }
     }
 }
 
 @Composable
-private fun WeekDayHeaders() {
-    // Persian week starts with Saturday (شنبه), ends Friday (جمعه) — LTR order
-    val dayLabels = listOf("ج", "پ", "چ", "س", "د", "ی", "ش")
+private fun WeekDayHeaders(colors: CalendarColors) {
+    // Persian week starts with Saturday (شنبه), ends Friday (جمعه).
+    // Order must match the grid's index convention (Saturday = index 0).
+    // In the RTL row, index 0 renders rightmost, so شنبه sits on the right and جمعه on the left.
+    val dayLabels = listOf("ش", "ی", "د", "س", "چ", "پ", "ج")
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -245,7 +272,7 @@ private fun WeekDayHeaders() {
         dayLabels.forEach { label ->
             Text(
                 text = label,
-                color = TextMuted,
+                color = colors.textMuted,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
                 textAlign = TextAlign.Center,
@@ -263,6 +290,7 @@ private fun CalendarGrid(
     today: PersianDate,
     maxDate: PersianDate?,
     minDate: PersianDate?,
+    colors: CalendarColors,
     onDateClick: (Int) -> Unit
 ) {
     val daysInMonth = PersianDateUtils.getDaysInJalaliMonth(year, month)
@@ -302,6 +330,7 @@ private fun CalendarGrid(
                     isSelected = isSelected,
                     isToday = isToday,
                     isEnabled = isEnabled,
+                    colors = colors,
                     onClick = { if (isEnabled) onDateClick(day) }
                 )
             }
@@ -315,18 +344,19 @@ private fun DayCell(
     isSelected: Boolean,
     isToday: Boolean,
     isEnabled: Boolean,
+    colors: CalendarColors,
     onClick: () -> Unit
 ) {
     val backgroundColor = when {
-        isSelected -> AccentCyan
+        isSelected -> colors.accent
         else -> Color.Transparent
     }
 
     val textColor = when {
-        isSelected -> CalendarBackground
-        !isEnabled -> TextMuted.copy(alpha = 0.4f)
-        isToday -> AccentCyan
-        else -> TextWhite
+        isSelected -> colors.background
+        !isEnabled -> colors.textDisabled
+        isToday -> colors.accent
+        else -> colors.textPrimary
     }
 
     Box(

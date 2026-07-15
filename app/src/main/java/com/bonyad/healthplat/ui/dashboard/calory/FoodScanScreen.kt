@@ -61,12 +61,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.exifinterface.media.ExifInterface
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.bonyad.healthplat.R
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.concurrent.Executor
+import kotlin.math.roundToInt
+
+/**
+ * Fraction of the preview's smaller dimension occupied by the (square) viewfinder.
+ * Shared between [ViewfinderOverlay] (what the user sees) and the post-capture crop
+ * (what actually gets uploaded) so the two always stay in sync.
+ */
+private const val VIEWFINDER_FRACTION = 0.7f
 
 /**
  * Food Scan Camera Screen
@@ -97,6 +110,10 @@ fun FoodScanScreen(
 
     val imageCapture = remember { ImageCapture.Builder().build() }
 
+    // Hoisted so the capture handler can read its laid-out size and map the
+    // on-screen viewfinder square back onto the captured image for cropping.
+    val previewView = remember { PreviewView(context) }
+
     // Permission launcher
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -104,11 +121,23 @@ fun FoodScanScreen(
         hasCameraPermission = isGranted
     }
 
-    // Gallery launcher
+    // Gallery launcher — copy to local cache immediately to retain read access
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
-        uri?.let { onFoodScanned(it) }
+        uri?.let { sourceUri ->
+            try {
+                val inputStream = context.contentResolver.openInputStream(sourceUri)
+                if (inputStream != null) {
+                    val cacheFile = java.io.File(context.cacheDir, "gallery_${System.currentTimeMillis()}.jpg")
+                    java.io.FileOutputStream(cacheFile).use { out -> inputStream.copyTo(out) }
+                    inputStream.close()
+                    onFoodScanned(android.net.Uri.fromFile(cacheFile))
+                }
+            } catch (e: Exception) {
+                timber.log.Timber.e(e, "Failed to copy gallery image to cache")
+            }
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -125,6 +154,7 @@ fun FoodScanScreen(
         if (hasCameraPermission) {
             // Camera Preview
             CameraPreviewView(
+                previewView = previewView,
                 imageCapture = imageCapture,
                 isFlashOn = isFlashOn,
                 modifier = Modifier.fillMaxSize()
@@ -157,8 +187,22 @@ fun FoodScanScreen(
                             imageCapture = imageCapture,
                             executor = ContextCompat.getMainExecutor(context),
                             onImageCaptured = { uri ->
-                                isCapturing = false
-                                onFoodScanned(uri)
+                                // Crop the saved file down to the viewfinder square
+                                // (off the main thread) so the uploaded image matches
+                                // what the user framed on screen.
+                                scope.launch {
+                                    uri.path?.let { path ->
+                                        withContext(Dispatchers.IO) {
+                                            cropToViewfinder(
+                                                file = File(path),
+                                                viewWidth = previewView.width,
+                                                viewHeight = previewView.height
+                                            )
+                                        }
+                                    }
+                                    isCapturing = false
+                                    onFoodScanned(uri)
+                                }
                             },
                             onError = {
                                 isCapturing = false
@@ -185,6 +229,7 @@ fun FoodScanScreen(
 
 @Composable
 private fun CameraPreviewView(
+    previewView: PreviewView,
     imageCapture: ImageCapture,
     isFlashOn: Boolean,
     modifier: Modifier = Modifier
@@ -192,7 +237,6 @@ private fun CameraPreviewView(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    val previewView = remember { PreviewView(context) }
     var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
 
     LaunchedEffect(isFlashOn) {
@@ -261,7 +305,7 @@ private fun ViewfinderOverlay(
         )
 
         // Viewfinder dimensions (square in center)
-        val viewfinderSize = minOf(canvasWidth, canvasHeight) * 0.7f
+        val viewfinderSize = minOf(canvasWidth, canvasHeight) * VIEWFINDER_FRACTION
         val left = (canvasWidth - viewfinderSize) / 2
         val top = (canvasHeight - viewfinderSize) / 2
 
@@ -500,4 +544,75 @@ private fun captureImage(
             }
         }
     )
+}
+
+/**
+ * Crops [file] in place to the square region the user framed in [ViewfinderOverlay].
+ *
+ * The on-screen preview uses [PreviewView.ScaleType.FILL_CENTER], so the displayed
+ * image is the captured frame scaled to *fill* the view (overflow cropped). To make
+ * the uploaded file match what the user saw, we replicate that FILL_CENTER mapping to
+ * translate the centered viewfinder square from view coordinates into image pixels,
+ * then write back a cropped JPEG.
+ *
+ * EXIF orientation is applied first so the pixel coordinates line up with the upright
+ * image the user actually saw. If the view hasn't been laid out yet (size 0) the
+ * original file is left untouched.
+ */
+private fun cropToViewfinder(
+    file: File,
+    viewWidth: Int,
+    viewHeight: Int
+) {
+    if (viewWidth <= 0 || viewHeight <= 0 || !file.exists()) return
+
+    try {
+        var bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath) ?: return
+
+        // Rotate to upright per EXIF so coordinates match the on-screen preview.
+        val orientation = ExifInterface(file.absolutePath).getAttributeInt(
+            ExifInterface.TAG_ORIENTATION,
+            ExifInterface.ORIENTATION_NORMAL
+        )
+        val matrix = android.graphics.Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+        }
+        if (!matrix.isIdentity) {
+            bitmap = android.graphics.Bitmap.createBitmap(
+                bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true
+            )
+        }
+
+        val bmpW = bitmap.width.toFloat()
+        val bmpH = bitmap.height.toFloat()
+
+        // FILL_CENTER: scale so the image covers the whole view, centered.
+        val scale = maxOf(viewWidth / bmpW, viewHeight / bmpH)
+        val offsetX = (viewWidth - bmpW * scale) / 2f
+        val offsetY = (viewHeight - bmpH * scale) / 2f
+
+        // Centered square viewfinder, in view coordinates.
+        val vfSize = VIEWFINDER_FRACTION * minOf(viewWidth, viewHeight)
+        val vfLeft = (viewWidth - vfSize) / 2f
+        val vfTop = (viewHeight - vfSize) / 2f
+
+        // Map view coordinates back to image pixels and clamp to bounds.
+        val cropLeft = ((vfLeft - offsetX) / scale).roundToInt().coerceIn(0, bitmap.width - 1)
+        val cropTop = ((vfTop - offsetY) / scale).roundToInt().coerceIn(0, bitmap.height - 1)
+        val cropSize = (vfSize / scale).roundToInt()
+            .coerceAtMost(minOf(bitmap.width - cropLeft, bitmap.height - cropTop))
+        if (cropSize <= 0) return
+
+        val cropped = android.graphics.Bitmap.createBitmap(bitmap, cropLeft, cropTop, cropSize, cropSize)
+
+        FileOutputStream(file).use { out ->
+            cropped.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, out)
+        }
+    } catch (e: Exception) {
+        // On any failure, leave the original (uncropped) file in place rather than crash.
+        timber.log.Timber.e(e, "Failed to crop captured food image to viewfinder")
+    }
 }

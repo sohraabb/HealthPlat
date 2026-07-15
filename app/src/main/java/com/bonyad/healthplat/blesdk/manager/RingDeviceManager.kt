@@ -1,12 +1,15 @@
 package com.bonyad.healthplat.blesdk.manager
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
+import androidx.annotation.RequiresPermission
 import com.bonlala.bonlalable.BleConstant
 import com.bonlala.bonlalable.BonlalaOperateManager
 import com.bonlala.bonlalable.bean.DeviceInfoBean
@@ -20,7 +23,6 @@ import com.bonlala.bonlalable.bean.RecordStepBean
 import com.bonlala.bonlalable.bean.RecordStressBean
 import com.bonlala.bonlalable.bean.ScanDeviceInfo
 import com.bonlala.bonlalable.listener.ConnStatusListener
-import com.bonlala.bonlalable.listener.OnRealTimeDataListener
 import com.bonlala.bonlalable.listener.OnRecordDataListener
 import com.bonlala.bonlalable.listener.OnScanListener
 import com.bonyad.healthplat.blesdk.model.ConnectionState
@@ -51,7 +53,6 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
 
 
 class RingDeviceManager(private val context: Context) : HealthDeviceManager {
@@ -73,18 +74,6 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
     private val _firmwareVersion = MutableStateFlow<String?>(null)
     override val firmwareVersion: StateFlow<String?> = _firmwareVersion.asStateFlow()
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // CHANGE A: replay = 1 instead of replay = 0
-    //
-    // WHY: With replay = 0, the "init complete" emission is fire-and-forget.
-    // If initializeDevice() finishes BEFORE the ViewModel's coroutine reaches
-    // `initializationComplete.first()`, the emission is permanently lost and
-    // the ViewModel suspends forever — causing the 90-second timeout hang.
-    //
-    // With replay = 1, the last emission is cached. Any late subscriber
-    // (like the ViewModel) still receives it immediately. This closes the race
-    // condition entirely.
-    // ─────────────────────────────────────────────────────────────────────────
     private val _initializationComplete = MutableSharedFlow<Unit>(replay = 1)
     override val initializationComplete: SharedFlow<Unit> = _initializationComplete.asSharedFlow()
 
@@ -94,24 +83,15 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
     private val _pairingState = MutableStateFlow<PairingState>(PairingState.NotPaired)
     override val pairingState: StateFlow<PairingState> = _pairingState.asStateFlow()
 
+    private var connectedDevice: BluetoothDevice? = null
     private var connectionReceiver: BroadcastReceiver? = null
     private var batteryUpdateJob: Job? = null
+    private var initWatchdogJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private var initializationJob: Job? = null
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // CHANGE B: AtomicBoolean guard to prevent double-initialization
-    //
-    // WHY: Both `setNoticeStatus` callback (in connect()) AND the bond
-    // broadcast receiver (BOND_BONDED) can trigger initializeDeviceWithPairing()
-    // or initializeDevice(). On some devices both fire in close succession,
-    // running initialization twice — causing duplicate battery reads, double
-    // openRealTimeHeartRate() calls, and double emissions on initializationComplete.
-    //
-    // AtomicBoolean is used (not just a var) because these callbacks arrive
-    // on different threads (BLE callback thread vs. main thread broadcast).
-    // ─────────────────────────────────────────────────────────────────────────
     private val isInitializingOrDone = AtomicBoolean(false)
+    private val isConnecting = AtomicBoolean(false)
+    private val disconnectedDuringPairing = AtomicBoolean(false)
+    private val isRealTimeHrActive = AtomicBoolean(false)
 
     init {
         try {
@@ -121,7 +101,52 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
         }
         setupConnectionBroadcastReceiver()
         setupRealTimeDataListener()
-        setupGlobalConnectionListener()
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // FIX 1: Reset initializationComplete replay cache on new connection.
+    //
+    // WHY: replay=1 caches the last emission. When the user returns to
+    // the connection screen after a previous success, the ViewModel calls
+    //     initializationComplete.first()
+    // which IMMEDIATELY returns the stale cached value — before the new
+    // connection has even started. Then connectionState is still
+    // DISCONNECTED and the ViewModel throws
+    // "Device not connected after initialization".
+    //
+    // resetReplayCache() clears the buffer so first() properly waits.
+    // ══════════════════════════════════════════════════════════════════════
+    private fun prepareForNewConnection() {
+        _initializationComplete.resetReplayCache()
+        isInitializingOrDone.set(false)
+        isConnecting.set(true)
+        disconnectedDuringPairing.set(false)
+        _pairingState.value = PairingState.NotPaired
+        startInitWatchdog()
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Global init watchdog — guarantees the connect/pair/reconnect flow can
+    // never leave the caller (ViewModel) hanging on the spinner forever.
+    //
+    // Several paths (notably the post-pairing reconnect) rely on a *later*
+    // SDK callback (setNoticeStatus) to drive initialization and ultimately
+    // emit initializationComplete. If that callback never arrives (ring went
+    // out of range / stopped advertising while bonding), nothing would unblock
+    // the caller. This watchdog force-emits initializationComplete after a
+    // bound, so the ViewModel sees we're not connected/paired and surfaces a
+    // recoverable error instead of an endless spinner.
+    // ══════════════════════════════════════════════════════════════════════
+    private fun startInitWatchdog() {
+        initWatchdogJob?.cancel()
+        initWatchdogJob = scope.launch {
+            delay(INIT_WATCHDOG_MS)
+            if (_connectionState.value != ConnectionState.CONNECTED || !_isPaired.value) {
+                Timber.w("⏰ Init watchdog fired (${INIT_WATCHDOG_MS / 1000}s) — unblocking caller")
+                isConnecting.set(false)
+                _initializationComplete.emit(Unit)
+            }
+        }
     }
 
     private fun setupConnectionBroadcastReceiver() {
@@ -136,14 +161,19 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
             override fun onReceive(context: Context?, intent: Intent?) {
                 when (intent?.action) {
                     BleConstant.DIS_CONNECTED_ACTION -> {
+                        // ── FIX 2: Guard disconnect during connection/pairing ──
+                        // Check BOTH the atomic flag AND the connection state.
+                        // Broadcasts from previous attempts can arrive late on
+                        // the main thread message queue.
+                        if (isConnecting.get() || _connectionState.value == ConnectionState.CONNECTING) {
+                            Timber.i("⚠️ Disconnect broadcast during connection — IGNORING (isConnecting=${isConnecting.get()}, state=${_connectionState.value})")
+                            disconnectedDuringPairing.set(true)
+                            return
+                        }
                         _connectionState.value = ConnectionState.DISCONNECTED
                         _batteryLevel.value = null
                         _isPaired.value = false
                         _pairingState.value = PairingState.NotPaired
-                        // ─────────────────────────────────────────────────
-                        // CHANGE B (continued): Reset the guard on disconnect
-                        // so the next connection attempt can initialize again.
-                        // ─────────────────────────────────────────────────
                         isInitializingOrDone.set(false)
                         Timber.i("Device disconnected (broadcast)")
                     }
@@ -158,6 +188,10 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
                             BluetoothDevice.EXTRA_BOND_STATE,
                             BluetoothDevice.BOND_NONE
                         )
+                        val previousBondState = intent.getIntExtra(
+                            BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE,
+                            BluetoothDevice.BOND_NONE
+                        )
                         val device: BluetoothDevice? =
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                 intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
@@ -167,37 +201,27 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
                             }
 
                         device?.let {
-                            Timber.i("🔐 Bond state changed: $bondState for ${it.address}")
+                            Timber.i("🔐 Bond state changed: $previousBondState → $bondState for ${it.address}")
                             when (bondState) {
                                 BluetoothDevice.BOND_BONDING -> {
                                     _pairingState.value = PairingState.PairingRequested
                                 }
                                 BluetoothDevice.BOND_BONDED -> {
-                                    Timber.i("✅ Device paired successfully!")
+                                    Timber.i("✅ Device paired via bond broadcast!")
                                     _pairingState.value = PairingState.Paired
                                     _isPaired.value = true
-
-                                    // ─────────────────────────────────────
-                                    // CHANGE B (continued): Only call
-                                    // initializeDevice() if we haven't
-                                    // already started. The AtomicBoolean
-                                    // compareAndSet returns true only once,
-                                    // so parallel triggers are safely ignored.
-                                    // ─────────────────────────────────────
-                                    if (isInitializingOrDone.compareAndSet(false, true)) {
-                                        scope.launch {
-                                            delay(300)
-                                            initializeDevice()
-                                        }
-                                    } else {
-                                        Timber.i("🛑 Bond bonded received but init already in progress/done")
-                                    }
                                 }
                                 BluetoothDevice.BOND_NONE -> {
-                                    Timber.w("❌ Pairing failed or bond removed")
-                                    _pairingState.value = PairingState.PairingFailed("Pairing cancelled or failed")
-                                    _isPaired.value = false
-                                    isInitializingOrDone.set(false)
+                                    // Only treat as failure if we were actually bonding (BONDING → NONE).
+                                    // The initial NONE → NONE broadcast fires immediately when
+                                    // toPairDevice() is called, before the user sees the dialog.
+                                    if (previousBondState == BluetoothDevice.BOND_BONDING) {
+                                        Timber.w("❌ Pairing failed (BONDING → NONE)")
+                                        _pairingState.value = PairingState.PairingFailed("Pairing cancelled or failed")
+                                        _isPaired.value = false
+                                    } else {
+                                        Timber.i("ℹ️ Bond NONE with previous=$previousBondState — ignoring (not a pairing failure)")
+                                    }
                                 }
                             }
                         }
@@ -210,30 +234,6 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
             context.registerReceiver(connectionReceiver, intentFilter, Context.RECEIVER_NOT_EXPORTED)
         } else {
             context.registerReceiver(connectionReceiver, intentFilter)
-        }
-    }
-
-    private fun setupGlobalConnectionListener() {
-        try {
-            BonlalaOperateManager.getInstance().setBleConnStatusListener { mac, status ->
-                when (status) {
-                    0 -> {
-                        _connectionState.value = ConnectionState.DISCONNECTED
-                        _batteryLevel.value = null
-                        _firmwareVersion.value = null
-                        _isPaired.value = false
-                        _pairingState.value = PairingState.NotPaired
-                        isInitializingOrDone.set(false) // CHANGE B: reset on disconnect
-                        Timber.i("Global listener: Disconnected from $mac")
-                    }
-                    1 -> {
-                        _connectionState.value = ConnectionState.CONNECTED
-                        Timber.i("Global listener: Connected to $mac")
-                    }
-                }
-            }
-        } catch (t: Throwable) {
-            Timber.e(t, "Failed to setup global connection listener")
         }
     }
 
@@ -255,6 +255,63 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
         }
     }
 
+    // Shared global listener — called by both connect() and reconnect()
+    private fun setupGlobalListenerForConnection() {
+        try {
+            BonlalaOperateManager.getInstance().setBleConnStatusListener { connMac, status ->
+                when (status) {
+                    0 -> {
+                        if (isConnecting.get() || _connectionState.value == ConnectionState.CONNECTING) {
+                            Timber.i("⚠️ Global listener disconnect during connection — ignoring")
+                            disconnectedDuringPairing.set(true)
+                            return@setBleConnStatusListener
+                        }
+                        _connectionState.value = ConnectionState.DISCONNECTED
+                        _batteryLevel.value = null
+                        _firmwareVersion.value = null
+                        _isPaired.value = false
+                        _pairingState.value = PairingState.NotPaired
+                        isInitializingOrDone.set(false)
+                        Timber.i("Global listener: Disconnected from $connMac")
+                    }
+                    1 -> {
+                        _connectionState.value = ConnectionState.CONNECTED
+                        Timber.i("Global listener: Connected to $connMac")
+                    }
+                }
+            }
+        } catch (t: Throwable) {
+            Timber.e(t, "Failed to setup global connection listener")
+        }
+    }
+
+    // Shared ConnStatusListener for both connect() and reconnect()
+    private fun createConnStatusListener(): ConnStatusListener {
+        return object : ConnStatusListener {
+            override fun connStatus(status: Int) {
+                Timber.i("connStatus callback: $status")
+                if (status == 1 && _connectionState.value != ConnectionState.CONNECTED) {
+                    _connectionState.value = ConnectionState.CONNECTED
+                }
+            }
+
+            override fun setNoticeStatus(noticeStatus: Int) {
+                Timber.i("📢 setNoticeStatus: $noticeStatus — BLE data channel ready!")
+
+                if (_connectionState.value != ConnectionState.CONNECTED) {
+                    _connectionState.value = ConnectionState.CONNECTED
+                }
+
+                // ── FIX 3: Check pairing, trigger if needed ──
+                if (isInitializingOrDone.compareAndSet(false, true)) {
+                    initializeDeviceWithPairCheck()
+                } else {
+                    Timber.i("🛑 setNoticeStatus: init already in progress/done")
+                }
+            }
+        }
+    }
+
     @SuppressLint("MissingPermission")
     override fun startScan() {
         _connectionState.value = ConnectionState.SCANNING
@@ -270,36 +327,9 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
                     val deviceAddress = device.bluetoothDevice?.address
                     val deviceName = device.bluetoothDevice?.name
 
-                    // ─────────────────────────────────────────────────────
-                    // CHANGE C: Relaxed scan filter — accept any device with
-                    // a valid MAC address.
-                    //
-                    // BEFORE: We filtered by name (must contain "ring",
-                    // "bonlala", or start with "W"). This silently dropped
-                    // your ring on phones where the Bluetooth stack hadn't
-                    // yet resolved the device name from the advertisement
-                    // packet — which is common on first-time encounters on
-                    // Android 12+, and varies by OEM/firmware.
-                    //
-                    // AFTER: We only require a non-null MAC (the only field
-                    // guaranteed to always be present in a BLE advertisement).
-                    // We still log whether it looks like a ring for debugging.
-                    // The UI shows all found devices — the user can see and
-                    // pick theirs. Non-ring-looking names get a visual hint
-                    // in the UI (see DeviceScanningScreen change).
-                    // ─────────────────────────────────────────────────────
-                    if (deviceAddress == null) {
-                        Timber.d("Skipped device with null MAC")
-                        return
-                    }
+                    if (deviceAddress == null) return
 
-                    val looksLikeRing = !deviceName.isNullOrBlank() && (
-                            deviceName.contains("ring", ignoreCase = true) ||
-                                    deviceName.contains("bonlala", ignoreCase = true) ||
-                                    deviceName.startsWith("W", ignoreCase = false) // case-sensitive: W not w
-                            )
-
-                    Timber.i("Scan found: [$deviceAddress] Name: [$deviceName] looksLikeRing=$looksLikeRing")
+                    Timber.i("Scan found: [$deviceAddress] Name: [$deviceName]")
 
                     _scannedDevices.update { currentList ->
                         if (currentList.none { it.bluetoothDevice?.address == deviceAddress }) {
@@ -339,55 +369,121 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
         }
     }
 
-    override fun connect(deviceMac: String) {
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    override fun connect(device: BluetoothDevice) {
         if (_connectionState.value == ConnectionState.CONNECTING ||
             _connectionState.value == ConnectionState.CONNECTED
         ) {
-            Timber.i("🛑 Ignoring connect request: Already ${_connectionState.value}")
+            Timber.i("🛑 Ignoring connect: Already ${_connectionState.value}")
             return
         }
 
-        Timber.i("🔵 connect() called with MAC: $deviceMac")
+        val mac = device.address
+        Timber.i("🔵 connect() called with device: $mac (${device.name})")
         _connectionState.value = ConnectionState.CONNECTING
-        _pairingState.value = PairingState.NotPaired
-        // CHANGE B: Reset guard at the start of each new connection attempt
-        isInitializingOrDone.set(false)
+        connectedDevice = device
+        prepareForNewConnection()
         stopScan()
+        setupGlobalListenerForConnection()
 
         try {
-            manager.connDevice("", deviceMac, object : ConnStatusListener {
-                override fun connStatus(status: Int) {
-                    Timber.i("connStatus callback: $status")
-                    if (status == 1 && _connectionState.value != ConnectionState.CONNECTED) {
-                        _connectionState.value = ConnectionState.CONNECTED
+            manager.connDevice(device, createConnStatusListener())
+        } catch (t: Throwable) {
+            Timber.e(t, "❌ Error connecting to device $mac")
+            isConnecting.set(false)
+            _connectionState.value = ConnectionState.DISCONNECTED
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    override fun reconnect(mac: String) {
+        if (_connectionState.value == ConnectionState.CONNECTING ||
+            _connectionState.value == ConnectionState.CONNECTED
+        ) {
+            Timber.i("🛑 Ignoring reconnect: Already ${_connectionState.value}")
+            return
+        }
+
+        Timber.i("🔄 Reconnecting to saved device: $mac")
+        _connectionState.value = ConnectionState.CONNECTING
+        prepareForNewConnection()
+        setupGlobalListenerForConnection()
+
+        // ── Fast path: device is already bonded ──────────────────────────
+        // getBondedDevices() returns all paired devices instantly, no scan.
+        // The ring only advertises intermittently, so a scan can take 40-60s
+        // across multiple 20s windows. Connecting directly via the bond table
+        // makes reconnect almost instant.
+        val bondedDevice = runCatching {
+            (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)
+                ?.adapter
+                ?.bondedDevices
+                ?.find { it.address == mac }
+        }.getOrNull()
+
+        if (bondedDevice != null) {
+            Timber.i("⚡ Device already bonded — connecting directly (no scan needed)")
+            try {
+                manager.connDevice(bondedDevice, createConnStatusListener())
+            } catch (t: Throwable) {
+                Timber.e(t, "❌ Direct reconnect failed — falling back to scan")
+                scanForDevice(mac)
+            }
+            return
+        }
+
+        // ── Slow path: not in bond table yet — scan ───────────────────────
+        Timber.i("🔍 Device not bonded — scanning for $mac")
+        scanForDevice(mac)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun scanForDevice(mac: String) {
+        val deviceFound = AtomicBoolean(false)
+
+        try {
+            manager.scanBleDevice(object : OnScanListener {
+                override fun onSearchStarted() {
+                    Timber.i("🔍 Reconnect scan started for $mac")
+                }
+
+                @SuppressLint("MissingPermission")
+                override fun onDeviceFounded(scanDevice: ScanDeviceInfo) {
+                    val device = scanDevice.bluetoothDevice ?: return
+                    if (device.address == mac && deviceFound.compareAndSet(false, true)) {
+                        Timber.i("✅ Found target device $mac during reconnect scan")
+                        manager.stopScanDevice()
+                        manager.connDevice(device, createConnStatusListener())
                     }
                 }
 
-                override fun setNoticeStatus(noticeStatus: Int) {
-                    Timber.i("📢 setNoticeStatus triggered: $noticeStatus")
-                    if (_connectionState.value != ConnectionState.CONNECTED) {
-                        _connectionState.value = ConnectionState.CONNECTED
-                    }
-                    // ─────────────────────────────────────────────────────
-                    // CHANGE B (continued): Guard here too. setNoticeStatus
-                    // and BOND_BONDED broadcast can both fire — only the
-                    // first one proceeds.
-                    // ─────────────────────────────────────────────────────
-                    if (isInitializingOrDone.compareAndSet(false, true)) {
-                        initializeDeviceWithPairing()
-                    } else {
-                        Timber.i("🛑 setNoticeStatus: init already in progress/done, skipping")
+                override fun onSearchStopped() {
+                    if (_connectionState.value == ConnectionState.CONNECTING && !deviceFound.get()) {
+                        isConnecting.set(false)
+                        _connectionState.value = ConnectionState.DISCONNECTED
+                        Timber.w("⚠️ Device $mac not found during reconnect scan")
                     }
                 }
-            })
+
+                override fun onSearchCanceled() {
+                    if (_connectionState.value == ConnectionState.CONNECTING && !deviceFound.get()) {
+                        isConnecting.set(false)
+                        _connectionState.value = ConnectionState.DISCONNECTED
+                    }
+                }
+            }, 20_000, 1)
         } catch (t: Throwable) {
-            Timber.e(t, "❌ Error connecting to device $deviceMac")
+            Timber.e(t, "❌ Reconnect scan failed")
+            isConnecting.set(false)
             _connectionState.value = ConnectionState.DISCONNECTED
         }
     }
 
     override fun disconnect() {
+        isConnecting.set(false)
+        isRealTimeHrActive.set(false)
         try {
+            initWatchdogJob?.cancel()
             batteryUpdateJob?.cancel()
             closeRealTimeHeartRate()
             manager.disConnDevice()
@@ -400,20 +496,24 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
         _isPaired.value = false
         _pairingState.value = PairingState.NotPaired
         isInitializingOrDone.set(false)
+        connectedDevice = null
     }
 
     override fun openRealTimeHeartRate() {
         try {
+            isRealTimeHrActive.set(true)
             manager.openRealTimeHeartRateSwitch { isSuccess ->
                 Timber.i(if (isSuccess) "Real-time HR started" else "Failed to start real-time HR")
             }
         } catch (t: Throwable) {
+            isRealTimeHrActive.set(false)
             Timber.e(t, "openRealTimeHeartRate failed")
         }
     }
 
     override fun closeRealTimeHeartRate() {
         try {
+            isRealTimeHrActive.set(false)
             manager.closeRealTimeHeartRateSwitch { isSuccess ->
                 Timber.i(if (isSuccess) "Real-time HR stopped" else "Failed to stop real-time HR")
             }
@@ -449,15 +549,22 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
         }
     }
 
-    override suspend fun getFirmwareVersion(): String? = suspendCoroutine { cont ->
-        try {
-            BonlalaOperateManager.getInstance().getDeviceFirmwareVersion { version ->
-                _firmwareVersion.value = version
-                cont.resume(version)
+    override suspend fun getFirmwareVersion(): String? {
+        return try {
+            withTimeout(5_000) {
+                suspendCancellableCoroutine { cont ->
+                    BonlalaOperateManager.getInstance().getDeviceFirmwareVersion { version ->
+                        _firmwareVersion.value = version
+                        if (cont.isActive) cont.resume(version)
+                    }
+                }
             }
+        } catch (e: TimeoutCancellationException) {
+            Timber.w("getFirmwareVersion timed out")
+            null
         } catch (t: Throwable) {
             Timber.e(t, "getFirmwareVersion failed")
-            cont.resume(null)
+            null
         }
     }
 
@@ -480,28 +587,33 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
         }
 
     override suspend fun getRecordData(day: Int): RecordDataResult {
-        Timber.i("📊 Requesting record data for day: $day")
+        if (!_isPaired.value) return RecordDataResult.Error(-3)
+        if (_connectionState.value != ConnectionState.CONNECTED) return RecordDataResult.Error(-1)
 
-        if (!_isPaired.value) {
-            Timber.w("❌ Cannot get record data - device not paired")
-            return RecordDataResult.Error(-3)
+        // The ring returns error 4 ("communication interval") when real-time HR
+        // streaming is active at the same time as getRecordByData. Pause the
+        // stream, fetch, then resume — all transparent to the caller.
+        val wasHrActive = isRealTimeHrActive.get()
+        if (wasHrActive) {
+            Timber.i("⏸ Pausing real-time HR before record fetch (day=$day)")
+            closeRealTimeHeartRate()
+            delay(500) // let ring close the HR stream before accepting the next command
         }
 
-        if (_connectionState.value != ConnectionState.CONNECTED) {
-            Timber.w("❌ Cannot get record data - device not connected")
-            return RecordDataResult.Error(-1)
+        return try {
+            retryRecordData(day, attempt = 1)
+        } finally {
+            if (wasHrActive) {
+                Timber.i("▶ Resuming real-time HR after record fetch (day=$day)")
+                openRealTimeHeartRate()
+            }
         }
-
-        return retryRecordData(day, attempt = 1)
     }
 
     private suspend fun retryRecordData(day: Int, attempt: Int): RecordDataResult {
-        if (attempt > MAX_SYNC_ATTEMPTS) {
-            Timber.w("❌ Max retry attempts ($MAX_SYNC_ATTEMPTS) reached for day $day")
-            return RecordDataResult.Error(-99)
-        }
+        if (attempt > MAX_SYNC_ATTEMPTS) return RecordDataResult.Error(-99)
 
-        Timber.i("🔄 Sync attempt #$attempt for day $day")
+        Timber.i("🔄 getRecordData day=$day attempt=$attempt/$MAX_SYNC_ATTEMPTS (timeout=${SYNC_TIMEOUT_MS / 1000}s)")
 
         val result = try {
             withTimeout(SYNC_TIMEOUT_MS) {
@@ -510,12 +622,8 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
                         day,
                         object : OnRecordDataListener {
                             override fun isNoResponseData(dayStr: String, stateCode: Int) {
-                                Timber.w("⚠️ Sync Error day $dayStr: Code $stateCode")
-                                if (continuation.isActive) {
-                                    continuation.resume(RecordDataResult.Error(stateCode))
-                                } else {
-                                    Timber.w("⚠️ isNoResponseData fired after timeout (code $stateCode)")
-                                }
+                                Timber.w("⚠️ isNoResponseData day=$dayStr code=$stateCode (attempt $attempt) — ${describeErrorCode(stateCode)}")
+                                if (continuation.isActive) continuation.resume(RecordDataResult.Error(stateCode))
                             }
 
                             override fun backRecordData(
@@ -533,15 +641,11 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
                                         recordSpo2Bean != null || recordHrvBean != null
 
                                 if (!hasAnyData) {
-                                    Timber.w("⚠️ backRecordData fired but all beans are null")
-                                    if (continuation.isActive) {
-                                        continuation.resume(RecordDataResult.Error(6))
-                                    }
+                                    if (continuation.isActive) continuation.resume(RecordDataResult.Error(6))
                                     return
                                 }
 
                                 if (continuation.isActive) {
-                                    Timber.i("✅ backRecordData received valid data on attempt #$attempt")
                                     continuation.resume(
                                         RecordDataResult.Success(
                                             heartRate = recordHeartBean,
@@ -552,10 +656,6 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
                                             hrv = recordHrvBean
                                         )
                                     )
-                                } else {
-                                    // Data arrived AFTER the timeout window. The ring had the data,
-                                    // it was just slow to deliver it. Next retry should succeed faster.
-                                    Timber.w("⚠️ backRecordData fired AFTER timeout on attempt #$attempt — data exists but arrived too late")
                                 }
                             }
                         }
@@ -563,33 +663,26 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
                 }
             }
         } catch (e: TimeoutCancellationException) {
-            // Timeout IS retriable — the ring may just be processing slowly this cycle
-            Timber.w("⏰ Sync timed out on attempt #$attempt after ${SYNC_TIMEOUT_MS}ms for day $day")
             RecordDataResult.Error(ERROR_TIMEOUT)
         } catch (e: CancellationException) {
-            // Always re-throw regular cancellation — never swallow this for structured concurrency
-            Timber.w("🚫 Sync coroutine was cancelled for day $day")
             throw e
         } catch (e: Exception) {
-            Timber.e(e, "❌ Sync unexpected exception on attempt #$attempt")
             RecordDataResult.Error(-1)
         }
 
         return when {
             result is RecordDataResult.Success -> {
-                Timber.i("✅ Sync success on attempt #$attempt for day $day")
+                Timber.i("✅ getRecordData day=$day succeeded on attempt $attempt")
                 result
             }
-
             result is RecordDataResult.Error && result.code in RETRIABLE_ERROR_CODES -> {
                 val delayMs = retryDelayFor(result.code, attempt)
-                Timber.i("⏳ Retriable error (code ${result.code}). Waiting ${delayMs}ms before attempt #${attempt + 1}...")
+                Timber.w("🔁 Retrying day=$day after ${delayMs}ms (code=${result.code}: ${describeErrorCode(result.code)})")
                 delay(delayMs)
                 retryRecordData(day, attempt + 1)
             }
-
             else -> {
-                Timber.w("⚠️ Non-retriable error (code ${(result as? RecordDataResult.Error)?.code}) for day $day")
+                Timber.e("❌ getRecordData day=$day failed permanently: code=${(result as? RecordDataResult.Error)?.code}")
                 result
             }
         }
@@ -653,36 +746,150 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
         }
     }
 
-    private fun initializeDeviceWithPairing() {
-        // Note: no isInitializingOrDone check here — callers already do it
-        initializationJob?.cancel()
-        initializationJob = scope.launch {
+    // ══════════════════════════════════════════════════════════════════════
+    // FIX 3: Check pairing AFTER BLE connection is ready.
+    //
+    // Called from setNoticeStatus (BLE data channel open).
+    //
+    // Scenario A — Already bonded (normal reconnect, or second attempt):
+    //   getDeviceInfo().isPair == true → skip to initializeDevice()
+    //
+    // Scenario B — NOT bonded (user "forgot" device, or first time):
+    //   getDeviceInfo().isPair == false → trigger toPairDevice()
+    //   → user sees system pairing dialog → BOND_BONDED fires
+    //   → we detect Paired state → proceed to initializeDevice()
+    //
+    // This matches the demo where pairing is a POST-CONNECTION step.
+    // ══════════════════════════════════════════════════════════════════════
+    private fun initializeDeviceWithPairCheck() {
+        scope.launch {
             try {
-                Timber.i("🚀 Starting Device Initialization with Pairing Check")
+                Timber.i("🚀 setNoticeStatus received — checking pair status...")
                 delay(300)
 
-                val deviceInfo = getDeviceInfo().getOrNull()
+                val deviceInfo = try {
+                    withTimeout(5_000) { getDeviceInfo().getOrNull() }
+                } catch (e: TimeoutCancellationException) {
+                    Timber.w("getDeviceInfo timed out, assuming not paired")
+                    null
+                }
 
                 if (deviceInfo != null && deviceInfo.isPair) {
-                    Timber.i("✅ Device already paired, skipping pairing step")
+                    // ── Scenario A: Already paired ──
+                    Timber.i("✅ Device already paired (isPair=true)")
                     _isPaired.value = true
                     _pairingState.value = PairingState.Paired
+                    isConnecting.set(false)
                     initializeDevice()
                 } else {
-                    Timber.i("⚠️ Device not paired — requesting pairing")
-                    manager.readDeviceMac { macBytes ->
-                        manager.toPairDevice(macBytes)
-                        _pairingState.value = PairingState.PairingRequested
-                        // isInitializingOrDone stays true here — when BOND_BONDED
-                        // fires, it will NOT re-enter initializeDeviceWithPairing.
-                        // Instead the bond broadcast directly calls initializeDevice().
-                        // We reset the guard so BOND_BONDED can call initializeDevice().
-                        isInitializingOrDone.set(false)
+                    // ── Scenario B: Not paired — trigger pairing ──
+                    Timber.i("⚠️ Device NOT paired — initiating pairing...")
+                    _pairingState.value = PairingState.PairingRequested
+
+                    try {
+                        manager.readDeviceMac { macBytes ->
+                            Timber.i("📱 Got device MAC bytes, calling toPairDevice...")
+                            manager.toPairDevice(macBytes)
+                        }
+                    } catch (t: Throwable) {
+                        Timber.e(t, "Failed to initiate pairing")
+                        _pairingState.value = PairingState.PairingFailed("Failed to start pairing: ${t.message}")
+                        isConnecting.set(false)
+                        _initializationComplete.emit(Unit)
+                        return@launch
                     }
+
+                    // Wait for BOND_BONDED or failure (up to 60s for user dialog).
+                    //
+                    // NOTE: BLE disconnects during bonding are NORMAL — many devices
+                    // drop the link when the bond table changes. When we detect a
+                    // disconnect in the poll loop we break early and reconnect
+                    // immediately rather than waiting out the full 60 s timeout.
+                    Timber.i("⏳ Waiting for user to confirm pairing...")
+                    var pairingSucceeded = false
+                    var bleDroppedDuringWait = false
+                    try {
+                        withTimeout(60_000) {
+                            while (true) {
+                                // Early-exit: BLE dropped — reconnect immediately instead
+                                // of burning through the full 60-second timeout.
+                                if (disconnectedDuringPairing.get()) {
+                                    Timber.i("🔄 BLE dropped during pairing wait — reconnecting immediately")
+                                    bleDroppedDuringWait = true
+                                    break
+                                }
+                                when (val state = _pairingState.value) {
+                                    is PairingState.Paired -> {
+                                        Timber.i("✅ Pairing confirmed!")
+                                        pairingSucceeded = true
+                                        break
+                                    }
+                                    is PairingState.PairingFailed -> {
+                                        Timber.w("❌ Pairing failed: ${state.error}")
+                                        break
+                                    }
+                                    else -> {
+                                        delay(200)
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e: TimeoutCancellationException) {
+                        Timber.w("⏰ Pairing timed out (60s)")
+                        _pairingState.value = PairingState.PairingFailed("Pairing timed out")
+                    }
+
+                    // BLE dropped at any point during bonding (before or after BOND_BONDED).
+                    // Reconnect — setNoticeStatus will fire again and find isPair=true (Scenario A).
+                    if (bleDroppedDuringWait || (pairingSucceeded && disconnectedDuringPairing.get())) {
+                        Timber.i("🔄 BLE disconnected during bonding (normal). Reconnecting...")
+                        isInitializingOrDone.set(false)
+                        disconnectedDuringPairing.set(false)
+
+                        val device = connectedDevice
+                        if (device != null) {
+                            try {
+                                manager.connDevice(device, createConnStatusListener())
+                                // Watchdog: the reconnect relies on setNoticeStatus firing
+                                // again to drive initialization. If the data channel never
+                                // re-opens within the timeout, unblock the caller so the UI
+                                // can retry instead of hanging on the spinner.
+                                launch {
+                                    delay(RECONNECT_AFTER_PAIR_TIMEOUT_MS)
+                                    if (!isInitializingOrDone.get() &&
+                                        _connectionState.value != ConnectionState.CONNECTED
+                                    ) {
+                                        Timber.w("⏰ Reconnect-after-pairing timed out (${RECONNECT_AFTER_PAIR_TIMEOUT_MS / 1000}s) — unblocking")
+                                        isConnecting.set(false)
+                                        _initializationComplete.emit(Unit)
+                                    }
+                                }
+                            } catch (t: Throwable) {
+                                Timber.e(t, "Failed to reconnect after pairing")
+                                isConnecting.set(false)
+                                _initializationComplete.emit(Unit)
+                            }
+                        } else {
+                            Timber.e("❌ No device reference for reconnect after pairing")
+                            isConnecting.set(false)
+                            _initializationComplete.emit(Unit)
+                        }
+                        return@launch
+                    }
+
+                    if (!pairingSucceeded) {
+                        isConnecting.set(false)
+                        _initializationComplete.emit(Unit)
+                        return@launch
+                    }
+
+                    // BLE link survived pairing — proceed normally
+                    isConnecting.set(false)
+                    initializeDevice()
                 }
             } catch (t: Throwable) {
-                Timber.e(t, "❌ Pairing check failed")
-                _pairingState.value = PairingState.PairingFailed(t.message ?: "Unknown error")
+                Timber.e(t, "❌ initializeDeviceWithPairCheck failed")
+                isConnecting.set(false)
                 _initializationComplete.emit(Unit)
             }
         }
@@ -691,13 +898,25 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
     private fun initializeDevice() {
         scope.launch {
             try {
-                Timber.i("🚀 Starting Device Initialization")
+                Timber.i("🚀 Starting device initialization")
                 delay(200)
 
                 val jobs = listOf(
-                    launch { syncDeviceTime() },
-                    launch { readBatteryLevel() },
-                    launch { getFirmwareVersion() }
+                    launch {
+                        try { syncDeviceTime() } catch (t: Throwable) {
+                            Timber.w(t, "syncDeviceTime failed during init")
+                        }
+                    },
+                    launch {
+                        try { readBatteryLevel() } catch (t: Throwable) {
+                            Timber.w(t, "readBatteryLevel failed during init")
+                        }
+                    },
+                    launch {
+                        try { getFirmwareVersion() } catch (t: Throwable) {
+                            Timber.w(t, "getFirmwareVersion failed during init")
+                        }
+                    }
                 )
                 jobs.forEach { it.join() }
 
@@ -708,35 +927,47 @@ class RingDeviceManager(private val context: Context) : HealthDeviceManager {
                 startPeriodicBatteryUpdates()
 
                 Timber.i("✅✅✅ Device fully initialized")
-                _initializationComplete.emit(Unit)
             } catch (t: Throwable) {
                 Timber.e(t, "❌ Error during device initialization")
-                _initializationComplete.emit(Unit) // always emit so ViewModel doesn't hang
+            } finally {
+                _initializationComplete.emit(Unit)
             }
         }
     }
 
     private fun retryDelayFor(errorCode: Int, attempt: Int): Long {
         return when (errorCode) {
-            4    -> 3000L + (attempt * 500L)       // 3.5s, 4.0s, 4.5s, 5.0s
-            5    -> 2000L                           // Device busy: fixed 2s
-            ERROR_TIMEOUT -> minOf(                 // Timeout: capped exponential backoff
-                2000L * attempt,
-                10_000L
-            )
+            4    -> 3000L + (attempt * 500L)
+            5    -> 2000L
+            ERROR_TIMEOUT -> minOf(2000L * attempt, 10_000L)
             else -> 1500L
         }
     }
 
     companion object {
-        private const val MAX_SYNC_ATTEMPTS = 5
-        private const val SYNC_TIMEOUT_MS  = 25_000L
-        private const val ERROR_TIMEOUT    = -98
+        // Hard upper bound on the whole connect → pair → reconnect → init flow.
+        // If initializationComplete hasn't fired by now, force it so the caller
+        // never hangs. Kept comfortably above the 60 s user-pairing-dialog wait.
+        private const val INIT_WATCHDOG_MS = 90_000L
+        // Bound on the BLE re-link that happens after the bond completes/drops.
+        private const val RECONNECT_AFTER_PAIR_TIMEOUT_MS = 25_000L
 
-        private val RETRIABLE_ERROR_CODES = setOf(
-            4,
-            5,
-            ERROR_TIMEOUT
-        )
+        private const val MAX_SYNC_ATTEMPTS = 5
+        // 45 s gives the ring enough time to transfer ~25 BLE packets even on noisy
+        // connections. The SDK demo uses no timeout at all; 25 s was too aggressive
+        // and caused spurious retries / the final -99 error on slow transfers.
+        private const val SYNC_TIMEOUT_MS  = 45_000L
+        private const val ERROR_TIMEOUT    = -98
+        private val RETRIABLE_ERROR_CODES = setOf(4, 5, ERROR_TIMEOUT)
+
+        private fun describeErrorCode(code: Int) = when (code) {
+            1 -> "invalid message"
+            2 -> "battery low"
+            3 -> "data channel not open"
+            4 -> "device busy — requesting interval"
+            5 -> "device busy"
+            6 -> "no data"
+            else -> "unknown ($code)"
+        }
     }
 }

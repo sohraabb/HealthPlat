@@ -41,9 +41,10 @@ data class MedicationTime(
  * Frequency of medication intake
  */
 enum class MedicationFrequency(val persianName: String) {
-    DAILY("روزانه"),
+    MONTHLY("ماهانه"),
     WEEKLY("هفتگی"),
-    MONTHLY("ماهانه")
+    DAILY("روزانه")
+
 }
 
 /**
@@ -74,9 +75,8 @@ sealed class MedicationUiState {
  */
 enum class AddMedicationStep {
     DETAILS,      // Step 1: Title, name, duration, dosage
-    FREQUENCY,    // Step 2: Daily, weekly, monthly
-    DAYS,         // Step 3: Select days (for daily)
-    TIME          // Step 4: Select time(s)
+    FREQUENCY,    // Step 2: Frequency + day selection (combined)
+    TIME          // Step 3: Select time(s)
 }
 
 /**
@@ -101,7 +101,10 @@ data class AddMedicationState(
         get() = frequency != null
 
     val isDaysValid: Boolean
-        get() = frequency != MedicationFrequency.DAILY || selectedDays.isNotEmpty()
+        get() = selectedDays.isNotEmpty()
+
+    val isFrequencyAndDaysValid: Boolean
+        get() = isFrequencyValid && isDaysValid
 
     val isTimeValid: Boolean
         get() = times.isNotEmpty()

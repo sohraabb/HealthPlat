@@ -123,26 +123,16 @@ class MedicationViewModel @Inject constructor(
 
     fun selectFrequency(frequency: MedicationFrequency) {
         _addMedicationState.update {
-            it.copy(
-                frequency = frequency,
-                selectedDays = if (frequency == MedicationFrequency.DAILY) it.selectedDays else emptySet()
-            )
+            it.copy(frequency = frequency)
         }
     }
 
     fun onFrequencyNext() {
         val state = _addMedicationState.value
-        if (state.isFrequencyValid) {
-            val nextStep = if (state.frequency == MedicationFrequency.DAILY) {
-                AddMedicationStep.DAYS
-            } else {
-                AddMedicationStep.TIME
-            }
-            _addMedicationState.update { it.copy(currentStep = nextStep) }
+        if (state.isFrequencyAndDaysValid) {
+            _addMedicationState.update { it.copy(currentStep = AddMedicationStep.TIME) }
         }
     }
-
-    // ==================== Step 3: Days ====================
 
     fun toggleDay(day: DayOfWeek) {
         _addMedicationState.update { state ->
@@ -155,13 +145,7 @@ class MedicationViewModel @Inject constructor(
         }
     }
 
-    fun onDaysNext() {
-        if (_addMedicationState.value.isDaysValid) {
-            _addMedicationState.update { it.copy(currentStep = AddMedicationStep.TIME) }
-        }
-    }
-
-    // ==================== Step 4: Time ====================
+    // ==================== Step 3: Time ====================
 
     fun updateTimeHour(hour: Int) {
         _addMedicationState.update { it.copy(currentTimeHour = hour) }
@@ -209,14 +193,7 @@ class MedicationViewModel @Inject constructor(
                 return
             }
             AddMedicationStep.FREQUENCY -> AddMedicationStep.DETAILS
-            AddMedicationStep.DAYS -> AddMedicationStep.FREQUENCY
-            AddMedicationStep.TIME -> {
-                if (_addMedicationState.value.frequency == MedicationFrequency.DAILY) {
-                    AddMedicationStep.DAYS
-                } else {
-                    AddMedicationStep.FREQUENCY
-                }
-            }
+            AddMedicationStep.TIME -> AddMedicationStep.FREQUENCY
         }
         _addMedicationState.update { it.copy(currentStep = previousStep) }
     }

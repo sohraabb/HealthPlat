@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.bonyad.healthplat.R
+import com.bonyad.healthplat.ui.utils.rtl
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -162,7 +163,7 @@ fun TermsAndPrivacyScreen(
                             withStyle(style = SpanStyle(color = Color(0xFF5BA3A3), fontWeight = FontWeight.Bold)) {
                                 append("سیاست حفظ حریم خصوصی")
                             }
-                            append(" تن‌بار را خوانده‌ام و با آن موافقم.")
+                            append(" تن‌بار را خوانده‌ام و با آن موافقم.".rtl())
                         }
                     )
 
@@ -173,7 +174,7 @@ fun TermsAndPrivacyScreen(
                         checked = marketingAccepted,
                         onCheckedChange = { viewModel.updateMarketingAccepted(it) },
                         text = buildAnnotatedString {
-                            append("برای بهره‌مندی هرچه بیشتر از تجربه تن‌بار، آموزش‌های اختصاصی سلامت، نکات مفید و پیشنهادهای ویژه دریافت کنید.")
+                            append("برای بهره‌مندی هرچه بیشتر از تجربه تن‌بار، آموزش‌های اختصاصی سلامت، نکات مفید و پیشنهادهای ویژه دریافت کنید.".rtl())
                         }
                     )
 

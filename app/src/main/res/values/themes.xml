@@ -18,7 +18,7 @@
         <item name="windowSplashScreenBackground">@color/splash_background</item>
 
         <!-- Splash screen icon -->
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
 
         <!-- Icon background (optional, for colored circle behind icon) -->
         <item name="windowSplashScreenIconBackgroundColor">@color/splash_icon_background</item>

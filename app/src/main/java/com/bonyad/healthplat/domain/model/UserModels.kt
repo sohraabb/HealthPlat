@@ -1,7 +1,38 @@
 package com.bonyad.healthplat.domain.model
 
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.intOrNull
+
+/**
+ * Handles Gender field that may come as Int (1/2) or String ("Male"/"Female") from the API.
+ * Always normalizes to Int: 1 = Male, 2 = Female.
+ * For nullable fields, kotlinx.serialization wraps this with .nullable automatically.
+ */
+object GenderSerializer : KSerializer<Int> {
+    override val descriptor = PrimitiveSerialDescriptor("Gender", PrimitiveKind.INT)
+    override fun serialize(encoder: Encoder, value: Int) = encoder.encodeInt(value)
+    override fun deserialize(decoder: Decoder): Int {
+        val jsonDecoder = decoder as? JsonDecoder ?: return decoder.decodeInt()
+        val element = jsonDecoder.decodeJsonElement()
+        if (element is JsonPrimitive) {
+            element.intOrNull?.let { return it }
+            return when (element.content.lowercase()) {
+                "male" -> 1
+                "female" -> 2
+                else -> 0
+            }
+        }
+        return 0
+    }
+}
 
 
 @Serializable
@@ -31,7 +62,7 @@ data class UpdateUserRequest(
     @SerialName("EnabledEmailMarketing")
     val enabledEmailMarketing: Boolean? = null,
     @SerialName("DiseaseIds")
-    val diseaseIds: List<Int>? = null
+    val diseaseIds: List<Int> = emptyList()
 )
 
 @Serializable
@@ -60,6 +91,7 @@ data class UserOverviewData(
     val lastName: String? = null,
     @SerialName("BirthDate")
     val birthDate: String?,
+    @Serializable(with = GenderSerializer::class)
     @SerialName("Gender")
     val gender: Int?,
     @SerialName("Height")
@@ -72,8 +104,8 @@ data class UserOverviewData(
     val createdDate: String?,
     @SerialName("UserDevices")
     val userDevices: List<UserDeviceOverview>?,
-    @SerialName("DiseaseIds")
-    val diseaseIds: List<Int>? = null
+    @SerialName("Diseases")
+    val diseases: List<DiseaseData>? = null
 )
 
 @Serializable
@@ -92,6 +124,12 @@ data class UserDeviceOverview(
     val isActive: Boolean
 )
 
+
+@Serializable
+data class UpdatePhoneNumberRequest(
+    @SerialName("PhoneNumber") val phoneNumber: String,
+    @SerialName("VerificationCode") val verificationCode: String
+)
 
 // Disease Model
 @Serializable

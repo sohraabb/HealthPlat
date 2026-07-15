@@ -45,6 +45,8 @@ class UserPreferencesDataStore @Inject constructor(
         val USER_EMAIL = stringPreferencesKey("user_email")
         val USER_DISEASE_IDS = stringPreferencesKey("user_disease_ids") // Stored as comma-separated string
         val LAST_SYNC_DATE = stringPreferencesKey("last_sync_date")
+        val LAST_SYNC_TIMESTAMP = longPreferencesKey("last_sync_timestamp")
+        val LAST_SYNC_SERVER_TIME = stringPreferencesKey("last_sync_server_time")
     }
 
     // ============ Auth Token ============
@@ -266,7 +268,7 @@ class UserPreferencesDataStore @Inject constructor(
         gender: String,
         nationalCode: String? = null,
         email: String? = null,
-        diseaseIds: List<Int>? = null
+        diseaseIds: List<Int> = emptyList()
     ) {
         try {
             dataStore.edit { preferences ->
@@ -278,9 +280,7 @@ class UserPreferencesDataStore @Inject constructor(
                 preferences[PreferencesKeys.USER_GENDER] = gender
                 nationalCode?.let { preferences[PreferencesKeys.USER_NATIONAL_CODE] = it }
                 email?.let { preferences[PreferencesKeys.USER_EMAIL] = it }
-                diseaseIds?.let {
-                    preferences[PreferencesKeys.USER_DISEASE_IDS] = it.joinToString(",")
-                }
+                preferences[PreferencesKeys.USER_DISEASE_IDS] = diseaseIds.joinToString(",")
             }
             Timber.d("💾 Personal info saved: $name $lastName")
         } catch (e: Exception) {
@@ -459,15 +459,18 @@ class UserPreferencesDataStore @Inject constructor(
     // ============ Last Sync Date ============
 
     /**
-     * Save the last successful sync date
-     * @param date Format: yyyy-MM-dd (e.g., "2025-06-05")
+     * Save the last successful sync date.
+     * @param date Format: yyyy-MM-dd — used for gap calculation in syncAllMissingDays()
+     * @param serverTime The server's LastSyncedTime string — used for UI display. Falls back to local time if null.
      */
-    suspend fun saveLastSyncDate(date: String) {
+    suspend fun saveLastSyncDate(date: String, serverTime: String? = null) {
         try {
             dataStore.edit { preferences ->
                 preferences[PreferencesKeys.LAST_SYNC_DATE] = date
+                preferences[PreferencesKeys.LAST_SYNC_SERVER_TIME] = serverTime ?: ""
+                preferences[PreferencesKeys.LAST_SYNC_TIMESTAMP] = System.currentTimeMillis()
             }
-            Timber.d("💾 Last sync date saved: $date")
+            Timber.d("💾 Last sync date saved: $date (server time: $serverTime)")
         } catch (e: Exception) {
             Timber.e(e, "❌ Failed to save last sync date")
         }
@@ -489,6 +492,43 @@ class UserPreferencesDataStore @Inject constructor(
             }
             .map { preferences ->
                 preferences[PreferencesKeys.LAST_SYNC_DATE]
+            }
+    }
+
+    /**
+     * Get the last successful sync timestamp (epoch millis, local fallback)
+     */
+    fun getLastSyncTimestamp(): Flow<Long?> {
+        return dataStore.data
+            .catch { exception ->
+                if (exception is IOException) {
+                    Timber.e(exception, "Error reading last sync timestamp")
+                    emit(emptyPreferences())
+                } else {
+                    throw exception
+                }
+            }
+            .map { preferences ->
+                preferences[PreferencesKeys.LAST_SYNC_TIMESTAMP]
+            }
+    }
+
+    /**
+     * Get the server-provided LastSyncedTime string
+     * @return Flow of server time string or null if not available
+     */
+    fun getLastSyncServerTime(): Flow<String?> {
+        return dataStore.data
+            .catch { exception ->
+                if (exception is IOException) {
+                    Timber.e(exception, "Error reading last sync server time")
+                    emit(emptyPreferences())
+                } else {
+                    throw exception
+                }
+            }
+            .map { preferences ->
+                preferences[PreferencesKeys.LAST_SYNC_SERVER_TIME]?.ifEmpty { null }
             }
     }
 
@@ -514,6 +554,40 @@ class UserPreferencesDataStore @Inject constructor(
             Timber.i("🗑️ Auth tokens cleared (keeping user data)")
         } catch (e: Exception) {
             Timber.e(e, "❌ Failed to clear auth tokens")
+        }
+    }
+
+    /**
+     * Clears all account-specific data on logout.
+     * Preserves ONBOARDING_COMPLETE and TERMS_ACCEPTED since those are app-level,
+     * not account-level — a new user on the same device shouldn't have to redo them.
+     */
+    suspend fun clearForLogout() {
+        try {
+            dataStore.edit {
+                it.remove(PreferencesKeys.AUTH_TOKEN)
+                it.remove(PreferencesKeys.REFRESH_TOKEN)
+                it.remove(PreferencesKeys.ACCESS_TOKEN_EXPIRY)
+                it.remove(PreferencesKeys.USER_ID)
+                it.remove(PreferencesKeys.PHONE_NUMBER)
+                it.remove(PreferencesKeys.USER_NAME)
+                it.remove(PreferencesKeys.USER_LAST_NAME)
+                it.remove(PreferencesKeys.USER_BIRTH_DATE)
+                it.remove(PreferencesKeys.USER_HEIGHT)
+                it.remove(PreferencesKeys.USER_WEIGHT)
+                it.remove(PreferencesKeys.USER_GENDER)
+                it.remove(PreferencesKeys.USER_NATIONAL_CODE)
+                it.remove(PreferencesKeys.USER_EMAIL)
+                it.remove(PreferencesKeys.USER_DISEASE_IDS)
+                it.remove(PreferencesKeys.DEVICE_MAC)
+                it.remove(PreferencesKeys.DEVICE_NAME)
+                it.remove(PreferencesKeys.DEVICE_ID)
+                it.remove(PreferencesKeys.LAST_SYNC_DATE)
+                // ONBOARDING_COMPLETE and TERMS_ACCEPTED are intentionally kept
+            }
+            Timber.i("🗑️ All account data cleared on logout")
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Failed to clear account data on logout")
         }
     }
 }

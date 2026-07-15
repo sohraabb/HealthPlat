@@ -70,6 +70,7 @@ import com.bonyad.healthplat.ui.dashboard.care.CareScreen
 import com.bonyad.healthplat.ui.dashboard.profile.ProfileScreenDashboard
 import com.bonyad.healthplat.ui.navigation.NavRoutes
 import com.bonyad.healthplat.ui.utils.PermissionUtils
+import com.bonyad.healthplat.ui.utils.rtl
 import timber.log.Timber
 
 // Bottom navigation items
@@ -125,7 +126,7 @@ fun DashboardScreen(
             onDismissRequest = { showPermissionDialog = false },
             title = { Text("دسترسی بلوتوث") },
             text = {
-                Text("برای اتصال به دستگاه سلامتی و دریافت داده‌های زنده، نیاز به دسترسی بلوتوث داریم.\n\nلطفا از تنظیمات، دسترسی‌های برنامه را فعال کنید.")
+                Text("برای اتصال به دستگاه سلامتی و دریافت داده‌های زنده، نیاز به دسترسی بلوتوث داریم.\n\nلطفا از تنظیمات، دسترسی‌های برنامه را فعال کنید.".rtl())
             },
             confirmButton = {
                 Button(onClick = {
@@ -173,7 +174,9 @@ fun DashboardScreen(
             }
 
             composable(DashboardScreen.Care.route) {
-                CareScreenDashboard()
+                CareScreenDashboard(
+                    onNavigateToRoute = onNavigateToRoot
+                )
             }
 
             composable(DashboardScreen.Calory.route) {
@@ -292,8 +295,12 @@ fun DashboardBottomBar(navController: NavHostController) {
 
 // Placeholder screens - We'll implement these next
 @Composable
-fun CareScreenDashboard() {
-    CareScreen()
+fun CareScreenDashboard(
+    onNavigateToRoute: (String) -> Unit = {}
+) {
+    CareScreen(
+        onNavigateToRoute = onNavigateToRoute
+    )
 }
 
 @Composable

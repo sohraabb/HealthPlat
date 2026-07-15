@@ -5,6 +5,7 @@ import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.content.Intent
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -34,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.bonyad.healthplat.R
+import com.bonyad.healthplat.ui.utils.PermissionUtils
 
 
 @Composable
@@ -46,13 +48,18 @@ fun DeviceConnectionStartScreen(
     val context = LocalContext.current
     var permissionsGranted by remember { mutableStateOf(false) }
     var showBluetoothDialog by remember { mutableStateOf(false) }
+    var showLocationServicesDialog by remember { mutableStateOf(false) }
 
     // Launcher for Bluetooth enable request
     val bluetoothEnableLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            onStartScan()
+            if (PermissionUtils.isLocationServicesEnabled(context)) {
+                onStartScan()
+            } else {
+                showLocationServicesDialog = true
+            }
         } else {
             showBluetoothDialog = true
         }
@@ -63,15 +70,51 @@ fun DeviceConnectionStartScreen(
     ) { permissions ->
         permissionsGranted = permissions.all { it.value }
         if (permissionsGranted) {
-            // Check Bluetooth state after permissions granted
-            if (viewModel.isBluetoothEnabled) {
-                onStartScan()
-            } else {
-                // Request to enable Bluetooth
+            if (!viewModel.isBluetoothEnabled) {
+                // Request to enable Bluetooth first
                 val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
                 bluetoothEnableLauncher.launch(enableBtIntent)
+            } else if (!PermissionUtils.isLocationServicesEnabled(context)) {
+                // Bluetooth is on but location services switch is off (Samsung + OEM issue)
+                showLocationServicesDialog = true
+            } else {
+                onStartScan()
             }
         }
+    }
+
+    // Dialog when location services (GPS toggle) are off — required for BLE scan on Samsung + OEMs
+    if (showLocationServicesDialog) {
+        AlertDialog(
+            onDismissRequest = { showLocationServicesDialog = false },
+            title = {
+                Text(
+                    text = "موقعیت‌مکانی غیرفعال است",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            },
+            text = {
+                Text(
+                    text = ".برای جستجوی دستگاه بلوتوثی، لطفا سوئیچ موقعیت‌مکانی گوشی خود را فعال کنید",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showLocationServicesDialog = false
+                        context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                    }
+                ) {
+                    Text("باز کردن تنظیمات", color = Color(0xFF5BA3A3))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLocationServicesDialog = false }) {
+                    Text("بعدا", color = Color(0xFF666666))
+                }
+            }
+        )
     }
 
     // Dialog when user refuses to enable Bluetooth
@@ -86,7 +129,7 @@ fun DeviceConnectionStartScreen(
             },
             text = {
                 Text(
-                    text = "برای اتصال به حلقه، لطفا بلوتوث گوشی خود را روشن کنید.",
+                    text = ".برای اتصال به حلقه، لطفا بلوتوث گوشی خود را روشن کنید",
                     style = MaterialTheme.typography.bodyMedium
                 )
             },

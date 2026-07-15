@@ -2,6 +2,7 @@ package com.bonyad.healthplat.ui.utils
 
 import com.bonyad.healthplat.domain.model.PersianDateTime
 import java.util.Calendar
+import java.util.Date
 
 object PersianDateUtils {
 
@@ -162,6 +163,68 @@ object PersianDateUtils {
     }
 
     // ──────────────────────────────────────────────
+    //  Monthly date range helpers
+    // ──────────────────────────────────────────────
+
+    /**
+     * Returns the Gregorian date range for the current Persian month.
+     * E.g., if today is 9 Esfand 1404, returns the Gregorian dates
+     * corresponding to 1 Esfand and the last day of Esfand (29th or 30th).
+     *
+     * @return Triple(dateFrom ISO string, dateTo ISO string, daysInMonth)
+     */
+    fun getCurrentPersianMonthRange(): Triple<String, String, Int> {
+        val (jy, jm, _) = getCurrentJalaliDate()
+        val daysInMonth = getDaysInJalaliMonth(jy, jm)
+
+        val (gyFrom, gmFrom, gdFrom) = jalaliToGregorian(jy, jm, 1)
+        val (gyTo, gmTo, gdTo) = jalaliToGregorian(jy, jm, daysInMonth)
+
+        val dateFrom = String.format("%04d-%02d-%02d", gyFrom, gmFrom, gdFrom)
+        val dateTo = String.format("%04d-%02d-%02d", gyTo, gmTo, gdTo)
+
+        return Triple(dateFrom, dateTo, daysInMonth)
+    }
+
+    /**
+     * Returns the Gregorian date range for the last N days (rolling window).
+     *
+     * @return Pair(dateFrom ISO string, dateTo ISO string)
+     */
+    fun getLastNDaysRange(days: Int): Pair<String, String> {
+        val calendar = Calendar.getInstance()
+        val gy = calendar.get(Calendar.YEAR)
+        val gm = calendar.get(Calendar.MONTH) + 1
+        val gd = calendar.get(Calendar.DAY_OF_MONTH)
+        val dateTo = String.format("%04d-%02d-%02d", gy, gm, gd)
+
+        calendar.add(Calendar.DAY_OF_MONTH, -(days - 1))
+        val gyFrom = calendar.get(Calendar.YEAR)
+        val gmFrom = calendar.get(Calendar.MONTH) + 1
+        val gdFrom = calendar.get(Calendar.DAY_OF_MONTH)
+        val dateFrom = String.format("%04d-%02d-%02d", gyFrom, gmFrom, gdFrom)
+
+        return Pair(dateFrom, dateTo)
+    }
+
+    /**
+     * Returns the Gregorian start date (ISO string) of day 1 of the current Persian month.
+     */
+    fun getCurrentPersianMonthStartGregorian(): String {
+        val (jy, jm, _) = getCurrentJalaliDate()
+        val (gy, gm, gd) = jalaliToGregorian(jy, jm, 1)
+        return String.format("%04d-%02d-%02d", gy, gm, gd)
+    }
+
+    /**
+     * Returns the current Persian month name.
+     */
+    fun getCurrentPersianMonthName(): String {
+        val (_, jm, _) = getCurrentJalaliDate()
+        return persianMonthNames[jm] ?: ""
+    }
+
+    // ──────────────────────────────────────────────
     //  Existing methods
     // ──────────────────────────────────────────────
 
@@ -189,6 +252,24 @@ object PersianDateUtils {
      */
     fun getFormattedPersianDate(): String {
         val calendar = Calendar.getInstance()
+
+        val gYear = calendar.get(Calendar.YEAR)
+        val gMonth = calendar.get(Calendar.MONTH) + 1
+        val gDay = calendar.get(Calendar.DAY_OF_MONTH)
+        val (jy, jm, jd) = georgianToJalali(gYear, gMonth, gDay)
+
+        val weekDay = persianWeekDays[calendar.get(Calendar.DAY_OF_WEEK)] ?: ""
+        val monthName = persianMonthNames[jm] ?: ""
+
+        return "$weekDay $jd $monthName"
+    }
+
+    /**
+     * Get formatted Persian date with month name for a specific Date.
+     * Format: "جمعه ۱۷ بهمن"
+     */
+    fun getFormattedPersianDate(date: Date): String {
+        val calendar = Calendar.getInstance().apply { time = date }
 
         val gYear = calendar.get(Calendar.YEAR)
         val gMonth = calendar.get(Calendar.MONTH) + 1

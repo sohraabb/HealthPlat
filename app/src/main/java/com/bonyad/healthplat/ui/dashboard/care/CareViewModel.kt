@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bonyad.healthplat.data.repository.AuthResult
 import com.bonyad.healthplat.data.repository.CareRepository
+import com.bonyad.healthplat.data.repository.SleepAnalysisRepository
 import com.bonyad.healthplat.domain.model.CarePermissions
 import com.bonyad.healthplat.domain.model.CaregiverUiModel
 import com.bonyad.healthplat.domain.model.MetricData
@@ -36,7 +37,8 @@ enum class CareTab {
 
 @HiltViewModel
 class CareViewModel @Inject constructor(
-    private val careRepository: CareRepository
+    private val careRepository: CareRepository,
+    private val sleepAnalysisRepository: SleepAnalysisRepository
 ) : ViewModel() {
 
     // ============ Tab State ============
@@ -80,6 +82,9 @@ class CareViewModel @Inject constructor(
 
     private val _patientSleep = MutableStateFlow<List<MetricData>>(emptyList())
     val patientSleep: StateFlow<List<MetricData>> = _patientSleep.asStateFlow()
+
+    private val _patientSleepHours = MutableStateFlow(0f)
+    val patientSleepHours: StateFlow<Float> = _patientSleepHours.asStateFlow()
 
     private val _patientSpo2 = MutableStateFlow<List<MetricData>>(emptyList())
     val patientSpo2: StateFlow<List<MetricData>> = _patientSpo2.asStateFlow()
@@ -389,6 +394,7 @@ class CareViewModel @Inject constructor(
         _selectedPatient.value = null
         _patientHeartRate.value = emptyList()
         _patientSleep.value = emptyList()
+        _patientSleepHours.value = 0f
         _patientSpo2.value = emptyList()
         _patientStress.value = emptyList()
     }
@@ -412,9 +418,23 @@ class CareViewModel @Inject constructor(
             }
 
             if (patient.permissions.sleepQuality) {
-                when (val result = careRepository.getPatientSleep(patientUserId, dateFrom, dateTo)) {
-                    is AuthResult.Success -> _patientSleep.value = result.data
-                    is AuthResult.Error -> Timber.w("Could not load sleep: ${result.message}")
+                // Use sleep analysis API for accurate sleep duration
+                try {
+                    sleepAnalysisRepository.getSleepAnalysisForUser(patientUserId, dateFrom).fold(
+                        onSuccess = { data ->
+                            // total_durations is in minutes; convert to hours
+                            val totalMinutes = data.totalDurations.firstOrNull() ?: 0
+                            _patientSleepHours.value = totalMinutes / 60f
+                            Timber.i("✅ Patient sleep from analysis API: ${totalMinutes}min")
+                        },
+                        onFailure = { error ->
+                            Timber.w(error, "Sleep analysis failed, falling back to caregiver API")
+                            loadPatientSleepFallback(patientUserId, dateFrom, dateTo)
+                        }
+                    )
+                } catch (e: Exception) {
+                    Timber.w(e, "Sleep analysis exception, falling back to caregiver API")
+                    loadPatientSleepFallback(patientUserId, dateFrom, dateTo)
                 }
             }
 
@@ -433,6 +453,19 @@ class CareViewModel @Inject constructor(
             }
 
             _isLoading.value = false
+        }
+    }
+
+    private suspend fun loadPatientSleepFallback(patientUserId: String, dateFrom: String, dateTo: String) {
+        when (val result = careRepository.getPatientSleep(patientUserId, dateFrom, dateTo)) {
+            is AuthResult.Success -> {
+                _patientSleep.value = result.data
+                // Calculate sleep hours from per-minute stage data
+                val values = result.data.lastOrNull()?.values ?: emptyList()
+                val sleepMinutes = values.count { it == 1 || it == 2 || it == 4 }
+                _patientSleepHours.value = sleepMinutes / 60f
+            }
+            is AuthResult.Error -> Timber.w("Could not load sleep: ${result.message}")
         }
     }
 }

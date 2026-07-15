@@ -1,12 +1,17 @@
 package com.bonyad.healthplat.ui.dashboard.details.sp02
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bonyad.healthplat.blesdk.manager.HealthDeviceManager
+import com.bonyad.healthplat.data.repository.AuthResult
+import com.bonyad.healthplat.data.repository.CareRepository
 import com.bonyad.healthplat.data.repository.HealthDataRepository
 import com.bonyad.healthplat.data.repository.MetricType
 import com.bonyad.healthplat.domain.model.MetricData
 import com.bonyad.healthplat.domain.model.RecordDataResult
+import com.bonyad.healthplat.ui.utils.PersianDateUtils
+import com.bonyad.healthplat.ui.utils.rtl
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,15 +22,22 @@ import saman.zamani.persiandate.PersianDate
 import timber.log.Timber
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.util.GregorianCalendar
 import javax.inject.Inject
 import kotlin.math.abs
+import com.bonyad.healthplat.ui.components.PersianDate as UiPersianDate
 
 @HiltViewModel
 class SpO2DetailViewModel @Inject constructor(
     private val deviceManager: HealthDeviceManager,
-    private val healthRepository: HealthDataRepository
+    private val healthRepository: HealthDataRepository,
+    private val careRepository: CareRepository,
+    savedStateHandle: SavedStateHandle
 ) : ViewModel() {
+
+    private val patientUserId: String? = savedStateHandle.get<String>("patientUserId")
+    val isCaregiverMode: Boolean = patientUserId != null
 
     private val _currentSpO2 = MutableStateFlow(0)
     val currentSpO2: StateFlow<Int> = _currentSpO2.asStateFlow()
@@ -39,13 +51,15 @@ class SpO2DetailViewModel @Inject constructor(
     private val _maxSpO2 = MutableStateFlow(0)
     val maxSpO2: StateFlow<Int> = _maxSpO2.asStateFlow()
 
-    private val _selectedDayOffset = MutableStateFlow(0)
-    val selectedDayOffset = _selectedDayOffset.asStateFlow()
+    private val _selectedDate = MutableStateFlow(LocalDate.now())
+    val selectedDate: StateFlow<LocalDate> = _selectedDate.asStateFlow()
 
     data class SpO2Point(
         val timeLabel: String,
         val timeRatio: Float,
-        val value: Int
+        val value: Int,
+        val min: Int = 0,
+        val max: Int = 0
     )
 
     private val _chartData = MutableStateFlow<List<SpO2Point>>(emptyList())
@@ -74,6 +88,10 @@ class SpO2DetailViewModel @Inject constructor(
     private val _rangeText = MutableStateFlow("")
     val rangeText: StateFlow<String> = _rangeText.asStateFlow()
 
+    // Dynamic x-axis labels for weekly/monthly
+    private val _xAxisLabels = MutableStateFlow<List<String>>(emptyList())
+    val xAxisLabels: StateFlow<List<String>> = _xAxisLabels.asStateFlow()
+
     init {
         loadSpO2Data()
     }
@@ -83,12 +101,14 @@ class SpO2DetailViewModel @Inject constructor(
     fun refreshData() {
         viewModelScope.launch {
             _isLoading.value = true
-            try {
-                val syncDay = abs(_selectedDayOffset.value)
-                healthRepository.syncDashboardData(syncDay)
-                Timber.i("✅ Ring SpO2 data synced to server for day $syncDay")
-            } catch (e: Exception) {
-                Timber.e(e, "⚠️ Ring→Server sync failed, loading from API anyway")
+            if (!isCaregiverMode) {
+                try {
+                    val syncDay = ChronoUnit.DAYS.between(_selectedDate.value, LocalDate.now()).toInt().coerceIn(0, 6)
+                    healthRepository.syncDashboardData(syncDay)
+                    Timber.i("✅ Ring SpO2 data synced to server for day $syncDay")
+                } catch (e: Exception) {
+                    Timber.e(e, "⚠️ Ring→Server sync failed, loading from API anyway")
+                }
             }
             loadSpO2Data()
         }
@@ -96,14 +116,39 @@ class SpO2DetailViewModel @Inject constructor(
 
     fun setTimeRange(range: String) {
         _selectedTimeRange.value = range
+        updateXAxisLabels()
         loadSpO2Data()
     }
 
-    fun selectDay(offset: Int) {
-        _selectedDayOffset.value = offset
+    private fun updateXAxisLabels() {
+        val today = LocalDate.now()
+        _xAxisLabels.value = when (_selectedTimeRange.value) {
+            "هفتگی" -> {
+                val persianLabels = listOf("ش", "ی", "د", "س", "چ", "پ", "ج")
+                val todayIdx = when (today.dayOfWeek.value) {
+                    6 -> 0; 7 -> 1; else -> today.dayOfWeek.value + 1
+                }
+                (0..6).map { i -> persianLabels[(todayIdx - i + 7) % 7] }
+            }
+            "ماهانه" -> {
+                (1..4).map { "هفته ${it.toString().toFarsiDigits()}" }
+            }
+            else -> emptyList()
+        }
+    }
+
+    fun selectDay(date: LocalDate) {
+        _selectedDate.value = date
         if (_selectedTimeRange.value == "روزانه") {
             loadSpO2Data()
         }
+    }
+
+    fun selectDate(date: UiPersianDate) {
+        _selectedDate.value = LocalDate.parse(date.toGregorianIsoDate())
+        _selectedTimeRange.value = "روزانه"
+        updateXAxisLabels()
+        loadSpO2Data()
     }
 
     // ============ Date Range (consistent with all other VMs) ============
@@ -114,22 +159,19 @@ class SpO2DetailViewModel @Inject constructor(
 
         return when (_selectedTimeRange.value) {
             "روزانه" -> {
-                val targetDate = today.plusDays(_selectedDayOffset.value.toLong())
-                val dateStr = targetDate.format(formatter)
-                updateDateLabel(targetDate)
+                val dateStr = _selectedDate.value.format(formatter)
+                updateDateLabel(_selectedDate.value)
                 Pair(dateStr, dateStr)
             }
             "هفتگی" -> {
-                val dateFrom = today.minusDays(6).format(formatter)
-                val dateTo = today.format(formatter)
-                _dateLabel.value = "هفته گذشته"
-                Pair(dateFrom, dateTo)
+                val startDate = today.minusDays(6)
+                _dateLabel.value = "\u200F۷ روز اخیر"
+                Pair(startDate.format(formatter), today.format(formatter))
             }
             "ماهانه" -> {
-                val dateFrom = today.minusDays(29).format(formatter)
-                val dateTo = today.format(formatter)
-                _dateLabel.value = "ماه گذشته"
-                Pair(dateFrom, dateTo)
+                val startDate = today.minusDays(27)
+                _dateLabel.value = "\u200F۴ هفته اخیر"
+                Pair(startDate.format(formatter), today.format(formatter))
             }
             else -> {
                 val dateStr = today.format(formatter)
@@ -148,9 +190,9 @@ class SpO2DetailViewModel @Inject constructor(
         val monthName = pDate.monthName
 
         _dateLabel.value = when {
-            date == today -> "امروز $dayOfMonth $monthName"
-            date == today.minusDays(1) -> "دیروز $dayOfMonth $monthName"
-            else -> "$dayOfMonth $monthName"
+            date == today -> "امروز $dayOfMonth $monthName".rtl()
+            date == today.minusDays(1) -> "دیروز $dayOfMonth $monthName".rtl()
+            else -> "$dayOfMonth $monthName".rtl()
         }
     }
 
@@ -160,49 +202,98 @@ class SpO2DetailViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
 
-            try {
-                val (dateFrom, dateTo) = getDateRange()
-                Timber.i("📡 Fetching SpO2 from API: $dateFrom to $dateTo")
-
-                healthRepository.getMetricData(
-                    metricType = MetricType.SPO2,
-                    dateFrom = dateFrom,
-                    dateTo = dateTo
-                ).fold(
-                    onSuccess = { metricsData ->
-                        if (metricsData.isNotEmpty()) {
-                            when (_selectedTimeRange.value) {
-                                "روزانه" -> {
-                                    val values = metricsData.first().values
-                                    val cleanedValues = if (values.size > 48 && values.size % 48 == 0) {
-                                        Timber.w("⚠️ API data duplicated (${values.size}), taking first 48")
-                                        values.take(48)
-                                    } else {
-                                        values
-                                    }
-                                    processSpO2Data(cleanedValues)
-                                }
-                                "هفتگی", "ماهانه" -> {
-                                    processMultiDaySpO2(metricsData)
-                                }
-                            }
-                            Timber.i("✅ SpO2 loaded from API: ${metricsData.size} records")
-                        } else {
-                            Timber.w("⚠️ No SpO2 data from API, trying ring fallback...")
-                            loadSpO2FromRing(_selectedDayOffset.value)
-                        }
-                    },
-                    onFailure = { error ->
-                        Timber.e(error, "❌ SpO2 API error, trying ring fallback...")
-                        loadSpO2FromRing(_selectedDayOffset.value)
-                    }
-                )
-            } catch (e: Exception) {
-                Timber.e(e, "❌ Failed to load SpO2 from API")
-                loadSpO2FromRing(_selectedDayOffset.value)
-            } finally {
-                _isLoading.value = false
+            if (isCaregiverMode) {
+                loadCaregiverSpO2()
+            } else {
+                loadOwnSpO2()
             }
+        }
+    }
+
+    private suspend fun loadCaregiverSpO2() {
+        try {
+            val (dateFrom, dateTo) = getDateRange()
+            Timber.i("📡 Fetching caregiver SpO2: $dateFrom to $dateTo for patient $patientUserId")
+
+            when (val result = careRepository.getPatientSpo2(patientUserId!!, dateFrom, dateTo)) {
+                is AuthResult.Success -> {
+                    val metricsData = result.data
+                    if (metricsData.isNotEmpty()) {
+                        when (_selectedTimeRange.value) {
+                            "روزانه" -> {
+                                val values = metricsData.first().values
+                                val cleanedValues = if (values.size > 48 && values.size % 48 == 0) {
+                                    values.take(48)
+                                } else {
+                                    values
+                                }
+                                processSpO2Data(cleanedValues)
+                            }
+                            "هفتگی", "ماهانه" -> {
+                                processMultiDaySpO2(metricsData)
+                            }
+                        }
+                        Timber.i("✅ Caregiver SpO2 loaded: ${metricsData.size} records")
+                    } else {
+                        clearData()
+                    }
+                }
+                is AuthResult.Error -> {
+                    Timber.e("❌ Caregiver SpO2 error: ${result.message}")
+                    clearData()
+                }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Failed to load caregiver SpO2")
+            clearData()
+        } finally {
+            _isLoading.value = false
+        }
+    }
+
+    private suspend fun loadOwnSpO2() {
+        try {
+            val (dateFrom, dateTo) = getDateRange()
+            Timber.i("📡 Fetching SpO2 from API: $dateFrom to $dateTo")
+
+            healthRepository.getMetricData(
+                metricType = MetricType.SPO2,
+                dateFrom = dateFrom,
+                dateTo = dateTo
+            ).fold(
+                onSuccess = { metricsData ->
+                    if (metricsData.isNotEmpty()) {
+                        when (_selectedTimeRange.value) {
+                            "روزانه" -> {
+                                val values = metricsData.first().values
+                                val cleanedValues = if (values.size > 48 && values.size % 48 == 0) {
+                                    Timber.w("⚠️ API data duplicated (${values.size}), taking first 48")
+                                    values.take(48)
+                                } else {
+                                    values
+                                }
+                                processSpO2Data(cleanedValues)
+                            }
+                            "هفتگی", "ماهانه" -> {
+                                processMultiDaySpO2(metricsData)
+                            }
+                        }
+                        Timber.i("✅ SpO2 loaded from API: ${metricsData.size} records")
+                    } else {
+                        Timber.w("⚠️ No SpO2 data from API")
+                        clearData()
+                    }
+                },
+                onFailure = { error ->
+                    Timber.e(error, "❌ SpO2 API error, trying ring fallback...")
+                    loadSpO2FromRing(ChronoUnit.DAYS.between(_selectedDate.value, LocalDate.now()).toInt().coerceIn(0, 6))
+                }
+            )
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Failed to load SpO2 from API")
+            loadSpO2FromRing(ChronoUnit.DAYS.between(_selectedDate.value, LocalDate.now()).toInt().coerceIn(0, 6))
+        } finally {
+            _isLoading.value = false
         }
     }
 
@@ -283,24 +374,60 @@ class SpO2DetailViewModel @Inject constructor(
 
         val avg = allValid.average().toInt()
 
-        // Build scatter points distributed across days
+        val isWeekly = _selectedTimeRange.value == "هفتگی"
+        val today = LocalDate.now()
+
+        // Update labels
+        val persianLabels = listOf("ش", "ی", "د", "س", "چ", "پ", "ج")
+        val todayPersianIndex = when (today.dayOfWeek.value) {
+            6 -> 0; 7 -> 1; else -> today.dayOfWeek.value + 1
+        }
+
+        if (isWeekly) {
+            _xAxisLabels.value = (6 downTo 0).map { i -> persianLabels[(todayPersianIndex - i + 7) % 7] }
+        } else {
+            _xAxisLabels.value = (1..4).map { "هفته ${it.toString().toFarsiDigits()}" }
+        }
+
+        // Build one bar per bucket (day for weekly, week for monthly)
         val points = mutableListOf<SpO2Point>()
-        metricsData.forEachIndexed { dayIndex, metric ->
-            val dayValues = metric.values
-            val totalPointsInDay = dayValues.size
 
-            dayValues.forEachIndexed { pointIndex, value ->
-                if (value > 0) {
-                    // Distribute points across the full chart width
-                    val dayStart = dayIndex.toFloat() / metricsData.size
-                    val dayWidth = 1f / metricsData.size
-                    val withinDayRatio = pointIndex.toFloat() / totalPointsInDay.coerceAtLeast(1)
-                    val ratio = dayStart + (withinDayRatio * dayWidth)
-
-                    points.add(SpO2Point("", ratio.coerceIn(0f, 1f), value))
+        if (isWeekly) {
+            // 7 bars: oldest on the left, today on the right (RTL-friendly)
+            var listIndex = 0
+            for (i in 6 downTo 0) {
+                val date = today.minusDays(i.toLong())
+                val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                val metric = metricsData.find { it.recordDate.startsWith(dateStr) }
+                val dayValid = metric?.values?.filter { it > 0 } ?: emptyList()
+                val dayAvg = if (dayValid.isNotEmpty()) dayValid.average().toInt() else 0
+                val dayMin = dayValid.minOrNull() ?: 0
+                val dayMax = dayValid.maxOrNull() ?: 0
+                val ratio = listIndex.toFloat() / 6f
+                points.add(SpO2Point(persianLabels[(todayPersianIndex - i + 7) % 7], ratio, dayAvg, min = dayMin, max = dayMax))
+                listIndex++
+            }
+        } else {
+            // Last 28 days, one bar per week chunk (oldest first)
+            val startDate = today.minusDays(27)
+            val numWeeks = 4
+            for (weekIndex in 0 until numWeeks) {
+                val weekValues = mutableListOf<Int>()
+                for (dayInWeek in 0 until 7) {
+                    val dayIndex = weekIndex * 7 + dayInWeek
+                    val date = startDate.plusDays(dayIndex.toLong())
+                    val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                    val metric = metricsData.find { it.recordDate.startsWith(dateStr) }
+                    metric?.values?.filter { it > 0 }?.let { weekValues.addAll(it) }
                 }
+                val weekAvg = if (weekValues.isNotEmpty()) weekValues.average().toInt() else 0
+                val weekMin = if (weekValues.isNotEmpty()) weekValues.min() else 0
+                val weekMax = if (weekValues.isNotEmpty()) weekValues.max() else 0
+                val ratio = if (numWeeks > 1) weekIndex.toFloat() / (numWeeks - 1).toFloat() else 0.5f
+                points.add(SpO2Point("هفته ${(weekIndex + 1).toString().toFarsiDigits()}", ratio, weekAvg, min = weekMin, max = weekMax))
             }
         }
+
         _chartData.value = points
 
         // Find last measurement time from the last day with data
@@ -366,5 +493,18 @@ class SpO2DetailViewModel @Inject constructor(
         _chartData.value = emptyList()
         _stats.value = SpO2Stats()
         _rangeText.value = ""
+    }
+
+    private fun getDayOfWeekShort(date: LocalDate): String {
+        return when (date.dayOfWeek.value) {
+            1 -> "د"
+            2 -> "س"
+            3 -> "چ"
+            4 -> "پ"
+            5 -> "ج"
+            6 -> "ش"
+            7 -> "ی"
+            else -> ""
+        }
     }
 }

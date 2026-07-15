@@ -27,18 +27,21 @@ import com.bonyad.healthplat.ui.dashboard.details.heart_rate.HeartRateDetailScre
 import com.bonyad.healthplat.ui.dashboard.details.sleep.SleepDetailScreen
 import com.bonyad.healthplat.ui.dashboard.details.sp02.SpO2DetailScreen
 import com.bonyad.healthplat.ui.dashboard.details.stepts.StepsDetailScreen
+import com.bonyad.healthplat.ui.dashboard.details.arrhythmia.ArrhythmiaDetailScreen
+import com.bonyad.healthplat.ui.dashboard.details.readiness.ReadinessScreen
 import com.bonyad.healthplat.ui.dashboard.details.stress.StressDetailScreen
 import com.bonyad.healthplat.ui.dashboard.notification.NotificationScreen
 import com.bonyad.healthplat.ui.dashboard.notification.NotificationViewModel
 import com.bonyad.healthplat.ui.dashboard.profile.alarm.AlarmScreen
 import com.bonyad.healthplat.ui.dashboard.profile.medication.MedicationScreen
+import com.bonyad.healthplat.ui.dashboard.profile.personal_info.EditPersonalInfoScreen
+import com.bonyad.healthplat.ui.dashboard.profile.ring.RingScreen
 import com.bonyad.healthplat.ui.dashboard.profile.wallet.WalletScreen
 import com.bonyad.healthplat.ui.device.DeviceConnectionScreen
 import com.bonyad.healthplat.ui.login.AuthViewModel
 import com.bonyad.healthplat.ui.login.OtpVerificationScreen
 import com.bonyad.healthplat.ui.login.PhoneAuthScreen
 import com.bonyad.healthplat.ui.onboarding.OnboardingScreen
-import com.bonyad.healthplat.ui.profile.EditPersonalInfoScreen
 import com.bonyad.healthplat.ui.profile.PersonalInfoScreen
 
 @Composable
@@ -213,6 +216,13 @@ fun HealthPlatNavGraph(
             )
         }
 
+        // 12. Ring Management from Profile
+        composable(ProfileRoutes.RingManagement.route) {
+            RingScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
         // Health Details Routes :
         composable(HealthDetailRoutes.HeartRateDetail.route) {
             HeartRateDetailScreen(
@@ -251,6 +261,75 @@ fun HealthPlatNavGraph(
         }
 
         composable(HealthDetailRoutes.StressDetail.route) {
+            StressDetailScreen(
+                onBack = { navController.popBackStack() },
+                onInfoClick = {
+                    navController.navigate(HealthDetailRoutes.StressInfo.route)
+                }
+            )
+        }
+
+        composable(HealthDetailRoutes.ArrhythmiaDetail.route) {
+            ArrhythmiaDetailScreen(
+                onBack = { navController.popBackStack() },
+                onInfoClick = {
+                    navController.navigate(HealthDetailRoutes.ArrhythmiaInfo.route)
+                }
+            )
+        }
+
+        composable(HealthDetailRoutes.ReadinessDetail.route) {
+            ReadinessScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // CAREGIVER DETAIL ROUTES
+        // Reuse existing detail screens — the ViewModel reads patientUserId
+        // from SavedStateHandle and switches to caregiver API mode.
+        // ═══════════════════════════════════════════════════════════════
+
+        composable(
+            route = HealthDetailRoutes.CaregiverHeartRate.route,
+            arguments = listOf(navArgument("patientUserId") { type = NavType.StringType })
+        ) {
+            HeartRateDetailScreen(
+                onBack = { navController.popBackStack() },
+                onInfoClick = {
+                    navController.navigate(HealthDetailRoutes.HeartRateInfo.route)
+                }
+            )
+        }
+
+        composable(
+            route = HealthDetailRoutes.CaregiverSleep.route,
+            arguments = listOf(navArgument("patientUserId") { type = NavType.StringType })
+        ) {
+            SleepDetailScreen(
+                onBack = { navController.popBackStack() },
+                onInfoClick = {
+                    navController.navigate(HealthDetailRoutes.SleepInfo.route)
+                }
+            )
+        }
+
+        composable(
+            route = HealthDetailRoutes.CaregiverSpO2.route,
+            arguments = listOf(navArgument("patientUserId") { type = NavType.StringType })
+        ) {
+            SpO2DetailScreen(
+                onBack = { navController.popBackStack() },
+                onInfoClick = {
+                    navController.navigate(HealthDetailRoutes.SpO2Info.route)
+                }
+            )
+        }
+
+        composable(
+            route = HealthDetailRoutes.CaregiverStress.route,
+            arguments = listOf(navArgument("patientUserId") { type = NavType.StringType })
+        ) {
             StressDetailScreen(
                 onBack = { navController.popBackStack() },
                 onInfoClick = {
@@ -299,6 +378,14 @@ fun HealthPlatNavGraph(
             )
         }
 
+// Arrhythmia Info Screen
+        composable(HealthDetailRoutes.ArrhythmiaInfo.route) {
+            HealthInfoScreen(
+                infoType = HealthInfoType.Arrhythmia,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
         // Notification
         composable(NavRoutes.Notifications.route) {
             val viewModel: NotificationViewModel = hiltViewModel()
@@ -328,14 +415,8 @@ fun HealthPlatNavGraph(
         // 13. Calory Main Screen (only used if navigating directly to this route)
         composable(CaloryRoutes.Main.route) {
             CaloryScreen(
-                onNavigateToConsumed = {
-                    navController.navigate(CaloryRoutes.ConsumedDetails.route)
-                },
-                onNavigateToBurned = {
-                    navController.navigate(CaloryRoutes.BurnedDetails.route)
-                },
-                onNavigateToScan = {
-                    navController.navigate(CaloryRoutes.FoodScan.route)
+                onNavigateToRoute = { route ->
+                    navController.navigate(route)
                 }
             )
         }
@@ -350,20 +431,26 @@ fun HealthPlatNavGraph(
 
         // 15. Burned Calories Details
         // ✅ FIX: Use default hiltViewModel() - no shared parent entry
-        composable(CaloryRoutes.BurnedDetails.route) {
+        composable(
+            route = CaloryRoutes.BurnedDetails.route,
+            arguments = listOf(navArgument("date") { type = NavType.StringType })
+        ) {
             BurnedCaloriesScreen(
                 onBack = { navController.popBackStack() }
             )
         }
 
         // 16. Food Scan Camera
-        // ✅ FIX: Use default hiltViewModel() - no shared parent entry
-        composable(CaloryRoutes.FoodScan.route) {
+        composable(
+            route = CaloryRoutes.FoodScan.route,
+            arguments = listOf(navArgument("mealType") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val mealType = backStackEntry.arguments?.getString("mealType") ?: "LUNCH"
             FoodScanScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onFoodScanned = { imageUri ->
                     navController.navigate(
-                        CaloryRoutes.ScanResult.createRoute(imageUri.toString())
+                        CaloryRoutes.ScanResult.createRoute(imageUri.toString(), mealType)
                     )
                 }
             )
@@ -373,17 +460,23 @@ fun HealthPlatNavGraph(
         composable(
             route = CaloryRoutes.ScanResult.route,
             arguments = listOf(
-                navArgument("imageUri") { type = NavType.StringType }
+                navArgument("imageUri") { type = NavType.StringType },
+                navArgument("mealType") { type = NavType.StringType }
             )
         ) { backStackEntry ->
             val encodedUri = backStackEntry.arguments?.getString("imageUri") ?: ""
             val imageUri = Uri.parse(CaloryRoutes.ScanResult.parseImageUri(encodedUri))
+            val mealTypeName = backStackEntry.arguments?.getString("mealType") ?: "LUNCH"
+            val mealType = try {
+                com.bonyad.healthplat.domain.model.MealType.valueOf(mealTypeName)
+            } catch (_: IllegalArgumentException) {
+                com.bonyad.healthplat.domain.model.MealType.LUNCH
+            }
 
-            // ✅ FIX: Use default hiltViewModel() - no shared parent entry
             ScanResultScreen(
                 imageUri = imageUri,
+                initialMealType = mealType,
                 onDismiss = {
-                    // Go back to dashboard (calory tab)
                     navController.popBackStack(NavRoutes.Dashboard.route, inclusive = false)
                 },
                 onSaveComplete = {

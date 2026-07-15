@@ -6,12 +6,15 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.bonyad.healthplat.blesdk.manager.HealthDeviceManager
 import com.bonyad.healthplat.blesdk.model.ConnectionState
+import com.bonyad.healthplat.data.local.UserPreferencesDataStore
 import com.bonyad.healthplat.data.repository.HealthDataRepository
 import com.bonyad.healthplat.domain.model.RecordDataResult
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
 import timber.log.Timber
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 /**
  * Background worker that syncs health data from ring device to server.
@@ -28,7 +31,8 @@ class HealthSyncWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted workerParams: WorkerParameters,
     private val deviceManager: HealthDeviceManager,
-    private val healthRepository: HealthDataRepository
+    private val healthRepository: HealthDataRepository,
+    private val userPreferences: UserPreferencesDataStore
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
@@ -47,16 +51,17 @@ class HealthSyncWorker @AssistedInject constructor(
             Timber.i("📱 [BackgroundSync] Device connected, syncing data...")
 
             // Sync today's data (offset = 0)
-            val result = healthRepository.syncDashboardData(day = 0)
+            val (result, serverTime) = healthRepository.syncDashboardData(day = 0)
 
             when (result) {
                 is RecordDataResult.Success -> {
-                    Timber.i("✅ [BackgroundSync] Sync successful")
+                    val today = LocalDate.now().format(DateTimeFormatter.ISO_DATE)
+                    userPreferences.saveLastSyncDate(today, serverTime)
+                    Timber.i("✅ [BackgroundSync] Sync successful (server time: $serverTime)")
                     Result.success()
                 }
                 is RecordDataResult.Error -> {
                     Timber.w("⚠️ [BackgroundSync] Sync failed: ${result.message}")
-                    // Retry on error
                     Result.retry()
                 }
             }

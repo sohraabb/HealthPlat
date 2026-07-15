@@ -3,7 +3,6 @@ package com.bonyad.healthplat.ui.dashboard.calory
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -51,16 +50,22 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
@@ -68,13 +73,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import coil3.compose.AsyncImage
 import com.bonyad.healthplat.R
 import com.bonyad.healthplat.domain.model.MealSummaryUi
 import com.bonyad.healthplat.domain.model.MealType
 import com.bonyad.healthplat.ui.components.AddFoodBottomSheet
 import com.bonyad.healthplat.ui.components.StandardFloatingActionButton
+import com.bonyad.healthplat.ui.navigation.CaloryRoutes
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
 import saman.zamani.persiandate.PersianDate
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 // ============ Design System Colors ============
 val TealPrimary = Color(0xFF5BA3A3)
@@ -132,8 +141,11 @@ fun CaloryScreen(
 
     LaunchedEffect(Unit) {
         viewModel.navigateToBurnedDetails.collect {
+            val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                .format(viewModel.selectedDate.value)
+            val route = CaloryRoutes.BurnedDetails.createRoute(dateStr)
             if (onNavigateToRoute != null) {
-                onNavigateToRoute("calory_burned_details")
+                onNavigateToRoute(route)
             } else {
                 onNavigateToBurned()
             }
@@ -142,12 +154,35 @@ fun CaloryScreen(
 
     LaunchedEffect(Unit) {
         viewModel.navigateToFoodScan.collect { mealType ->
+            val route = CaloryRoutes.FoodScan.createRoute(mealType.name)
             if (onNavigateToRoute != null) {
-                onNavigateToRoute("calory_food_scan")
+                onNavigateToRoute(route)
             } else {
                 onNavigateToScan()
             }
         }
+    }
+
+    // Refresh data when returning from another screen (e.g., ScanResult saved a meal)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var wasStoppedBefore by remember { mutableStateOf(false) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> wasStoppedBefore = true
+                Lifecycle.Event.ON_RESUME -> {
+                    if (wasStoppedBefore) {
+                        viewModel.loadMealsForSelectedDate()
+                        viewModel.loadActivitiesForSelectedDate()
+                        wasStoppedBefore = false
+                    }
+                }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     // Force RTL for this screen
@@ -164,14 +199,7 @@ fun CaloryScreen(
                 SnackbarHost(snackbarHostState)
             }
         },
-        floatingActionButton = {
-            StandardFloatingActionButton(
-                onClick = { viewModel.onScanFoodClick(MealType.SNACK) },
-                icon = R.drawable.camera_scan,
-                contentDescription = "Scan Food",
-                modifier = Modifier.padding(bottom = 80.dp) // Account for bottom navigation
-            )
-        }
+        floatingActionButton = { }
     ) { paddingValues ->
 
         PullToRefreshBox(
@@ -184,20 +212,6 @@ fun CaloryScreen(
                     .fillMaxSize()
                     .padding(paddingValues)  // paddingValues goes here instead
             ) {
-                // Loading overlay
-                AnimatedVisibility(
-                    visible = uiState is CaloryUiState.Loading,
-                    enter = fadeIn(),
-                    exit = fadeOut()
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(color = TealPrimary)
-                    }
-                }
-
                 // Content
                 Column(
                     modifier = Modifier
@@ -272,6 +286,20 @@ fun CaloryScreen(
                     // Extra space for scrolling above bottom bar
                     Spacer(modifier = Modifier.height(100.dp))
                 }
+
+                // Loading overlay — drawn after content so it appears on top
+                AnimatedVisibility(
+                    visible = uiState is CaloryUiState.Loading,
+                    enter = fadeIn(),
+                    exit = fadeOut()
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = TealPrimary)
+                    }
+                }
             }
         }
     }
@@ -282,6 +310,10 @@ fun CaloryScreen(
         AddFoodBottomSheet(
             mealType = selectedMealType!!,
             onDismiss = { viewModel.dismissAddFoodSheet() },
+            onScanFood = {
+                viewModel.dismissAddFoodSheet()
+                viewModel.onScanFoodClick(selectedMealType!!)
+            },
             onAddFood = { name, caloriesMin, caloriesMax, amount, unit ->
                 viewModel.addFoodItem(name, caloriesMin, caloriesMax, amount, unit)
             }
@@ -752,13 +784,32 @@ fun FoodImageCircle(
             .background(Color.LightGray.copy(alpha = 0.3f)),
         contentAlignment = Alignment.Center
     ) {
-        // In production, use Coil/Glide for URL loading
-        Image(
-            painter = painterResource(id = R.drawable.pills), // Placeholder
+        // Load the real meal image; fall back to the placeholder when missing or on error.
+        AsyncImage(
+            model = resolveMealImageUrl(imageUrl),
             contentDescription = null,
             contentScale = ContentScale.Crop,
+            placeholder = painterResource(R.drawable.pills),
+            error = painterResource(R.drawable.pills),
+            fallback = painterResource(R.drawable.pills),
             modifier = Modifier.fillMaxSize()
         )
+    }
+}
+
+/** Host the meal images are served from — mirrors NetworkModule's MAIN_BASE_URL origin. */
+private const val IMAGE_HOST = "http://192.168.18.165:7005"
+
+/**
+ * Resolve a meal image reference into a loadable URL. The server may return an absolute URL,
+ * a root-relative path ("/Images/..."), or a bare path; handle all three.
+ */
+fun resolveMealImageUrl(raw: String?): String? {
+    if (raw.isNullOrBlank()) return null
+    return when {
+        raw.startsWith("http://", true) || raw.startsWith("https://", true) -> raw
+        raw.startsWith("/") -> IMAGE_HOST + raw
+        else -> "$IMAGE_HOST/$raw"
     }
 }
 

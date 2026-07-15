@@ -104,21 +104,16 @@ fun PhoneAuthScreen(
                     Spacer(modifier = Modifier.height(32.dp))
                     // Logo/Icon
                     Image(
-                        painter = painterResource(id = R.drawable.logo_tan),
+                        painter = painterResource(id = R.mipmap.ic_launcher_foreground),
                         contentDescription = "Logo",
-                        modifier = Modifier.size(100.dp)
+                        modifier = Modifier.size(160.dp)
                     )
 
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    // Title
-                    Text(
-                        text = "تن‌بار",
-                        style = MaterialTheme.typography.headlineMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 28.sp
-                        ),
-                        color = Color(0xFF5BA3A3)
+                    // Brand name
+                    Image(
+                        painter = painterResource(id = R.drawable.zhivan_text),
+                        contentDescription = "Zhivan",
+                        modifier = Modifier.width(100.dp)
                     )
 
                     Spacer(modifier = Modifier.height(48.dp))

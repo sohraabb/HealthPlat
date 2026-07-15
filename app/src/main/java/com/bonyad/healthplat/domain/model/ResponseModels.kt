@@ -20,7 +20,7 @@ data class ApiResponse<T>(
 
 @Serializable
 data class Pagination(
-    @SerialName("CurrentPage")
+    @SerialName("Page")
     val currentPage: Int? = null,
     @SerialName("TotalPages")
     val totalPages: Int? = null,
@@ -38,7 +38,7 @@ data class PhoneVerificationData(
     @SerialName("UserId")
     val userId: String?,  // null for new users
     @SerialName("Code")
-    val code: String      // OTP code (returned in dev/test mode)
+    val code: String?     // null when real SMS is sent; non-null in dev/test mode
 )
 
 // Response from LoginByPhone and RegisterByPhone
@@ -102,6 +102,7 @@ data class UserData(
     val userInfo: UserInfoData?
 )
 
+
 @Serializable
 data class UserInfoData(
     @SerialName("Name")
@@ -111,6 +112,7 @@ data class UserInfoData(
     @SerialName("BirthDate")
     val birthDate: String,
     @SerialName("Gender")
+    @Serializable(with = GenderSerializer::class)
     val gender: Int,  // 1 = Male, 2 = Female
     @SerialName("Height")
     val height: Int,

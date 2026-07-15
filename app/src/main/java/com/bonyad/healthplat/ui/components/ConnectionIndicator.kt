@@ -1,7 +1,11 @@
 package com.bonyad.healthplat.ui.components
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -40,6 +44,7 @@ private val TextGray = Color(0xFF666666)
 // ======================= CONNECTION STATE =======================
 sealed class DeviceConnectionState {
     object Disconnected : DeviceConnectionState()
+    object Connecting : DeviceConnectionState()
     data class Connected(val batteryLevel: Int) : DeviceConnectionState() {
         val isLowBattery: Boolean get() = batteryLevel <= 20
     }
@@ -63,6 +68,9 @@ fun ConnectionIndicatorButton(
                     contentDescription = "دستگاه متصل نیست",
                     modifier = Modifier.size(24.dp)
                 )
+            }
+            is DeviceConnectionState.Connecting -> {
+                ConnectingIndicator()
             }
             is DeviceConnectionState.Connected -> {
                 ConnectedIndicator(batteryLevel = connectionState.batteryLevel)
@@ -158,6 +166,65 @@ private fun ConnectedIndicator(batteryLevel: Int) {
 }
 
 @Composable
+private fun ConnectingIndicator() {
+    val infiniteTransition = rememberInfiniteTransition(label = "connecting_spin")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900, easing = LinearEasing)
+        ),
+        label = "spin_angle"
+    )
+
+    Box(
+        modifier = Modifier.size(36.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.size(24.dp)) {
+            val strokeWidth = 2.5.dp.toPx()
+            val arcSize = Size(size.width - strokeWidth, size.height - strokeWidth)
+            val arcOffset = Offset(strokeWidth / 2, strokeWidth / 2)
+
+            // Faint track
+            drawArc(
+                color = TealPrimary.copy(alpha = 0.15f),
+                startAngle = 0f,
+                sweepAngle = 360f,
+                useCenter = false,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                topLeft = arcOffset,
+                size = arcSize
+            )
+
+            // Spinning arc (~270° sweep so it has a visible tail gap)
+            drawArc(
+                color = TealPrimary,
+                startAngle = rotation - 90f,
+                sweepAngle = 270f,
+                useCenter = false,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                topLeft = arcOffset,
+                size = arcSize
+            )
+
+            // Center dot
+            val radius = (size.minDimension - strokeWidth) / 2
+            drawCircle(
+                color = TealPrimary.copy(alpha = 0.2f),
+                radius = radius * 0.4f,
+                center = center
+            )
+            drawCircle(
+                color = TealPrimary,
+                radius = radius * 0.2f,
+                center = center
+            )
+        }
+    }
+}
+
+@Composable
 private fun DisconnectedIndicator() {
     Box(
         modifier = Modifier.size(32.dp),
@@ -247,6 +314,9 @@ fun ConnectivityBottomSheet(
                 is DeviceConnectionState.Disconnected -> {
                     DisconnectedBottomSheetContent(onConnectClick = onConnectClick)
                 }
+                is DeviceConnectionState.Connecting -> {
+                    ConnectingBottomSheetContent()
+                }
                 is DeviceConnectionState.Connected -> {
                     ConnectedBottomSheetContent(
                         batteryLevel = connectionState.batteryLevel,
@@ -258,6 +328,51 @@ fun ConnectivityBottomSheet(
     }
 }
 
+
+@Composable
+private fun ConnectingBottomSheetContent() {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .background(TealPrimary.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = "در حال اتصال...",
+                    color = TealPrimary,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            Text(
+                text = "وضعیت اتصال",
+                color = TextGray,
+                fontSize = 14.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        CircularProgressIndicator(
+            modifier = Modifier.size(36.dp),
+            color = TealPrimary,
+            strokeWidth = 3.dp
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+    }
+}
 
 @Composable
 private fun DisconnectedBottomSheetContent(onConnectClick: () -> Unit) {

@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
@@ -54,6 +55,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bonyad.healthplat.R
 import com.bonyad.healthplat.domain.model.MealType
 import com.bonyad.healthplat.ui.dashboard.calory.TealPrimary
 import com.bonyad.healthplat.ui.dashboard.calory.TextDark
@@ -66,6 +68,7 @@ import com.bonyad.healthplat.ui.dashboard.calory.TextGray
 fun AddFoodBottomSheet(
     mealType: MealType,
     onDismiss: () -> Unit,
+    onScanFood: () -> Unit,
     onAddFood: (name: String, caloriesMin: Int, caloriesMax: Int, amount: Int, unit: String) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -135,6 +138,26 @@ fun AddFoodBottomSheet(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "Close",
                                 tint = TextGray,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    // Scan food button
+                    IconButton(
+                        onClick = onScanFood,
+                        modifier = Modifier.align(Alignment.CenterEnd)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .border(1.dp, TealPrimary, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.camera_scan),
+                                contentDescription = "Scan Food",
+                                tint = TealPrimary,
                                 modifier = Modifier.size(18.dp)
                             )
                         }

@@ -3,6 +3,9 @@ package com.bonyad.healthplat.data.repository
 import com.bonyad.healthplat.data.local.UserPreferencesDataStore
 import com.bonyad.healthplat.data.network.HealthPlatApiService
 import com.bonyad.healthplat.domain.model.DiseaseData
+import com.bonyad.healthplat.domain.model.PhoneVerificationData
+import com.bonyad.healthplat.domain.model.RequestPhoneVerificationRequest
+import com.bonyad.healthplat.domain.model.UpdatePhoneNumberRequest
 import com.bonyad.healthplat.domain.model.UpdateUserRequest
 import com.bonyad.healthplat.domain.model.UserData
 import com.bonyad.healthplat.domain.model.UserOverviewData
@@ -78,7 +81,6 @@ class UserRepository @Inject constructor(
                 overview.weight != null &&
                 overview.gender != null
             ) {
-
                 userPreferences.savePersonalInfo(
                     name = overview.name,
                     lastName = overview.lastName ?: "",
@@ -88,7 +90,7 @@ class UserRepository @Inject constructor(
                     gender = if (overview.gender == 1) "مرد" else "زن",
                     nationalCode = overview.nationalCode,
                     email = overview.email,
-                    diseaseIds = overview.diseaseIds
+                    diseaseIds = overview.diseases?.map { it.id } ?: emptyList()
                 )
 
                 Timber.d("💾 Saved personal info: ${overview.name} ${overview.lastName}")
@@ -165,7 +167,7 @@ class UserRepository @Inject constructor(
         weight: Int,
         nationalCode: String? = null,
         email: String? = null,
-        diseaseIds: List<Int>? = null
+        diseaseIds: List<Int> = emptyList()
     ): AuthResult<UserData> {
         return withContext(Dispatchers.IO) {
             try {
@@ -239,6 +241,55 @@ class UserRepository @Inject constructor(
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Update user info exception")
+                AuthResult.Error("خطا در ارتباط با سرور")
+            }
+        }
+    }
+
+    /**
+     * Request OTP for phone number change.
+     * Reuses the existing requestPhoneVerification endpoint.
+     */
+    suspend fun requestPhoneChangeOtp(phoneNumber: String): AuthResult<PhoneVerificationData> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val request = RequestPhoneVerificationRequest(
+                    phoneNumber = phoneNumber,
+                    codeExpirationMinutes = 2
+                )
+                val response = apiService.requestPhoneVerification(request)
+                if (response.isSuccessful && response.body()?.isSuccess == true) {
+                    val body = response.body()?.data
+                    if (body != null) AuthResult.Success(body)
+                    else AuthResult.Error("خطا در ارسال کد")
+                } else {
+                    AuthResult.Error(response.body()?.errors?.firstOrNull() ?: "خطا در ارسال کد")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "requestPhoneChangeOtp exception")
+                AuthResult.Error("خطا در ارتباط با سرور")
+            }
+        }
+    }
+
+    /**
+     * Verify OTP and update the phone number on the server.
+     * Saves the new phone number to DataStore on success.
+     */
+    suspend fun updatePhoneNumber(phoneNumber: String, verificationCode: String): AuthResult<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val request = UpdatePhoneNumberRequest(phoneNumber, verificationCode)
+                val response = apiService.updatePhoneNumber(request)
+                if (response.isSuccessful && response.body()?.isSuccess == true) {
+                    userPreferences.savePhoneNumber(phoneNumber)
+                    Timber.i("Phone number updated to $phoneNumber")
+                    AuthResult.Success(Unit)
+                } else {
+                    AuthResult.Error(response.body()?.errors?.firstOrNull() ?: "خطا در تغییر شماره")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "updatePhoneNumber exception")
                 AuthResult.Error("خطا در ارتباط با سرور")
             }
         }

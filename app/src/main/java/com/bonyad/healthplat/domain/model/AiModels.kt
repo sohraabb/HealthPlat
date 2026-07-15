@@ -10,38 +10,40 @@ object ApiErrorType {
 
 @Serializable
 data class AiApiResponse<T>(
-    @SerialName("ok")
-    val ok: Boolean,
+    @SerialName("IsSuccess")
+    val isSuccess: Boolean,
 
-    @SerialName("data")
+    @SerialName("Data")
     val data: T? = null,
 
-    @SerialName("error")
-    val error: AiApiError? = null,
+    @SerialName("Errors")
+    val errors: AiApiError? = null,
 
-    @SerialName("meta")
+    @SerialName("Meta")
     val meta: Meta? = null
 )
 
 @Serializable
 data class AiApiError(
-    @SerialName("code")
+    @SerialName("Code")
     val code: String,
 
-    @SerialName("message")
+    @SerialName("Message")
     val message: String,
 
-    @SerialName("type")
-    val type: String,
+    @SerialName("Type")
+    val type: String? = null,
 
-    @SerialName("details")
+    @SerialName("Details")
     val details: String? = null
 )
 
 @Serializable
 data class Meta(
-    @SerialName("path")
-    val path: String? = null
+    @SerialName("Path")
+    val path: String? = null,
+    @SerialName("image_name")
+    val imageName: String? = null
 )
 
 
@@ -56,8 +58,14 @@ data class ReadinessDto(
     @SerialName("per_aspect_scores")
     val perAspectScores: Map<String, Int> = emptyMap(),
 
+    @SerialName("per_aspect_values")
+    val perAspectValues: Map<String, String> = emptyMap(),
+
     @SerialName("per_aspect_notes")
-    val perAspectNotes: Map<String, String> = emptyMap()
+    val perAspectNotes: Map<String, String> = emptyMap(),
+
+    @SerialName("per_aspect_flags")
+    val perAspectFlags: Map<String, Int> = emptyMap()
 )
 
 
@@ -89,5 +97,26 @@ data class ReportAspect(
     @SerialName("lifestyle_suggestions")
     val lifestyleSuggestions: List<String> = emptyList(),
 
-    val score: String
+    val score: Int
+)
+
+@Serializable
+data class ArrhythmiaPredictionData(
+    @SerialName("final_prediction")
+    val finalPrediction: Int = 0,
+
+    @SerialName("final_probability")
+    val finalProbability: Int = 0,
+
+    @SerialName("predictions")
+    val predictions: List<Int> = emptyList(),
+
+    @SerialName("probabilities_afib")
+    val probabilitiesAfib: List<Double> = emptyList(),
+
+    @SerialName("probabilities_others")
+    val probabilitiesOthers: List<Double> = emptyList(),
+
+    @SerialName("timestameps")
+    val timestamps: List<String> = emptyList()
 )

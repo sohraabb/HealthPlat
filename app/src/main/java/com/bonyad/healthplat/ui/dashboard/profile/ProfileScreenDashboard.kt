@@ -1,7 +1,9 @@
 package com.bonyad.healthplat.ui.dashboard.profile
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -16,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -31,6 +34,10 @@ import com.bonyad.healthplat.R
 import com.bonyad.healthplat.ui.navigation.NavRoutes
 import com.bonyad.healthplat.ui.navigation.ProfileRoutes
 import com.bonyad.healthplat.ui.utils.toFarsiDigits
+
+
+val MainTextColor = Color(0xFF6B6B6B)
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -245,7 +252,7 @@ fun ProfileScreenDashboard(
                 MenuItemRow(
                     icon = painterResource(R.drawable.ring),
                     title = "حلقه",
-                    onClick = { onNavigateToProfileRoutes(ProfileRoutes.DeviceSetup.route) }
+                    onClick = { onNavigateToProfileRoutes(ProfileRoutes.RingManagement.route) }
                 )
             }
 
@@ -292,17 +299,30 @@ fun ProfileScreenDashboard(
 
 @Composable
 fun GoalsCard(
-    currentGoal: String,
-    progress: Float,
+    currentGoal: String = "۸۰۰۰", // E.g., passed dynamically
+    progress: Float = 0.43f,
     onAdjustGoals: () -> Unit
 ) {
+    val tealColor = Color(0xFF5BA3A3)
+    val mainTextColor = Color(0xFF6B6B6B)
+    val grayTextColor = Color(0xFF888888)
+
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            // Custom shadow matching Figma: 2px 2px 6px 0px #0000001A
+            .shadow(
+                elevation = 6.dp,
+                shape = RoundedCornerShape(16.dp),
+                ambientColor = Color(0x1A000000),
+                spotColor = Color(0x1A000000)
+            ),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = Color.White
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        // Border matching Figma
+        border = BorderStroke(1.dp, Color(0xFFDFDFDF))
     ) {
         Column(
             modifier = Modifier
@@ -315,23 +335,31 @@ fun GoalsCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(
-                    onClick = onAdjustGoals,
-                    contentPadding = PaddingValues(0.dp)
+                // "تنظیم اهداف" Button
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .clickable(onClick = onAdjustGoals)
+                        .border(
+                            width = 0.5.dp,
+                            color = tealColor,
+                            shape = RoundedCornerShape(50)
+                        )
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = "تنظیم اهداف",
-                        color = Color(0xFF5BA3A3),
-                        fontSize = 14.sp
+                        color = tealColor,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
 
                 Text(
-                    text = "اهداف شما:",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold
-                    ),
-                    color = Color(0xFF2C2C2C)
+                    text = ":اهداف شما",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = mainTextColor
                 )
             }
 
@@ -339,101 +367,103 @@ fun GoalsCard(
 
             // Goal Description
             Text(
-                text = "امروز فقط ۵۰۰۰ قدم دیگه بذار تا هدفت کامل بشه!",
+                text = "!امروز فقط ۵۰۰۰ قدم دیگه نیاز داری تا هدفت کامل بشه",
                 style = MaterialTheme.typography.bodyMedium.copy(
                     lineHeight = 22.sp
                 ),
-                color = Color(0xFF666666),
+                color = mainTextColor,
                 textAlign = TextAlign.End,
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-            // Progress Bar
+            // Progress Section
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(end = 12.dp), // account for badge width offset
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Time remaining
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = "زمان باقی مانده: ۱۴ ساعت",
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontSize = 12.sp
-                        ),
-                        color = Color(0xFF999999)
-                    )
-                    Image(
-                        painter = painterResource(R.drawable.circle_clock),
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
+                Text(
+                    text = currentGoal,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = grayTextColor
+                )
 
-                // Progress percentage
                 Text(
                     text = "٪ ۴۳",
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = FontWeight.Bold
-                    ),
-                    color = Color(0xFF5BA3A3)
+                    modifier = Modifier.padding(start = 64.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = mainTextColor
                 )
             }
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Progress Bar
+            // Progress bar row with badge and remaining time
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "۵۰۰۰ قدمی",
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontSize = 12.sp
-                    ),
-                    color = Color(0xFF999999)
-                )
-
+                // Progress bar with badge overlay
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .padding(horizontal = 12.dp)
+                        .height(24.dp)
                 ) {
-                    // Background
+                    // Background track
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(8.dp)
+                            .align(Alignment.Center)
                             .background(
-                                color = Color(0xFFE0E0E0),
+                                color = Color(0xFFEBEBEB),
                                 shape = RoundedCornerShape(4.dp)
                             )
                     )
-                    // Progress
+                    // Filled progress (right to left for RTL)
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(progress)
+                            .fillMaxWidth(fraction = progress)
                             .height(8.dp)
+                            .align(Alignment.CenterEnd)
                             .background(
-                                color = Color(0xFF5BA3A3),
+                                color = tealColor,
                                 shape = RoundedCornerShape(4.dp)
                             )
+                    )
+                    // Star badge on the bar at goal end
+                    Icon(
+                        painter = painterResource(R.drawable.star_badge),
+                        contentDescription = null,
+                        tint = Color.Unspecified,
+                        modifier = Modifier
+                            .size(24.dp)
+                            .align(Alignment.CenterStart)
                     )
                 }
 
-                Icon(
-                    imageVector = Icons.Default.Person,
-                    contentDescription = null,
-                    tint = Color(0xFF5BA3A3),
-                    modifier = Modifier.size(24.dp)
-                )
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Remaining time (aligned to end of progress bar)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "زمان باقی مانده: ۱۲ ساعت",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = grayTextColor
+                    )
+                    Icon(
+                        painter = painterResource(R.drawable.time_mini),
+                        contentDescription = "Time",
+                        modifier = Modifier.size(16.dp),
+                        tint = grayTextColor
+                    )
+                }
             }
         }
     }

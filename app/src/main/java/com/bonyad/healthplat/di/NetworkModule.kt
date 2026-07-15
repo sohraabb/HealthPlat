@@ -3,7 +3,10 @@ package com.bonyad.healthplat.di
 import android.content.Context
 import com.bonyad.healthplat.data.local.UserPreferencesDataStore
 import com.bonyad.healthplat.data.network.AIAnalysisApiService
+import com.bonyad.healthplat.data.network.ArrhythmiaApiService
+import com.bonyad.healthplat.data.network.FoodAnalysisApiService
 import com.bonyad.healthplat.data.network.HealthPlatApiService
+import com.bonyad.healthplat.data.network.SleepAnalysisApiService
 import com.bonyad.healthplat.data.network.TokenAuthenticator
 import com.bonyad.healthplat.data.network.TokenManager
 import com.inuker.bluetooth.library.BuildConfig
@@ -31,7 +34,10 @@ import javax.inject.Singleton
 object NetworkModule {
 
     private const val MAIN_BASE_URL = "http://192.168.18.165:7005/api/"
-    private const val AI_BASE_URL = "http://192.168.18.165:8002/" // Removed 'api' based on docs example, adjust if needed
+    private const val AI_BASE_URL = "http://192.168.18.165:8002/"
+    private const val FOOD_AI_BASE_URL = "http://192.168.18.165:8003/"
+    private const val ARRHYTHMIA_BASE_URL = "http://192.168.18.165:8001/"
+    private const val SLEEP_ANALYSIS_BASE_URL = "http://192.168.18.165:8002/"
 
     // =================================================================
     // 1. Utilities (Json, Logging, Prefs)
@@ -195,9 +201,14 @@ object NetworkModule {
         @Named("MainOkHttpClient") okHttpClient: OkHttpClient, // Uses main client to support Auth if needed
         json: Json
     ): Retrofit {
+        val aiClient = okHttpClient.newBuilder()
+            .connectTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
+            .build()
         return Retrofit.Builder()
             .baseUrl(AI_BASE_URL)
-            .client(okHttpClient)
+            .client(aiClient)
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
     }
@@ -243,5 +254,76 @@ object NetworkModule {
         @Named("AIRetrofit") retrofit: Retrofit
     ): AIAnalysisApiService {
         return retrofit.create(AIAnalysisApiService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    @Named("ArrhythmiaRetrofit")
+    fun provideArrhythmiaRetrofit(
+        @Named("MainOkHttpClient") okHttpClient: OkHttpClient,
+        json: Json
+    ): Retrofit {
+        return Retrofit.Builder()
+            .baseUrl(ARRHYTHMIA_BASE_URL)
+            .client(okHttpClient)
+            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideArrhythmiaApiService(
+        @Named("ArrhythmiaRetrofit") retrofit: Retrofit
+    ): ArrhythmiaApiService {
+        return retrofit.create(ArrhythmiaApiService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    @Named("SleepAnalysisRetrofit")
+    fun provideSleepAnalysisRetrofit(
+        @Named("MainOkHttpClient") okHttpClient: OkHttpClient,
+        json: Json
+    ): Retrofit {
+        return Retrofit.Builder()
+            .baseUrl(SLEEP_ANALYSIS_BASE_URL)
+            .client(okHttpClient)
+            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideSleepAnalysisApiService(
+        @Named("SleepAnalysisRetrofit") retrofit: Retrofit
+    ): SleepAnalysisApiService {
+        return retrofit.create(SleepAnalysisApiService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    @Named("FoodAIRetrofit")
+    fun provideFoodAIRetrofit(
+        @Named("MainOkHttpClient") okHttpClient: OkHttpClient,
+        json: Json
+    ): Retrofit {
+        val foodAiClient = okHttpClient.newBuilder()
+            .connectTimeout(120, TimeUnit.SECONDS)
+            .readTimeout(120, TimeUnit.SECONDS)
+            .writeTimeout(120, TimeUnit.SECONDS)
+            .build()
+        return Retrofit.Builder()
+            .baseUrl(FOOD_AI_BASE_URL)
+            .client(foodAiClient)
+            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideFoodAnalysisApiService(
+        @Named("FoodAIRetrofit") retrofit: Retrofit
+    ): FoodAnalysisApiService {
+        return retrofit.create(FoodAnalysisApiService::class.java)
     }
 }

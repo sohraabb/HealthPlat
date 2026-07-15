@@ -21,6 +21,7 @@ sealed class ProfileRoutes(val route: String) {
     object Wallet : NavRoutes("wallet")
     object Medication : NavRoutes("medication")
     object DeviceSetup : NavRoutes("profile_device_setup")  // ← NEW
+    object RingManagement : NavRoutes("ring_management")
 }
 
 sealed class HealthDetailRoutes(val route: String) {
@@ -29,24 +30,45 @@ sealed class HealthDetailRoutes(val route: String) {
     object SleepDetail : HealthDetailRoutes("sleep_detail")
     object SpO2Detail : HealthDetailRoutes("spo2_detail")
     object StressDetail : HealthDetailRoutes("stress_detail")
+    object ArrhythmiaDetail : HealthDetailRoutes("arrhythmia_detail")
+    object ReadinessDetail : HealthDetailRoutes("readiness_detail")
 
     object HeartRateInfo : NavRoutes("heart_rate_info")
     object SleepInfo : NavRoutes("sleep_info")
     object SpO2Info : NavRoutes("spo2_info")
     object StepsInfo : NavRoutes("steps_info")
     object StressInfo : NavRoutes("stress_info")
+    object ArrhythmiaInfo : NavRoutes("arrhythmia_info")
+
+    // Caregiver detail routes (reuse existing detail screens with patient data)
+    object CaregiverHeartRate : HealthDetailRoutes("caregiver_heart_rate/{patientUserId}") {
+        fun createRoute(patientUserId: String) = "caregiver_heart_rate/$patientUserId"
+    }
+    object CaregiverSleep : HealthDetailRoutes("caregiver_sleep/{patientUserId}") {
+        fun createRoute(patientUserId: String) = "caregiver_sleep/$patientUserId"
+    }
+    object CaregiverSpO2 : HealthDetailRoutes("caregiver_spo2/{patientUserId}") {
+        fun createRoute(patientUserId: String) = "caregiver_spo2/$patientUserId"
+    }
+    object CaregiverStress : HealthDetailRoutes("caregiver_stress/{patientUserId}") {
+        fun createRoute(patientUserId: String) = "caregiver_stress/$patientUserId"
+    }
 }
 
 sealed class CaloryRoutes(val route: String) {
     object Main : CaloryRoutes("calory_main")
     object ConsumedDetails : CaloryRoutes("calory_consumed_details")
-    object BurnedDetails : CaloryRoutes("calory_burned_details")
-    object FoodScan : CaloryRoutes("calory_food_scan")
+    object BurnedDetails : CaloryRoutes("calory_burned_details/{date}") {
+        fun createRoute(date: String): String = "calory_burned_details/$date"
+    }
+    object FoodScan : CaloryRoutes("calory_food_scan/{mealType}") {
+        fun createRoute(mealType: String): String = "calory_food_scan/$mealType"
+    }
 
-    object ScanResult : CaloryRoutes("calory_scan_result/{imageUri}") {
-        fun createRoute(imageUri: String): String {
+    object ScanResult : CaloryRoutes("calory_scan_result/{imageUri}/{mealType}") {
+        fun createRoute(imageUri: String, mealType: String): String {
             val encodedUri = URLEncoder.encode(imageUri, StandardCharsets.UTF_8.toString())
-            return "calory_scan_result/$encodedUri"
+            return "calory_scan_result/$encodedUri/$mealType"
         }
 
         fun parseImageUri(encodedUri: String): String {

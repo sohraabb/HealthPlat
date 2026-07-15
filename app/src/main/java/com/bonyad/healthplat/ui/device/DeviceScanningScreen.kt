@@ -16,16 +16,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.bonlala.bonlalable.bean.ScanDeviceInfo
 import com.bonyad.healthplat.R
-import timber.log.Timber
+import com.bonyad.healthplat.logging.LogFiles
+import com.bonyad.healthplat.ui.utils.rtl
 
 @Composable
 fun DeviceScanningScreen(
@@ -38,7 +40,14 @@ fun DeviceScanningScreen(
     val scannedDevices by viewModel.scannedDevices.collectAsState()
     val scanDuration by viewModel.scanDuration.collectAsState()
 
+    val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Silently mirror the log file to the public Downloads folder when the user
+    // leaves this screen, so it can be retrieved/sent later. No visible UI.
+    DisposableEffect(Unit) {
+        onDispose { LogFiles.exportToDownloads(context) }
+    }
 
     BackHandler(enabled = onBack != null) {
         viewModel.stopScan()
@@ -150,13 +159,13 @@ fun DeviceScanningScreen(
                 // CHANGE D (UI): Status text now covers the Connected state
                 // ─────────────────────────────────────────────────────────
                 val statusText: String? = when (uiState) {
-                    is DeviceConnectionUiState.Connecting -> "در حال برقراری ارتباط..."
+                    is DeviceConnectionUiState.Connecting -> "در حال برقراری ارتباط...".rtl()
                     is DeviceConnectionUiState.WaitingForPairing -> "درخواست جفت‌سازی را تایید کنید"
-                    is DeviceConnectionUiState.Initializing -> "در حال آماده‌سازی دستگاه..."
+                    is DeviceConnectionUiState.Initializing -> "در حال آماده‌سازی دستگاه...".rtl()
                     is DeviceConnectionUiState.Connected,
-                    is DeviceConnectionUiState.ReadyToNavigate -> "دستگاه متصل شد ✓"
+                    is DeviceConnectionUiState.ReadyToNavigate -> "دستگاه متصل شد"
                     is DeviceConnectionUiState.Scanning -> {
-                        if (scanDuration > 15) "جستجو بیش از حد طول کشید؟" else null
+                        if (scanDuration > 15) "؟جستجو بیش از حد طول کشید" else null
                     }
                     else -> null
                 }
@@ -178,7 +187,7 @@ fun DeviceScanningScreen(
 
                 if (uiState is DeviceConnectionUiState.Scanning && scanDuration > 15) {
                     Text(
-                        text = "حلقه خود را به شارژر وصل کنید.",
+                        text = ".حلقه خود را به شارژر وصل کنید",
                         style = MaterialTheme.typography.bodyMedium.copy(
                             fontSize = 14.sp,
                             textAlign = TextAlign.Center
@@ -208,7 +217,7 @@ fun DeviceScanningScreen(
 
                 if (scannedDevices.isNotEmpty() && showDeviceList) {
                     Text(
-                        text = "دستگاه‌های یافت شده:",
+                        text = ":دستگاه‌های یافت شده",
                         style = MaterialTheme.typography.titleSmall.copy(
                             fontWeight = FontWeight.Medium,
                             fontSize = 14.sp
@@ -250,7 +259,7 @@ fun DeviceScanningScreen(
                         modifier = Modifier.padding(vertical = 16.dp)
                     ) {
                         Text(
-                            text = "مشکل در اتصال؟",
+                            text = "مشکل در اتصال ؟",
                             style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                             color = Color(0xFF5BA3A3)
                         )

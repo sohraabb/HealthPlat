@@ -1,5 +1,9 @@
 package com.bonyad.healthplat.data.network
 
+import com.bonyad.healthplat.domain.model.ActivityFact
+import com.bonyad.healthplat.domain.model.CreateActivityRequest
+import com.bonyad.healthplat.domain.model.UpdateActivityRequest
+import com.bonyad.healthplat.domain.model.UserActivity
 import com.bonyad.healthplat.domain.model.AddCaregiverByScanRequest
 import com.bonyad.healthplat.domain.model.AddCaregiverRequest
 import com.bonyad.healthplat.domain.model.AddUserDeviceRequest
@@ -7,7 +11,10 @@ import com.bonyad.healthplat.domain.model.ApiResponse
 import com.bonyad.healthplat.domain.model.CaregiverData
 import com.bonyad.healthplat.domain.model.CreateDishRequest
 import com.bonyad.healthplat.domain.model.CreateMealRequest
+import com.bonyad.healthplat.domain.model.DailySummaryData
 import com.bonyad.healthplat.domain.model.DiseaseData
+import com.bonyad.healthplat.domain.model.DishData
+import com.bonyad.healthplat.domain.model.FoodFactData
 import com.bonyad.healthplat.domain.model.LoginByPhoneRequest
 import com.bonyad.healthplat.domain.model.LoginResponse
 import com.bonyad.healthplat.domain.model.MealData
@@ -23,6 +30,7 @@ import com.bonyad.healthplat.domain.model.UpdateCaregiverPermissionsRequest
 import com.bonyad.healthplat.domain.model.UpdateDeviceRequest
 import com.bonyad.healthplat.domain.model.UpdateDishRequest
 import com.bonyad.healthplat.domain.model.UpdateMealRequest
+import com.bonyad.healthplat.domain.model.UpdatePhoneNumberRequest
 import com.bonyad.healthplat.domain.model.UpdateUserProfileRequest
 import com.bonyad.healthplat.domain.model.UpdateUserRequest
 import com.bonyad.healthplat.domain.model.UserData
@@ -138,6 +146,16 @@ interface HealthPlatApiService {
      */
     @GET("User/GetDiseases")
     suspend fun getDiseases(): Response<ApiResponse<List<DiseaseData>>>
+
+    /**
+     * Update user phone number
+     * POST /api/User/UpdatePhoneNumber
+     */
+    @PUT("User/UpdatePhoneNumber")
+    @Headers("Content-Type: application/json")
+    suspend fun updatePhoneNumber(
+        @Body request: UpdatePhoneNumberRequest
+    ): Response<ApiResponse<Unit>>
 
 
     // ============ Device Management APIs ============
@@ -403,6 +421,26 @@ interface HealthPlatApiService {
         @Query("imageName") imageName: String
     ): Response<ApiResponse<MealData>>
 
+    /**
+     * Get daily summary (consumed + burned calories, meals) for a date
+     * GET /api/Food/GetDailySummary?date=2026-05-28
+     */
+    @GET("Food/GetDailySummary")
+    suspend fun getDailySummary(
+        @Query("date") date: String
+    ): Response<ApiResponse<DailySummaryData>>
+
+    /**
+     * Search food facts database
+     * GET /api/Food/SearchFoodFacts?query=rice&page=1&pageSize=20
+     */
+    @GET("Food/SearchFoodFacts")
+    suspend fun searchFoodFacts(
+        @Query("query") query: String,
+        @Query("page") page: Int,
+        @Query("pageSize") pageSize: Int
+    ): Response<ApiResponse<List<FoodFactData>>>
+
     // ============ POST Endpoints ============
 
     /**
@@ -413,7 +451,7 @@ interface HealthPlatApiService {
     @Multipart
     @POST("Food/CreateMealByPicture")
     suspend fun createMealByPicture(
-        @Part file: MultipartBody.Part
+        @Part files: List<MultipartBody.Part>
     ): Response<ApiResponse<MealData>>
 
     /**
@@ -434,7 +472,7 @@ interface HealthPlatApiService {
     @Headers("Content-Type: application/json; ver=1.0")
     suspend fun createDish(
         @Body request: CreateDishRequest
-    ): Response<ApiResponse<MealData>>
+    ): Response<ApiResponse<DishData>>
 
     // ============ PUT Endpoints ============
 
@@ -478,4 +516,71 @@ interface HealthPlatApiService {
     suspend fun deleteMeal(
         @Path("mealId") mealId: Int
     ): Response<ApiResponse<Boolean>>
+
+    // =================================================================
+    // Activity Endpoints
+    // =================================================================
+
+    /**
+     * Get all activity facts from the compendium.
+     * GET /api/Activity/GetAllActivityFacts
+     */
+    @GET("Activity/GetAllActivityFacts")
+    suspend fun getAllActivityFacts(): Response<ApiResponse<List<ActivityFact>>>
+
+    /**
+     * Search activity facts by name with pagination.
+     * GET /api/Activity/SearchActivityFacts
+     */
+    @GET("Activity/SearchActivityFacts")
+    suspend fun searchActivityFacts(
+        @Query("query") query: String,
+        @Query("page") page: Int,
+        @Query("pageSize") pageSize: Int
+    ): Response<ApiResponse<List<ActivityFact>>>
+
+    /**
+     * Log a new activity for the current user.
+     * POST /api/Activity/CreateActivity
+     */
+    @POST("Activity/CreateActivity")
+    @Headers("Content-Type: application/json; ver=1.0")
+    suspend fun createActivity(
+        @Body request: CreateActivityRequest
+    ): Response<ApiResponse<UserActivity>>
+
+    /**
+     * Update an existing logged activity.
+     * PUT /api/Activity/UpdateActivity
+     */
+    @PUT("Activity/UpdateActivity")
+    @Headers("Content-Type: application/json; ver=1.0")
+    suspend fun updateActivity(
+        @Body request: UpdateActivityRequest
+    ): Response<ApiResponse<Unit?>>
+
+    /**
+     * Get a single logged activity by ID.
+     * GET /api/Activity/GetActivity/{id}
+     */
+    @GET("Activity/GetActivity/{id}")
+    suspend fun getActivity(@Path("id") id: Int): Response<ApiResponse<UserActivity>>
+
+    /**
+     * Get all logged activities within a date range.
+     * Pass the same date for both params to query a single day.
+     * GET /api/Activity/GetActivityByDate
+     */
+    @GET("Activity/GetActivityByDate")
+    suspend fun getActivityByDate(
+        @Query("dateFrom") dateFrom: String,
+        @Query("dateTo") dateTo: String
+    ): Response<ApiResponse<List<UserActivity>>>
+
+    /**
+     * Delete a logged activity by ID.
+     * DELETE /api/Activity/DeleteActivity/{id}
+     */
+    @DELETE("Activity/DeleteActivity/{id}")
+    suspend fun deleteActivity(@Path("id") id: Int): Response<ApiResponse<Boolean>>
 }

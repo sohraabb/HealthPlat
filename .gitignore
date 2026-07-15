@@ -20,3 +20,10 @@ intermediates/
 # SDK and secrets
 app/libs/
 *.keystore
+
+.kotlin
+
+# Internal docs / dev artifacts — not for GitHub
+CLAUDE.md
+log.txt
+BonlalaRing SDK Android_v1.4.txt

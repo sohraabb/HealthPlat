@@ -1,0 +1,590 @@
+package com.bonyad.healthplat.ui.components
+
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.bonyad.healthplat.ui.utils.toFarsiDigits
+import com.bonyad.healthplat.R
+
+// ======================= COLOR DEFINITIONS =======================
+private val TealPrimary = Color(0xFF5BA3A3)
+private val TealLight = Color(0xFFE8F4F4)
+private val RedAccent = Color(0xFFE53935)
+private val RedLight = Color(0xFFFFEBEE)
+private val GrayLight = Color(0xFFE0E0E0)
+private val GrayMedium = Color(0xFF9E9E9E)
+private val TextDark = Color(0xFF2C2C2C)
+private val TextGray = Color(0xFF666666)
+
+// ======================= CONNECTION STATE =======================
+sealed class DeviceConnectionState {
+    object Disconnected : DeviceConnectionState()
+    object Connecting : DeviceConnectionState()
+    data class Connected(val batteryLevel: Int) : DeviceConnectionState() {
+        val isLowBattery: Boolean get() = batteryLevel <= 20
+    }
+}
+
+// ======================= MAIN INDICATOR BUTTON =======================
+@Composable
+fun ConnectionIndicatorButton(
+    connectionState: DeviceConnectionState,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = modifier
+    ) {
+        when (connectionState) {
+            is DeviceConnectionState.Disconnected -> {
+                Icon(
+                    painter = painterResource(id = R.drawable.disconnect),
+                    contentDescription = "دستگاه متصل نیست",
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            is DeviceConnectionState.Connecting -> {
+                ConnectingIndicator()
+            }
+            is DeviceConnectionState.Connected -> {
+                ConnectedIndicator(batteryLevel = connectionState.batteryLevel)
+            }
+        }
+    }
+}
+
+// ======================= INDICATOR VARIANTS =======================
+
+@Composable
+private fun ConnectedIndicator(batteryLevel: Int) {
+    val isLowBattery = batteryLevel <= 15
+
+    val targetSweep = (batteryLevel / 100f) * 360f
+    val animatedSweep by animateFloatAsState(
+        targetValue = targetSweep,
+        animationSpec = tween(durationMillis = 600),
+        label = "battery_sweep"
+    )
+
+    val arcColor by animateColorAsState(
+        targetValue = if (isLowBattery) RedAccent else TealPrimary,
+        animationSpec = tween(durationMillis = 400),
+        label = "arc_color"
+    )
+
+    val trackColor = if (isLowBattery) RedAccent.copy(alpha = 0.15f) else TealPrimary.copy(alpha = 0.15f)
+
+    // Outer box: larger to hold badge, no clipping
+    Box(
+        modifier = Modifier.size(36.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        // The circle itself stays at 24dp
+        Canvas(modifier = Modifier.size(24.dp)) {
+            val strokeWidth = 2.5.dp.toPx()
+            val arcSize = Size(size.width - strokeWidth, size.height - strokeWidth)
+            val arcOffset = Offset(strokeWidth / 2, strokeWidth / 2)
+
+            drawArc(
+                color = trackColor,
+                startAngle = -90f,
+                sweepAngle = 360f,
+                useCenter = false,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                topLeft = arcOffset,
+                size = arcSize
+            )
+
+            drawArc(
+                color = arcColor,
+                startAngle = -90f,
+                sweepAngle = animatedSweep,
+                useCenter = false,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                topLeft = arcOffset,
+                size = arcSize
+            )
+
+            val radius = (size.minDimension - strokeWidth) / 2
+            drawCircle(
+                color = arcColor.copy(alpha = 0.2f),
+                radius = radius * 0.4f,
+                center = center
+            )
+
+            drawCircle(
+                color = arcColor,
+                radius = radius * 0.2f,
+                center = center
+            )
+        }
+
+        // Low battery badge — only shows when <= 15%
+        if (isLowBattery) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .offset(y = (-2).dp, x = 4.dp)
+                    .background(RedAccent, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 2.dp, vertical = 1.dp)
+            ) {
+                Text(
+                    text = "${batteryLevel}%".toFarsiDigits(),
+                    color = Color.White,
+                    fontSize = 8.sp,
+                    lineHeight = 4.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConnectingIndicator() {
+    val infiniteTransition = rememberInfiniteTransition(label = "connecting_spin")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900, easing = LinearEasing)
+        ),
+        label = "spin_angle"
+    )
+
+    Box(
+        modifier = Modifier.size(36.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.size(24.dp)) {
+            val strokeWidth = 2.5.dp.toPx()
+            val arcSize = Size(size.width - strokeWidth, size.height - strokeWidth)
+            val arcOffset = Offset(strokeWidth / 2, strokeWidth / 2)
+
+            // Faint track
+            drawArc(
+                color = TealPrimary.copy(alpha = 0.15f),
+                startAngle = 0f,
+                sweepAngle = 360f,
+                useCenter = false,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                topLeft = arcOffset,
+                size = arcSize
+            )
+
+            // Spinning arc (~270° sweep so it has a visible tail gap)
+            drawArc(
+                color = TealPrimary,
+                startAngle = rotation - 90f,
+                sweepAngle = 270f,
+                useCenter = false,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                topLeft = arcOffset,
+                size = arcSize
+            )
+
+            // Center dot
+            val radius = (size.minDimension - strokeWidth) / 2
+            drawCircle(
+                color = TealPrimary.copy(alpha = 0.2f),
+                radius = radius * 0.4f,
+                center = center
+            )
+            drawCircle(
+                color = TealPrimary,
+                radius = radius * 0.2f,
+                center = center
+            )
+        }
+    }
+}
+
+@Composable
+private fun DisconnectedIndicator() {
+    Box(
+        modifier = Modifier.size(32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val strokeWidth = 2.dp.toPx()
+            val radius = (size.minDimension - strokeWidth) / 2
+
+            // Outer circle
+            drawCircle(
+                color = GrayMedium,
+                radius = radius,
+                center = center,
+                style = Stroke(width = strokeWidth)
+            )
+
+            // X mark
+            val xSize = radius * 0.5f
+            val xStroke = 2.dp.toPx()
+
+            // Line 1 of X
+            drawLine(
+                color = RedAccent,
+                start = Offset(center.x - xSize, center.y - xSize),
+                end = Offset(center.x + xSize, center.y + xSize),
+                strokeWidth = xStroke,
+                cap = StrokeCap.Round
+            )
+
+            // Line 2 of X
+            drawLine(
+                color = RedAccent,
+                start = Offset(center.x + xSize, center.y - xSize),
+                end = Offset(center.x - xSize, center.y + xSize),
+                strokeWidth = xStroke,
+                cap = StrokeCap.Round
+            )
+        }
+    }
+}
+
+// ======================= BOTTOM SHEETS =======================
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ConnectivityBottomSheet(
+    connectionState: DeviceConnectionState,
+    onDismiss: () -> Unit,
+    onConnectClick: () -> Unit,
+    onDisconnectClick: () -> Unit = {},
+    sheetState: SheetState = rememberModalBottomSheetState()
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Color.White,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .padding(vertical = 12.dp)
+                    .width(40.dp)
+                    .height(4.dp)
+                    .background(GrayLight, RoundedCornerShape(2.dp))
+            )
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Title
+            Text(
+                text = "اتصال حلقه",
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = TextDark
+                ),
+                modifier = Modifier.padding(bottom = 24.dp)
+            )
+
+            when (connectionState) {
+                is DeviceConnectionState.Disconnected -> {
+                    DisconnectedBottomSheetContent(onConnectClick = onConnectClick)
+                }
+                is DeviceConnectionState.Connecting -> {
+                    ConnectingBottomSheetContent()
+                }
+                is DeviceConnectionState.Connected -> {
+                    ConnectedBottomSheetContent(
+                        batteryLevel = connectionState.batteryLevel,
+                        onDisconnectClick = onDisconnectClick
+                    )
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun ConnectingBottomSheetContent() {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .background(TealPrimary.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = "در حال اتصال...",
+                    color = TealPrimary,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            Text(
+                text = "وضعیت اتصال",
+                color = TextGray,
+                fontSize = 14.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        CircularProgressIndicator(
+            modifier = Modifier.size(36.dp),
+            color = TealPrimary,
+            strokeWidth = 3.dp
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+    }
+}
+
+@Composable
+private fun DisconnectedBottomSheetContent(onConnectClick: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Connection Status Row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Status Badge
+            Box(
+                modifier = Modifier
+                    .background(RedAccent, RoundedCornerShape(20.dp))
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = "متصل نیست",
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            // Label
+            Text(
+                text = "وضعیت اتصال",
+                color = TextGray,
+                fontSize = 14.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Connect Button
+        OutlinedButton(
+            onClick = onConnectClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, TealPrimary),
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = TealPrimary
+            )
+        ) {
+            Text(
+                text = "اتصال حلقه",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+private fun ConnectedBottomSheetContent(
+    batteryLevel: Int,
+    onDisconnectClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Connection Status Row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .background(TealPrimary, RoundedCornerShape(20.dp))
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = "متصل",
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            Text(
+                text = "وضعیت اتصال",
+                color = TextGray,
+                fontSize = 14.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Battery Level Row — just percentage + label (NO estimated days)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "${batteryLevel}%".toFarsiDigits(),
+                color = TextDark,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Text(
+                text = "میزان باتری",
+                color = TextGray,
+                fontSize = 14.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Battery Progress Bar
+        BatteryProgressBar(
+            progress = batteryLevel / 100f,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(16.dp)
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Disconnect Button
+        OutlinedButton(
+            onClick = onDisconnectClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, RedAccent),
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = RedAccent
+            )
+        ) {
+            Text(
+                text = "قطع اتصال",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+private fun BatteryProgressBar(
+    progress: Float,
+    modifier: Modifier = Modifier
+) {
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = tween(durationMillis = 500),
+        label = "battery_progress"
+    )
+
+    val progressColor by animateColorAsState(
+        targetValue = when {
+            progress <= 0.2f -> RedAccent
+            progress <= 0.4f -> Color(0xFFFF9800) // Orange
+            else -> TealPrimary
+        },
+        animationSpec = tween(durationMillis = 300),
+        label = "battery_color"
+    )
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(GrayLight)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(animatedProgress)
+                .background(progressColor, RoundedCornerShape(4.dp))
+        )
+    }
+}
+
+// ======================= PREVIEW HELPERS =======================
+
+@Composable
+fun ConnectionIndicatorPreview() {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier.padding(16.dp)
+    ) {
+        ConnectionIndicatorButton(
+            connectionState = DeviceConnectionState.Connected(batteryLevel = 90),
+            onClick = {}
+        )
+        ConnectionIndicatorButton(
+            connectionState = DeviceConnectionState.Connected(batteryLevel = 50),
+            onClick = {}
+        )
+        ConnectionIndicatorButton(
+            connectionState = DeviceConnectionState.Connected(batteryLevel = 15),
+            onClick = {}
+        )
+        ConnectionIndicatorButton(
+            connectionState = DeviceConnectionState.Disconnected,
+            onClick = {}
+        )
+    }
+}

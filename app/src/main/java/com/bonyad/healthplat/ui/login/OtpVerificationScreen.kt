@@ -1,0 +1,384 @@
+package com.bonyad.healthplat.ui.login
+
+import android.app.Activity
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.runtime.DisposableEffect
+import androidx.core.content.ContextCompat
+import com.google.android.gms.auth.api.phone.SmsRetriever
+import com.google.android.gms.common.api.CommonStatusCodes
+import com.google.android.gms.common.api.Status
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.bonyad.healthplat.R
+import com.bonyad.healthplat.domain.model.AuthState
+import com.bonyad.healthplat.ui.utils.toFarsiDigits
+import kotlinx.coroutines.delay
+import timber.log.Timber
+
+@Composable
+fun OtpVerificationScreen(
+    phoneNumber: String,
+    viewModel: AuthViewModel = hiltViewModel(),
+    onVerified: () -> Unit
+) {
+    val authState by viewModel.authState.collectAsState()
+    val otp by viewModel.otp.collectAsState()
+    val resendTimer by viewModel.resendTimer.collectAsState()
+    val userId by viewModel.userId.collectAsState()
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    val serverOtp by viewModel.serverOtp.collectAsState()
+    val isSmsMode by viewModel.isSmsMode.collectAsState()
+
+    val context = LocalContext.current
+
+    // Dev/test mode: server returned the code — show it in a toast
+    LaunchedEffect(serverOtp) {
+        if (serverOtp.isNotEmpty()) {
+            Toast.makeText(context, "کد تایید: $serverOtp", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // SMS mode: launch activity-result handler for the system consent dialog
+    val smsConsentLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val sms = result.data?.getStringExtra(SmsRetriever.EXTRA_SMS_MESSAGE) ?: return@rememberLauncherForActivityResult
+            Regex("\\d{5}").find(sms)?.value?.let { code -> viewModel.updateOtp(code) }
+        }
+    }
+
+    // Start the SMS consent listener as soon as we enter SMS mode
+    LaunchedEffect(isSmsMode) {
+        if (isSmsMode) {
+            SmsRetriever.getClient(context).startSmsUserConsent(null)
+        }
+    }
+
+    // Register BroadcastReceiver that catches the incoming SMS and shows the system consent dialog
+    if (isSmsMode) {
+        DisposableEffect(Unit) {
+            val receiver = object : BroadcastReceiver() {
+                override fun onReceive(ctx: Context, intent: Intent) {
+                    if (intent.action != SmsRetriever.SMS_RETRIEVED_ACTION) return
+                    val status = intent.extras?.get(SmsRetriever.EXTRA_STATUS) as? Status ?: return
+                    if (status.statusCode == CommonStatusCodes.SUCCESS) {
+                        @Suppress("DEPRECATION")
+                        val consentIntent = intent.extras?.getParcelable<Intent>(SmsRetriever.EXTRA_CONSENT_INTENT)
+                        consentIntent?.let { smsConsentLauncher.launch(it) }
+                    }
+                }
+            }
+            ContextCompat.registerReceiver(
+                context, receiver,
+                IntentFilter(SmsRetriever.SMS_RETRIEVED_ACTION),
+                ContextCompat.RECEIVER_EXPORTED
+            )
+            onDispose { runCatching { context.unregisterReceiver(receiver) } }
+        }
+    }
+    // Set the phone number in ViewModel when screen opens
+    LaunchedEffect(phoneNumber) {
+        viewModel.setPhoneNumber(phoneNumber)
+        Timber.d("Phone number set: $phoneNumber")
+    }
+
+    // Auto-submit when 5 digits entered
+    LaunchedEffect(otp) {
+        if (otp.length == 5) {
+            delay(200)
+            viewModel.verifyOtp()
+        }
+    }
+
+    LaunchedEffect(authState) {
+        if (authState is AuthState.OtpVerified) {
+            keyboardController?.hide()
+            delay(100)
+
+            // The navigation is handled in NavGraph based on userId
+            // Just trigger the callback
+            onVerified()
+        }
+    }
+
+    // Show error snackbar
+    LaunchedEffect(authState) {
+        if (authState is AuthState.Error) {
+            snackbarHostState.showSnackbar((authState as AuthState.Error).message)
+            viewModel.resetError()
+        }
+    }
+
+    Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { padding ->
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFFF5F5F5))
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = {
+                        focusManager.clearFocus()
+                        keyboardController?.hide()
+                    })
+                }
+                .padding(padding)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .systemBarsPadding()
+                    .padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Spacer(modifier = Modifier.height(32.dp))
+
+                Image(
+                    painter = painterResource(id = R.mipmap.ic_launcher_foreground),
+                    contentDescription = "Logo",
+                    modifier = Modifier.size(160.dp)
+                )
+
+                Image(
+                    painter = painterResource(id = R.drawable.zhivan_text),
+                    contentDescription = "Zhivan",
+                    modifier = Modifier.width(100.dp)
+                )
+
+                Spacer(modifier = Modifier.height(48.dp))
+
+                Text(
+                    text = "ثبت‌نام یا ورود",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp
+                    ),
+                    color = Color(0xFF2C2C2C),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "کد پیامک شده",
+                    style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
+                    textAlign = TextAlign.Right,
+                    color = Color(0xFF666666),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // OTP Input boxes
+                OtpInputField(
+                    otp = otp,
+                    onOtpChange = { viewModel.updateOtp(it) }
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = " کد به شماره ${phoneNumber.toFarsiDigits()} ارسال شد. ",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = Color(0xFF999999),
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                TextButton(
+                    onClick = { viewModel.resendOtp() },
+                    enabled = authState !is AuthState.Loading && resendTimer <= 0
+                ) {
+                    Text(
+                        text = if (resendTimer > 0)
+                            "ارسال مجدد کد (${resendTimer.toString().toFarsiDigits()})"
+                        else
+                            "ارسال مجدد کد",
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                        color = if (resendTimer > 0) Color(0xFF999999) else Color(0xFF5BA3A3)
+                    )
+                }
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                Button(
+                    onClick = { viewModel.verifyOtp() },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (otp.length == 5)
+                            Color(0xFF5BA3A3)
+                        else
+                            Color(0xFFE0E0E0)
+                    ),
+                    enabled = otp.length == 5 && authState !is AuthState.Loading
+                ) {
+                    if (authState is AuthState.Loading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text(
+                            text = "ورود",
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            ),
+                            color = Color.White
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(32.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun OtpInputField(
+    otp: String,
+    onOtpChange: (String) -> Unit
+) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            modifier = Modifier
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() }
+                ) {
+                    focusRequester.requestFocus()
+                    keyboardController?.show()
+                },
+            horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
+        ) {
+            repeat(5) { index ->
+                OtpBox(
+                    digit = otp.getOrNull(index)?.toString() ?: "",
+                    isFilled = index < otp.length
+                )
+            }
+        }
+
+        BasicTextField(
+            value = otp,
+            onValueChange = { newValue ->
+                if (newValue.all { it.isDigit() } && newValue.length <= 5) {
+                    onOtpChange(newValue)
+                }
+            },
+            modifier = Modifier
+                .size(1.dp)
+                .focusRequester(focusRequester),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+            singleLine = true,
+            cursorBrush = SolidColor(Color.Transparent) // hides blinking cursor
+        )
+    }
+}
+
+@Composable
+fun OtpBox(
+    digit: String,
+    isFilled: Boolean
+) {
+    Box(
+        modifier = Modifier
+            .size(56.dp)
+            .background(
+                color = Color.White,
+                shape = RoundedCornerShape(12.dp)
+            )
+            .border(
+                width = 1.dp,
+                color = if (isFilled) Color(0xFF5BA3A3) else Color(0xFFE0E0E0),
+                shape = RoundedCornerShape(12.dp)
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = digit,
+            style = MaterialTheme.typography.headlineMedium.copy(
+                fontWeight = FontWeight.Bold,
+                fontSize = 24.sp
+            ),
+            color = Color(0xFF2C2C2C)
+        )
+    }
+}

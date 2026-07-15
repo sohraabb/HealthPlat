@@ -1,5 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
 
     <style name="Theme.HealthPlat" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- Splash Screen Theme (Android 12+) -->
+    <style name="Theme.HealthPlat.Splash" parent="Theme.SplashScreen">
+        <!-- Status bar color -->
+        <item name="android:statusBarColor">@color/splash_background</item>
+
+        <!-- Navigation bar color -->
+        <item name="android:navigationBarColor">@color/splash_background</item>
+
+        <!-- Background color -->
+        <item name="android:windowBackground">@color/splash_background</item>
+
+        <!-- Splash screen background -->
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+
+        <!-- Splash screen icon -->
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+
+        <!-- Icon background (optional, for colored circle behind icon) -->
+        <item name="windowSplashScreenIconBackgroundColor">@color/splash_icon_background</item>
+
+        <!-- Keep splash screen on screen for your logic -->
+        <item name="windowSplashScreenAnimationDuration">2000</item>
+
+        <!-- Post splash screen theme -->
+        <item name="postSplashScreenTheme">@style/Theme.HealthPlat</item>
+    </style>
+
+    <!-- Splash Screen Theme for Android API 23-30 -->
+    <style name="Theme.HealthPlat.Splash.Old" parent="Theme.SplashScreen" tools:ignore="DuplicateDefinition">
+        <item name="android:windowBackground">@drawable/splash_icon</item>
+        <item name="android:statusBarColor">@color/splash_background</item>
+        <item name="postSplashScreenTheme">@style/Theme.HealthPlat</item>
+    </style>
+
+
 </resources>
